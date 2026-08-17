@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cálculo IFRS 16 / CPC 06 (R2) — Arrendamento</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#12242e; --ink-soft:#4a6572; --line:#d4dde2; --line-soft:#e8eef1;
+    --paper:#f7f9fa; --white:#fff; --accent:#1f3864; --accent-soft:#e8edf6;
+    --ta:#8a5a00; --ta-soft:#fdf3e0; --neg:#a8323f; --pos:#1a6b3c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 "Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1680px;margin:0 auto;padding:28px 20px 80px}
+  header.top{border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:26px}
+  header.top h1{margin:0;font-size:22px;letter-spacing:-.2px}
+  header.top p{margin:5px 0 0;color:var(--ink-soft);font-size:13px}
+
+  .card{background:var(--white);border:1px solid var(--line);border-radius:6px;padding:20px;margin-bottom:20px}
+  .card > h2{margin:0 0 16px;font-size:12px;letter-spacing:.10em;text-transform:uppercase;color:var(--accent);font-weight:700}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+  label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:5px}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:4px;font:inherit;font-size:14px;background:var(--white);color:var(--ink)}
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+  .hint{font-size:11px;color:var(--ink-soft);margin-top:4px;font-weight:400}
+
+  .rem-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .rem-head h2{margin:0}
+  .rem{border:1px solid var(--line);border-left:3px solid var(--ta);border-radius:4px;padding:14px;margin-bottom:12px;background:var(--ta-soft)}
+  .rem-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .rem-title strong{font-size:13px;color:var(--ta)}
+  .empty{border:1px dashed var(--line);border-radius:4px;padding:22px;text-align:center;color:var(--ink-soft);font-size:13px}
+
+  button{font:inherit;font-size:13px;font-weight:600;padding:9px 16px;border-radius:4px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+  button:hover{filter:brightness(1.15)}
+  button.ghost{background:var(--white);color:var(--accent)}
+  button.link{background:none;border:none;color:var(--neg);padding:2px 6px;font-size:12px}
+  button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:4px}
+
+  .sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .sum div{background:var(--white);padding:13px 15px}
+  .sum span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600}
+  .sum strong{display:block;font-size:17px;margin-top:3px;font-variant-numeric:tabular-nums}
+
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--white)}
+  .scroll.fit{overflow-x:visible}
+  table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+  thead th{background:var(--ink);color:#fff;font-weight:600;padding:8px 10px;text-align:right;white-space:nowrap;font-size:12px}
+  .fit table{font-size:11.5px;table-layout:fixed}
+  .fit thead th{padding:6px 5px;font-size:10.5px;white-space:normal;line-height:1.25}
+  .fit tbody td{padding:4px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fit tfoot td{padding:6px 5px}
+  .fit col.c1{width:4.2%} .fit col.c2{width:6.0%} .fit col.c3{width:11%}
+  .fit col.c4{width:5.4%} .fit col.cm{width:9.2%}
+  thead tr.group th{background:var(--accent);text-align:center;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+  th.c,td.c{text-align:center} th.l,td.l{text-align:left}
+  tbody td{padding:6px 10px;text-align:right;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+  tbody tr:hover{background:var(--accent-soft);cursor:pointer}
+  .reg{font-size:11px;color:var(--ta)}
+  tbody tr.subt td{background:#eef2f7;font-weight:700;border-top:1px solid var(--accent);
+                   border-bottom:1px solid var(--accent)}
+  tbody tr.subt:hover td{background:#e4ebf4}
+  tbody tr.subt td.lab{text-align:left;color:var(--accent);font-size:12px}
+  tbody tr.escrit{background:#dff2e3}
+  tbody tr.escrit:hover{background:#cfeada}
+  tbody tr.escrit td{font-weight:600}
+  .tagesc{display:inline-block;width:17px;height:17px;line-height:17px;text-align:center;
+          font-size:11px;font-weight:700;border-radius:50%;background:#1a6b3c;color:#fff;
+          margin-left:4px;vertical-align:middle}
+  tbody tr.sel{box-shadow:inset 3px 0 0 var(--accent)}
+  td.dep{color:var(--neg)}
+  tfoot td{padding:9px 10px;text-align:right;font-weight:700;border-top:2px solid var(--ink);white-space:nowrap}
+  .badge{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;background:var(--ta);color:#fff}
+
+  .rbox{border:1px solid var(--ta);border-radius:6px;margin-bottom:16px;overflow:hidden}
+  .rbox > header{background:var(--ta-soft);border-bottom:1px solid var(--ta);padding:11px 15px;font-size:13px;font-weight:700;color:var(--ta)}
+  .rbox .body{padding:15px}
+  .dtab{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+  .dtab th{text-align:right;font-weight:600;color:var(--ink-soft);padding:6px 10px;font-size:12px;background:var(--paper);border-bottom:1px solid var(--line)}
+  .dtab th:first-child{text-align:left}
+  .dtab td{padding:6px 10px;border-bottom:1px solid var(--line-soft);text-align:right}
+  .dtab td:first-child{text-align:left;font-weight:600}
+  .dtab tr.delta td{background:#fffdf5;font-weight:700}
+  .up{color:var(--pos)} .down{color:var(--neg)}
+  .lanc{margin-top:14px;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:12px 14px;font-size:13px}
+  .lanc h5{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent)}
+  .lanc table td{padding:3px 8px;border:none}
+  .lanc .ltit{margin:10px 0 4px;font-size:12px;font-weight:700;color:var(--ink)}
+  .lanc .ltit:first-of-type{margin-top:0}
+  .lanc .lnet{margin:10px 0 0;padding-top:8px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-soft)}
+
+  .memo{margin-top:20px;display:none} .memo.on{display:block}
+  .step{border-left:2px solid var(--line);padding:0 0 14px 16px;position:relative;margin-left:8px}
+  .step:last-child{padding-bottom:0}
+  .step::before{content:attr(data-n);position:absolute;left:-11px;top:0;width:20px;height:20px;background:var(--accent);color:#fff;border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .step h4{margin:1px 0 4px;font-size:14px}
+  .step p{margin:0 0 6px;font-size:13px;color:var(--ink-soft)}
+  .step .calc{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:var(--paper);border:1px solid var(--line-soft);border-radius:4px;padding:8px 10px;display:inline-block;line-height:1.8}
+  .memo h3{font-size:14px;margin:18px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .memo h3:first-child{margin-top:0}
+  .ctab{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;margin-top:14px}
+  .ctab th{background:var(--ink);color:#fff;font-weight:600;padding:8px 10px;text-align:right;font-size:12px}
+  .ctab th:first-child{text-align:left}
+  .ctab td{padding:7px 10px;border-bottom:1px solid var(--line-soft);text-align:right}
+  .ctab td:first-child{text-align:left}
+  .ctab tr.grp td{background:var(--accent-soft);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)}
+  .ctab tr.tot td{border-top:2px solid var(--ink);font-weight:700}
+  .ctab tr.sub td{border-top:1px solid var(--line);font-weight:700}
+  .nat{font-size:11px;color:var(--ink-soft);font-weight:400}
+  .msg{margin-top:12px;font-size:13px;padding:9px 13px;border-radius:4px}
+  .msg.ok{background:#eaf5ee;border:1px solid #a9d4b8;color:#1a6b3c}
+  .msg.err{background:#fdeaec;border:1px solid #e0a0aa;color:#a8323f}
+  .msg.info{background:var(--accent-soft);border:1px solid #b9c8e0;color:var(--accent)}
+  .okline{margin-top:10px;font-size:12px;padding:8px 12px;border-radius:4px;background:#eaf5ee;border:1px solid #a9d4b8;color:#1a6b3c}
+  .warn{background:#fdeaec;border:1px solid #e0a0aa;border-radius:4px;padding:11px 14px;font-size:13px;margin-bottom:16px}
+  .formula{font-size:12px;color:var(--ink-soft);margin-top:10px;line-height:1.7}
+  @media print{body{background:#fff}.card:has(button),.actions,.memo{display:none}.scroll{border:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>Cálculo de Arrendamento — IFRS 16 / CPC 06 (R2)</h1>
+  <p>Memória de cálculo do passivo de arrendamento e do ativo de direito de uso, com múltiplas remensurações.</p>
+</header>
+
+<div class="card">
+  <h2>Base de dados — Google Sheets (Apps Script)</h2>
+  <div class="grid" style="grid-template-columns:1fr 1fr auto auto;align-items:end">
+    <div><label for="gsCliente">Cliente</label><select id="gsCliente"><option value="">—</option></select></div>
+    <div><label for="gsContrato">Contrato</label><select id="gsContrato"><option value="">—</option></select></div>
+    <div><button class="ghost" id="gsLoad">Recarregar</button></div>
+    <div><button class="ghost" id="gsTpl">Baixar modelo</button></div>
+  </div>
+  <div id="gsMsg"></div>
+</div>
+
+<div class="card">
+  <h2>Contrato</h2>
+  <div class="grid">
+    <div><label for="cliente">Cliente</label><input id="cliente" type="text" placeholder="Nome do cliente"></div>
+    <div><label for="contrato">Contrato</label><input id="contrato" type="text" placeholder="Nº do contrato"></div>
+    <div><label for="inicio">Competência inicial</label><input id="inicio" type="month"></div>
+    <div><label for="prazo">Prazo (meses)</label><input id="prazo" type="number" min="1" step="1" value="60"></div>
+    <div><label for="pgto">Parcela mensal (R$)</label><input id="pgto" type="number" step="0.01" value="578854"></div>
+    <div><label for="taxa">Taxa de desconto (% a.m.)</label><input id="taxa" type="number" step="0.000001" value="1"></div>
+  </div>
+  <div class="actions" style="margin-top:14px">
+    <button class="ghost" id="gsSalvar">Salvar na base</button>
+    <button class="ghost" id="gsExcluir">Excluir da base</button>
+    <span class="hint" style="margin:0">Grava na planilha e registra o antes/depois na aba Histórico</span>
+  </div>
+  <div id="gsSaveMsg"></div>
+</div>
+
+<div class="card">
+  <div class="rem-head">
+    <h2>Remensurações</h2>
+    <button class="ghost" id="add">+ Adicionar remensuração</button>
+  </div>
+  <div id="rems"></div>
+  <div class="empty" id="remEmpty">Nenhuma remensuração cadastrada. O contrato será calculado com os termos originais do início ao fim.</div>
+</div>
+
+<div class="card" id="concCard" style="display:none">
+  <h2>Conciliação contábil</h2>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));align-items:end">
+    <div>
+      <label for="concIni">Contabilização a partir de</label>
+      <select id="concIni"></select>
+    </div>
+    <div>
+      <label for="concMes">Competência a validar</label>
+      <select id="concMes"></select>
+    </div>
+    <div>
+      <label for="concDepr">Tratamento da depreciação</label>
+      <select id="concDepr">
+        <option value="pros">Prospectivo — depreciar o saldo remanescente</option>
+        <option value="retro">Retrospectivo — ajustar a depreciação acumulada</option>
+      </select>
+    </div>
+    <div>
+      <label for="concBase">Base de apuração</label>
+      <select id="concBase">
+        <option value="ab">Abertura — parcela do mês ainda em aberto</option>
+        <option value="fe">Fechamento — após o pagamento do mês</option>
+      </select>
+    </div>
+    <div><button class="ghost" id="concBtn">Apurar saldos</button></div>
+    <div><button class="ghost" id="concXls">Relatório Excel</button></div>
+    <div><button class="ghost" id="concPdf">Relatório PDF</button></div>
+  </div>
+  <div id="concOut"></div>
+</div>
+
+<div class="actions">
+  <button id="calc">Calcular</button>
+  <button class="ghost" id="xlsx">Exportar para Excel</button>
+  <button class="ghost" id="print">Imprimir / PDF</button>
+</div>
+
+<div id="out"></div>
+</div>
+
+<script>
+"use strict";
+
+/* ===================== CONFIGURAÇÃO DA BASE =====================
+   Cole abaixo a URL do Web App do Apps Script (uma única vez).
+
+   Na sua planilha do Google Sheets:
+     1. Extensões > Apps Script
+     2. Cole o conteúdo do arquivo Code.gs e salve
+     3. Implantar > Nova implantação > Tipo: App da Web
+        - Executar como: Eu
+        - Quem pode acessar: Qualquer pessoa
+     4. Copie a URL gerada (termina em /exec) e cole aqui
+
+   Abas esperadas na planilha: "Contratos" e "Remensuracoes".
+=============================================================== */
+const TOKEN = "ifrs16";   /* mesma senha definida no Code.gs */
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbx-5LOckPhKt87logXA1Gto0wpxVV2pqZu9ysjWLDDFyq1DW22TPj60B3et0kOWwBaf/exec";
+
+const BRL = v => (v<0?"-":"")+"R$ "+Math.abs(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const SIG = v => (v>=0?"+":"−")+"R$ "+Math.abs(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const PAR = v => "("+BRL(Math.abs(v))+")";
+const PCT = t => (t*100).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%";
+const num = id => parseFloat(document.getElementById(id).value)||0;
+const el  = id => document.getElementById(id);
+
+function competencia(iso, offset){
+  if(!iso) return "—";
+  const p = iso.split("-"); const y=+p[0], m=+p[1];
+  const d = new Date(y, m-1+offset, 1);
+  return String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear();
+}
+
+function dataDaParcela(abs){
+  const iso=el("inicio").value;
+  if(!iso) return new Date(2000,0,1);
+  const p=iso.split("-");
+  return new Date(+p[0], (+p[1])-1+(abs-1), 1);
+}
+
+let seq = 0;
+function addRem(v){
+  v = v || {};
+  seq++;
+  const d = document.createElement("div");
+  d.className="rem";
+  d.innerHTML =
+    '<div class="rem-title"><strong>Remensuração '+seq+'</strong><button class="link" type="button">Remover</button></div>'+
+    '<div class="grid">'+
+      '<div><label>A partir da parcela nº</label><input class="r-par" type="number" min="2" step="1" value="'+(v.parcela||"")+'"><div class="hint">A Ordem segue contínua no contrato</div></div>'+
+      '<div><label>Nova parcela mensal (R$)</label><input class="r-pgto" type="number" step="0.01" value="'+(v.pgto||"")+'"></div>'+
+      '<div><label>Nova taxa (% a.m.)</label><input class="r-taxa" type="number" step="0.000001" value="'+(v.taxa||"")+'"><div class="hint">Em branco = mantém a anterior</div></div>'+
+      '<div><label>Prazo do novo regime (meses)</label><input class="r-prazo" type="number" min="1" step="1" value="'+(v.prazo||"")+'"><div class="hint">Meses a partir desta parcela</div></div>'+
+    '</div>';
+  d.querySelector(".link").onclick = function(){ d.remove(); toggleEmpty(); };
+  el("rems").appendChild(d); toggleEmpty();
+}
+function toggleEmpty(){ el("remEmpty").style.display = el("rems").children.length ? "none":"block"; }
+function lerRems(){
+  return [].slice.call(el("rems").children).map(function(d){
+    return {
+      parcela: parseInt(d.querySelector(".r-par").value)||0,
+      pgto:  d.querySelector(".r-pgto").value===""?null:parseFloat(d.querySelector(".r-pgto").value),
+      taxa:  d.querySelector(".r-taxa").value===""?null:parseFloat(d.querySelector(".r-taxa").value)/100,
+      prazo: d.querySelector(".r-prazo").value===""?null:parseInt(d.querySelector(".r-prazo").value)
+    };
+  }).filter(function(r){return r.parcela>=2;}).sort(function(a,b){return a.parcela-b.parcela;});
+}
+
+/* ---------- motor ----------
+   Ordem          = contagem CONTÍNUA do contrato (não reinicia)
+   Valor Presente = Parcela ÷ (1 + taxa)^Ordem
+   Juros          = Parcela − Valor Presente
+   Passivo        = Σ VP das parcelas remanescentes até o FIM CONTRATADO do regime;
+                    amortiza pelo VP de cada parcela. Se uma nova remensuração ocorrer
+                    antes do fim, o saldo residual é confrontado com o novo passivo.
+   ROU            = saldo contínuo (nunca reinicia). Na remensuração mantém o já
+                    depreciado e recebe o ajuste (novo passivo − passivo remanescente);
+                    o saldo resultante é depreciado pelos meses contratados restantes.
+------------------------------------------------ */
+function calcular(){
+  const prazo0=parseInt(el("prazo").value)||0, pgto0=num("pgto"), taxa0=num("taxa")/100;
+  const rems=lerRems(), erros=[];
+  if(prazo0<1) erros.push("Informe o prazo do contrato.");
+  if(pgto0<=0) erros.push("Informe a parcela mensal.");
+
+  /* fimContratado = até onde o regime foi contratado
+     fim           = até onde ele efetivamente corre (truncado por uma remensuração posterior) */
+  const regimes=[{inicio:1, fim:prazo0, fimContratado:prazo0, pgto:pgto0, taxa:taxa0,
+                  rotulo:"Contrato original", tipo:"original"}];
+  rems.forEach(function(r,i){
+    const ant=regimes[regimes.length-1];
+    if(r.parcela<=ant.inicio){
+      erros.push("Remensuração "+(i+1)+": a parcela "+r.parcela+" precisa ser posterior ao início do regime anterior ("+ant.inicio+")."); return;
+    }
+    if(r.parcela>ant.fimContratado+1){
+      erros.push("Remensuração "+(i+1)+": a parcela "+r.parcela+" deixa um intervalo vazio (regime anterior vai até "+ant.fimContratado+")."); return;
+    }
+    const pg=r.pgto!==null?r.pgto:ant.pgto;
+    const tx=r.taxa!==null?r.taxa:ant.taxa;
+    const meses=r.prazo!==null?r.prazo:(ant.fimContratado-r.parcela+1);
+    if(meses<1){ erros.push("Remensuração "+(i+1)+": informe o prazo do novo regime."); return; }
+    ant.fim=r.parcela-1;                       /* trunca apenas a execução, não o contratado */
+    const fc=r.parcela+meses-1;
+    regimes.push({inicio:r.parcela, fim:fc, fimContratado:fc, pgto:pg, taxa:tx,
+                  rotulo:(i+1)+"ª remensuração", tipo:"rem"});
+  });
+  if(erros.length) return {erros:erros};
+
+  const linhas=[], eventos=[];
+  let passivo=0, rou=0, quota=0;
+
+  regimes.forEach(function(g,gi){
+    const mesesCorridos=g.fim-g.inicio+1;
+    const mesesContratados=g.fimContratado-g.inicio+1;
+    if(mesesCorridos<1) return;
+
+    /* VP de TODAS as parcelas contratadas do regime, pela ordem absoluta */
+    const vpsContratado=[];
+    for(let m=g.inicio;m<=g.fimContratado;m++) vpsContratado.push(g.pgto/Math.pow(1+g.taxa,m));
+    const somaContratado=vpsContratado.reduce(function(x,y){return x+y;},0);
+
+    if(gi===0){
+      passivo=somaContratado; rou=somaContratado; quota=somaContratado/mesesContratados;
+    } else {
+      const delta=somaContratado-passivo;
+      const rouAntes=rou, quotaAntes=quota;
+      rou=rou+delta;
+      quota=rou/mesesContratados;
+
+      /* --- juros: o que seria apropriado sob os termos antigos x sob os novos --- */
+      const ant=regimes[gi-1];
+      const nAntes=ant.fimContratado-g.inicio+1;          /* parcelas que ainda restavam */
+      const pagoAntes=ant.pgto*nAntes;                    /* desembolso remanescente antigo */
+      const pagoNovo=g.pgto*mesesContratados;             /* desembolso remanescente novo */
+      const jurosRemAntes=pagoAntes-passivo;              /* juros ainda a apropriar (antigo) */
+      const jurosRemNovo=pagoNovo-somaContratado;         /* juros ainda a apropriar (novo) */
+      const jpAntes=ant.pgto-ant.pgto/Math.pow(1+ant.taxa,g.inicio);
+      const jpNovo=g.pgto-g.pgto/Math.pow(1+g.taxa,g.inicio);
+
+      eventos.push({
+        parcela:g.inicio, rotulo:g.rotulo, meses:mesesContratados, mesesAntes:nAntes,
+        pgtoAntes:ant.pgto, pgtoNovo:g.pgto,
+        taxaAntes:ant.taxa, taxaNova:g.taxa,
+        passivoAntes:passivo, passivoNovo:somaContratado, deltaPassivo:delta,
+        rouAntes:rouAntes, rouNovo:rou, deltaRou:delta,
+        quotaAntes:quotaAntes, quotaNova:quota,
+        pagoAntes:pagoAntes, pagoNovo:pagoNovo, deltaPago:pagoNovo-pagoAntes,
+        jurosParcelaAntes:jpAntes, jurosParcelaNovo:jpNovo, deltaJurosParcela:jpNovo-jpAntes,
+        jurosRemAntes:jurosRemAntes, jurosRemNovo:jurosRemNovo, deltaJurosRem:jurosRemNovo-jurosRemAntes,
+        jurosMedioMes:(jurosRemNovo-jurosRemAntes)/mesesContratados
+      });
+      passivo=somaContratado;
+    }
+
+    for(let k=0;k<mesesCorridos;k++){
+      const abs=g.inicio+k, vp=vpsContratado[k], jur=g.pgto-vp;
+      const spI=passivo, spF=spI-vp;
+      const srI=rou, dep=Math.min(quota,srI), srF=srI-dep;
+      linhas.push({
+        abs:abs, ordem:abs, regime:g.rotulo, tipo:g.tipo, inicioRegime:(k===0&&gi>0),
+        taxa:g.taxa, pgto:g.pgto, vp:vp, juros:jur,
+        spI:spI, amort:vp, spF:spF, srI:srI, dep:dep, srF:srF
+      });
+      passivo=spF; rou=srF;
+    }
+  });
+
+  return {linhas:linhas, eventos:eventos, regimes:regimes, prazo0:prazo0, pgto0:pgto0, taxa0:taxa0};
+}
+
+let R=null, CONC=null, ADOC=null, DUMAP=null;
+function totais(){
+  return R.linhas.reduce(function(a,l){
+    return {pgto:a.pgto+l.pgto, vp:a.vp+l.vp, juros:a.juros+l.juros, dep:a.dep+l.dep};
+  },{pgto:0,vp:0,juros:0,dep:0});
+}
+
+function render(){
+  const r=calcular(), out=el("out");
+  if(r.erros){ out.innerHTML='<div class="warn"><strong>Verifique os dados:</strong><br>'+r.erros.join("<br>")+'</div>';
+    R=null; el("concCard").style.display="none"; return; }
+  R=r;
+  const deAbsT=parseInt(el("concIni").value)||1;
+  const modoT=(el("concDepr")&&el("concDepr").value)||"pros";
+  DUMAP=esquemaDU(modoT,deAbsT);
+  const ini=el("inicio").value, T=totais();
+  const vp0=r.linhas.length?r.linhas[0].spI:0;
+
+  let html='<div class="card"><h2>Resumo</h2><div class="sum">'+
+    '<div><span>Passivo inicial (Σ VP)</span><strong>'+BRL(vp0)+'</strong></div>'+
+    '<div><span>ROU inicial</span><strong>'+BRL(vp0)+'</strong></div>'+
+    '<div><span>Parcelas</span><strong>'+r.linhas.length+'</strong></div>'+
+    '<div><span>Total pago</span><strong>'+BRL(T.pgto)+'</strong></div>'+
+    '<div><span>Total de juros</span><strong>'+BRL(T.juros)+'</strong></div>'+
+    '<div><span>Total depreciado</span><strong>'+BRL(T.dep)+'</strong></div>'+
+    '</div></div>';
+
+  if(r.eventos.length){
+    html+='<div class="card"><h2>Remensurações — valores para contabilização</h2>';
+    r.eventos.forEach(function(e,i){
+      html+='<div class="rbox"><header>'+e.rotulo+' — a partir da parcela '+e.parcela+
+        ' ('+competencia(ini,e.parcela-1)+') · '+e.meses+' meses</header><div class="body">'+
+        '<table class="dtab"><thead><tr><th>Componente</th><th>Antes</th><th>Depois</th><th>Variação</th></tr></thead><tbody>'+
+        '<tr><td>Parcela mensal</td><td>'+BRL(e.pgtoAntes)+'</td><td>'+BRL(e.pgtoNovo)+'</td><td>'+SIG(e.pgtoNovo-e.pgtoAntes)+'</td></tr>'+
+        '<tr><td>Taxa a.m.</td><td>'+PCT(e.taxaAntes)+'</td><td>'+PCT(e.taxaNova)+'</td><td>'+
+          (e.taxaNova===e.taxaAntes?"—":((e.taxaNova-e.taxaAntes>=0?"+":"−")+Math.abs((e.taxaNova-e.taxaAntes)*100).toFixed(2)+" p.p."))+'</td></tr>'+
+        '<tr class="delta"><td>Passivo de arrendamento</td><td>'+BRL(e.passivoAntes)+'</td><td>'+BRL(e.passivoNovo)+
+          '</td><td class="'+(e.deltaPassivo>=0?"up":"down")+'">'+SIG(e.deltaPassivo)+'</td></tr>'+
+        '<tr class="delta"><td>Ativo de direito de uso</td><td>'+BRL(e.rouAntes)+'</td><td>'+BRL(e.rouNovo)+
+          '</td><td class="'+(e.deltaRou>=0?"up":"down")+'">'+SIG(e.deltaRou)+'</td></tr>'+
+        '<tr><td>Depreciação mensal</td><td>'+BRL(e.quotaAntes)+'</td><td>'+BRL(e.quotaNova)+
+          '</td><td class="'+(e.quotaNova-e.quotaAntes>=0?"up":"down")+'">'+SIG(e.quotaNova-e.quotaAntes)+'</td></tr>'+
+        '<tr><td>Parcelas remanescentes</td><td>'+e.mesesAntes+'</td><td>'+e.meses+'</td><td>'+
+          ((e.meses-e.mesesAntes>=0?"+":"−")+Math.abs(e.meses-e.mesesAntes))+'</td></tr>'+
+        '<tr><td>Desembolso remanescente</td><td>'+BRL(e.pagoAntes)+'</td><td>'+BRL(e.pagoNovo)+
+          '</td><td class="'+(e.deltaPago>=0?"up":"down")+'">'+SIG(e.deltaPago)+'</td></tr>'+
+        '<tr><td>Juros da parcela '+e.parcela+'</td><td>'+BRL(e.jurosParcelaAntes)+'</td><td>'+BRL(e.jurosParcelaNovo)+
+          '</td><td class="'+(e.deltaJurosParcela>=0?"up":"down")+'">'+SIG(e.deltaJurosParcela)+'</td></tr>'+
+        '<tr class="delta"><td>Juros a apropriar (total remanescente)</td><td>'+BRL(e.jurosRemAntes)+'</td><td>'+BRL(e.jurosRemNovo)+
+          '</td><td class="'+(e.deltaJurosRem>=0?"up":"down")+'">'+SIG(e.deltaJurosRem)+'</td></tr>'+
+        '</tbody></table>'+
+        '<div class="lanc"><h5>Lançamentos de ajuste em '+competencia(ini,e.parcela-1)+'</h5>'+
+        '<p class="ltit">1 · Diferença da parcela (valor bruto do contrato)</p><table>'+
+        '<tr><td><strong>'+(e.deltaPago>=0?"D":"C")+'</strong></td><td>Ativo de direito de uso (ROU)</td>'+
+          '<td style="text-align:right"><strong>'+BRL(Math.abs(e.deltaPago))+'</strong></td></tr>'+
+        '<tr><td><strong>'+(e.deltaPago>=0?"C":"D")+'</strong></td><td>Passivo de arrendamento</td>'+
+          '<td style="text-align:right"><strong>'+BRL(Math.abs(e.deltaPago))+'</strong></td></tr>'+
+        '</table>'+
+        '<p class="ltit">2 · Diferença dos juros a transcorrer</p><table>'+
+        '<tr><td><strong>'+(e.deltaJurosRem>=0?"C":"D")+'</strong></td><td>Ativo de direito de uso (ROU)</td>'+
+          '<td style="text-align:right"><strong>'+BRL(Math.abs(e.deltaJurosRem))+'</strong></td></tr>'+
+        '<tr><td><strong>'+(e.deltaJurosRem>=0?"D":"C")+'</strong></td><td>( − ) Juros a transcorrer</td>'+
+          '<td style="text-align:right"><strong>'+BRL(Math.abs(e.deltaJurosRem))+'</strong></td></tr>'+
+        '</table>'+
+        '<p class="lnet">Efeito líquido no ROU: '+BRL(Math.abs(e.deltaPago))+' − '+BRL(Math.abs(e.deltaJurosRem))+
+          ' = <strong>'+SIG(e.deltaPassivo)+'</strong> (igual à variação do valor presente)</p>'+
+        '<p style="margin:10px 0 0;font-size:12px;color:var(--ink-soft)">'+
+        'Os juros a transcorrer registrados acima ('+BRL(Math.abs(e.deltaJurosRem))+') são apropriados ao '+
+        'resultado ao longo das '+e.meses+' parcelas remanescentes, média de '+BRL(Math.abs(e.jurosMedioMes))+
+        '/mês, conforme a coluna Juros da memória de cálculo.</p>'+
+        '</div></div></div>';
+    });
+    html+='</div>';
+  }
+
+  html+='<div class="card"><h2>Memória de cálculo</h2><div class="scroll fit"><table>'+
+    '<colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4">'+
+    '<col class="cm"><col class="cm"><col class="cm"><col class="cm"><col class="cm">'+
+    '<col class="cm"><col class="cm"><col class="cm"><col class="cm"></colgroup>'+
+    '<thead><tr class="group">'+
+      '<th colspan="3">Período</th><th colspan="2">Contrato</th>'+
+      '<th colspan="5">Passivo de arrendamento</th>'+
+      '<th colspan="3">Ativo de direito de uso (ROU)'+
+      (deAbsT>1?' — '+(modoT==="retro"?"retrospectivo":"prospectivo"):'')+'</th></tr>'+
+    '<tr><th class="c">Ordem</th><th class="c">Mês/Ano</th><th class="c">Regime</th>'+
+      '<th>Taxa</th><th>Parcela</th>'+
+      '<th>Valor<br>Presente</th><th>Juros</th><th>Saldo<br>Inicial</th><th>Amorti&shy;zação</th><th>Saldo<br>Final</th>'+
+      '<th>Saldo<br>Inicial</th><th>Depre&shy;ciação</th><th>Saldo<br>Final</th>'+
+    '</tr></thead><tbody>';
+  const sAntes={n:0,pgto:0,vp:0,jur:0,dep:0}, sDepois={n:0,pgto:0,vp:0,jur:0,dep:0};
+  const subRow=function(rot,a){
+    return '<tr class="subt">'+
+      '<td class="lab" colspan="3">'+rot+' — '+a.n+' parcela(s)</td>'+
+      '<td></td><td>'+BRL(a.pgto)+'</td><td>'+BRL(a.vp)+'</td><td>'+BRL(a.jur)+'</td>'+
+      '<td></td><td>'+BRL(a.vp)+'</td><td></td>'+
+      '<td></td><td class="dep">'+PAR(a.dep)+'</td><td></td></tr>';
+  };
+  r.linhas.forEach(function(l){
+    const dd=DUMAP?DUMAP[l.abs]:null;
+    const depL=dd?dd.dep:l.dep;
+    const alvo=(l.abs<deAbsT)?sAntes:sDepois;
+    alvo.n++; alvo.pgto+=l.pgto; alvo.vp+=l.vp; alvo.jur+=l.juros; alvo.dep+=depL;
+    html+='<tr data-i="'+l.abs+'">'+
+      '<td class="c">'+l.ordem+'</td>'+
+      '<td class="c">'+competencia(ini,l.abs-1)+'</td>'+
+      '<td class="c">'+(l.inicioRegime?'<span class="badge">REMENSURADA</span>'
+                        :(l.tipo==="rem"?'<span class="reg">'+l.regime+'</span>':""))+'</td>'+
+      '<td>'+PCT(l.taxa)+'</td><td>'+BRL(l.pgto)+'</td>'+
+      '<td>'+BRL(l.vp)+'</td><td>'+BRL(l.juros)+'</td>'+
+      '<td>'+BRL(l.spI)+'</td><td>'+BRL(l.amort)+'</td><td>'+BRL(l.spF)+'</td>'+
+      (function(){
+        const d=DUMAP?DUMAP[l.abs]:null;
+        if(!d) return '<td>'+BRL(l.srI)+'</td><td class="dep">'+PAR(l.dep)+'</td><td>'+BRL(l.srF)+'</td>';
+        return '<td>'+BRL(d.anc-d.depAcIni)+'</td><td class="dep">'+PAR(d.dep)+'</td><td>'+BRL(d.anc-d.depAcFim)+'</td>';
+      })()+'</tr>';
+    if(deAbsT>1 && l.abs===deAbsT-1) html+=subRow('Subtotal anterior à escrituração',sAntes);
+  });
+  if(deAbsT>1) html+=subRow('Subtotal do período escriturado',sDepois);
+  html+='</tbody><tfoot><tr><td colspan="3" class="l">Total</td>'+
+    '<td></td><td>'+BRL(T.pgto)+'</td>'+
+    '<td>'+BRL(T.vp)+'</td><td>'+BRL(T.juros)+'</td><td></td><td>'+BRL(T.vp)+'</td><td></td>'+
+    '<td></td><td class="dep">'+PAR((function(){
+      if(!DUMAP) return T.dep;
+      let t=0; r.linhas.forEach(function(x){ const d=DUMAP[x.abs]; t+= d? d.dep : x.dep; }); return t;
+    })())+'</td><td></td>'+
+    '</tr></tfoot></table></div>'+
+    '<div class="formula">'+
+      'Valor Presente = Parcela ÷ (1 + Taxa)<sup>Ordem</sup> &nbsp;·&nbsp; Juros = Parcela − Valor Presente<br>'+
+      'Passivo inicial = Σ Valor Presente do regime &nbsp;·&nbsp; Amortização = Valor Presente da parcela &nbsp;·&nbsp; Saldo final = Saldo inicial − Amortização<br>'+
+      'Depreciação = saldo do ROU ÷ meses restantes. Na remensuração o ROU mantém o saldo já depreciado e recebe o ajuste (novo passivo − passivo remanescente).'+
+    '</div>'+
+    '<p class="hint" style="margin-top:8px">'+
+      '<span class="tagesc">C</span> início da escrituração &nbsp;·&nbsp; '+
+      'linha em verde: competência a partir da qual o contrato passa a ser contabilizado &nbsp;·&nbsp; '+
+      'as colunas de ROU seguem o tratamento escolhido na conciliação &nbsp;·&nbsp; '+
+      'clique numa linha para ver o detalhamento.</p>'+
+    '<div class="memo" id="memo"></div></div>';
+
+  out.innerHTML=html;
+  preencherConc();
+  marcarEscrituracao();
+  [].slice.call(out.querySelectorAll("tbody tr")).forEach(function(tr){
+    tr.onclick=function(){
+      [].slice.call(out.querySelectorAll("tbody tr")).forEach(function(x){x.classList.remove("sel");});
+      tr.classList.add("sel"); detalhar(parseInt(tr.dataset.i));
+    };
+  });
+}
+
+function detalhar(abs){
+  if(!R) return;
+  const l=R.linhas.filter(function(x){return x.abs===abs;})[0]; if(!l) return;
+  const ini=el("inicio").value, memo=el("memo");
+  let h="";
+
+  const e=R.eventos.filter(function(x){return x.parcela===abs;})[0];
+  if(e){
+    h+='<h3>'+e.rotulo+' — parcela '+abs+' ('+competencia(ini,abs-1)+')</h3>'+
+      '<div class="step" data-n="1"><h4>Novo passivo do regime</h4>'+
+      '<p>Soma do valor presente das '+e.meses+' parcelas do novo regime, descontadas pela ordem que cada uma ocupa no contrato.</p>'+
+      '<div class="calc">Σ [ '+BRL(e.pgtoNovo)+' ÷ (1 + '+PCT(e.taxaNova)+')<sup>k</sup> ] , k = '+e.parcela+' … '+(e.parcela+e.meses-1)+
+      '<br><strong>= '+BRL(e.passivoNovo)+'</strong></div></div>'+
+      '<div class="step" data-n="2"><h4>Ajuste do passivo (valor do lançamento)</h4>'+
+      '<div class="calc">'+BRL(e.passivoNovo)+' − '+BRL(e.passivoAntes)+' = <strong>'+SIG(e.deltaPassivo)+'</strong></div></div>'+
+      '<div class="step" data-n="3"><h4>Ajuste do ROU</h4>'+
+      '<p>O saldo já depreciado é mantido e recebe a mesma variação apurada no passivo.</p>'+
+      '<div class="calc">'+BRL(e.rouAntes)+' '+(e.deltaRou>=0?'+':'−')+' '+BRL(Math.abs(e.deltaRou))+' = <strong>'+BRL(e.rouNovo)+'</strong></div></div>'+
+      '<div class="step" data-n="4"><h4>Diferença de juros a apropriar</h4>'+
+      '<p>Juros que ainda seriam reconhecidos sob os termos antigos versus sob os novos.</p>'+
+      '<div class="calc">Antes: '+BRL(e.pagoAntes)+' − '+BRL(e.passivoAntes)+' = '+BRL(e.jurosRemAntes)+
+      '<br>Depois: '+BRL(e.pagoNovo)+' − '+BRL(e.passivoNovo)+' = '+BRL(e.jurosRemNovo)+
+      '<br><strong>Diferença = '+SIG(e.deltaJurosRem)+'</strong> em '+e.meses+' parcelas ('+BRL(e.jurosMedioMes)+'/mês em média)</div></div>'+
+      '<div class="step" data-n="5"><h4>Nova depreciação mensal</h4>'+
+      '<p>O saldo ajustado do ROU passa a ser depreciado pelos meses que restam.</p>'+
+      '<div class="calc">'+BRL(e.rouNovo)+' ÷ '+e.meses+' meses = <strong>'+BRL(e.quotaNova)+' / mês</strong></div></div>';
+  }
+
+  /* ---- memória de cálculo completa da parcela ---- */
+  const g=R.regimes.filter(function(x){return abs>=x.inicio && abs<=x.fim;})[0];
+  const d=DUMAP?DUMAP[abs]:null;
+  const rouI = d ? d.anc-d.depAcIni : l.srI;
+  const depL = d ? d.dep            : l.dep;
+  const rouF = d ? d.anc-d.depAcFim : l.srF;
+  const nTot = R.linhas.length;
+  const deA  = parseInt(el("concIni").value)||1;
+  const modo = (el("concDepr")&&el("concDepr").value)||"pros";
+
+  /* período que sustenta a quota de depreciação vigente */
+  let iniPer, mesesPer, basePer;
+  if(d && modo==="pros"){
+    iniPer  = Math.max(deA, g?g.inicio:1);
+    mesesPer= nTot-iniPer+1;
+    const dp= DUMAP[iniPer];
+    basePer = dp ? dp.anc-dp.depAcIni : rouI;
+  } else {
+    iniPer  = g?g.inicio:1;
+    mesesPer= g?(g.fimContratado-g.inicio+1):nTot;
+    const lp= R.linhas.filter(function(x){return x.abs===iniPer;})[0];
+    const dp= DUMAP?DUMAP[iniPer]:null;
+    basePer = dp ? dp.anc-dp.depAcIni : (lp?lp.srI:rouI);
+  }
+
+  const pagos = R.linhas.filter(function(x){return x.abs<=abs;});
+  const acPg  = pagos.reduce(function(a,x){return a+x.pgto;},0);
+  const acJu  = pagos.reduce(function(a,x){return a+x.juros;},0);
+  const acDep = R.linhas.filter(function(x){return x.abs<=abs;})
+                        .reduce(function(a,x){const q=DUMAP?DUMAP[x.abs]:null; return a+(q?q.dep:x.dep);},0);
+
+  h+='<h3>Memória de cálculo — parcela '+l.ordem+' ('+competencia(ini,abs-1)+')</h3>'+
+
+    '<div class="step" data-n="1"><h4>Termos vigentes</h4>'+
+    '<p>'+(g&&g.tipo==="rem"
+            ? 'Parcela sob o regime da <strong>'+g.rotulo+'</strong>, em vigor desde a parcela '+g.inicio+'.'
+            : 'Parcela sob os termos originais do contrato.')+'</p>'+
+    '<div class="calc">Parcela '+BRL(l.pgto)+' &nbsp;·&nbsp; taxa '+PCT(l.taxa)+' a.m.'+
+      (g?'<br>Regime contratado até a parcela '+g.fimContratado+' ('+(g.fimContratado-g.inicio+1)+' meses)':'')+
+    '</div></div>'+
+
+    '<div class="step" data-n="2"><h4>Valor presente da parcela</h4>'+
+    '<p>Descontada pela ordem que ocupa na linha do tempo do contrato.</p>'+
+    '<div class="calc">'+BRL(l.pgto)+' ÷ (1 + '+PCT(l.taxa)+')<sup>'+l.ordem+'</sup> = <strong>'+BRL(l.vp)+'</strong></div></div>'+
+
+    '<div class="step" data-n="3"><h4>Juros do período</h4>'+
+    '<p>Diferença entre o valor nominal da parcela e o seu valor presente.</p>'+
+    '<div class="calc">'+BRL(l.pgto)+' − '+BRL(l.vp)+' = <strong>'+BRL(l.juros)+'</strong></div></div>'+
+
+    '<div class="step" data-n="4"><h4>Passivo de arrendamento</h4>'+
+    '<div class="calc">Saldo inicial &nbsp;'+BRL(l.spI)+
+      '<br>( − ) Amortização &nbsp;'+BRL(l.amort)+' &nbsp;<span style="color:#4a6572">(valor presente da parcela)</span>'+
+      '<br><strong>= Saldo final &nbsp;'+BRL(l.spF)+'</strong></div></div>'+
+
+    '<div class="step" data-n="5"><h4>Quota de depreciação</h4>'+
+    '<p>'+(d&&modo==="pros"
+            ? 'Tratamento prospectivo: base reconhecida na adoção dividida pelos meses restantes.'
+            : (g&&g.tipo==="rem"
+               ? 'Saldo do ativo no início do regime dividido pelos meses contratados dele.'
+               : 'Ativo inicial dividido pelo prazo do contrato.'))+'</p>'+
+    '<div class="calc">'+BRL(basePer)+' ÷ '+mesesPer+' meses = <strong>'+BRL(depL)+' / mês</strong>'+
+      '<br><span style="color:#4a6572">base apurada na parcela '+iniPer+' ('+competencia(ini,iniPer-1)+')</span></div></div>'+
+
+    '<div class="step" data-n="6"><h4>Ativo de direito de uso</h4>'+
+    '<div class="calc">Saldo inicial &nbsp;'+BRL(rouI)+
+      '<br>( − ) Depreciação &nbsp;'+BRL(depL)+
+      '<br><strong>= Saldo final &nbsp;'+BRL(rouF)+'</strong></div></div>'+
+
+    '<div class="step" data-n="7"><h4>Lançamentos da competência</h4>'+
+    '<div class="calc">D &nbsp;Arrendamentos &nbsp;'+BRL(l.pgto)+' &nbsp;/&nbsp; C &nbsp;Bancos &nbsp;'+BRL(l.pgto)+
+      '<br>D &nbsp;Despesas com Juros &nbsp;'+BRL(l.juros)+' &nbsp;/&nbsp; C &nbsp;( − ) Juros a Transcorrer &nbsp;'+BRL(l.juros)+
+      '<br>D &nbsp;Despesa de depreciação &nbsp;'+BRL(depL)+' &nbsp;/&nbsp; C &nbsp;Depreciação Acumulada &nbsp;'+BRL(depL)+
+    '</div></div>'+
+
+    '<div class="step" data-n="8"><h4>Acumulado até esta parcela</h4>'+
+    '<div class="calc">Parcelas pagas &nbsp;'+BRL(acPg)+' &nbsp;('+pagos.length+' parcelas)'+
+      '<br>Juros apropriados &nbsp;'+BRL(acJu)+
+      '<br>Depreciação acumulada &nbsp;'+BRL(acDep)+
+      '<br>Parcelas a vencer &nbsp;'+(nTot-abs)+'</div></div>';
+
+  memo.innerHTML=h; memo.classList.add("on");
+  memo.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+
+function preencherConc(){
+  const ini=el("inicio").value, selI=el("concIni");
+  const antes=selI.value;
+  selI.innerHTML="";
+  R.linhas.forEach(function(l){
+    const o=document.createElement("option");
+    o.value=l.abs; o.textContent=competencia(ini,l.abs-1)+"  (parcela "+l.abs+")";
+    selI.appendChild(o);
+  });
+  if(antes && parseInt(antes)<=R.linhas.length) selI.value=antes;
+  preencherMeses();
+  el("concCard").style.display="block";
+  el("concOut").innerHTML="";
+}
+
+/* Constrói o Direito de Uso a partir da adoção, nos dois tratamentos possíveis:
+
+   "pros"  — PROSPECTIVO: o ativo é reconhecido pelo valor presente das parcelas
+             remanescentes na data de adoção e depreciado pelos meses que restam.
+             Não há depreciação acumulada de períodos anteriores.
+
+   "retro" — RETROSPECTIVO: o ativo é reconhecido pelo valor original do contrato e
+             lança-se um ajuste na Depreciação Acumulada referente aos períodos que
+             ficaram de fora, mantendo a quota original.
+
+   Nos dois casos o Direito de Uso líquido zera na última parcela. */
+function esquemaDU(modo, deAbs){
+  if(!R || !R.linhas.length) return null;
+  const n=R.linhas.length;
+  const map={};
+  const ev=function(ab){ return R.eventos.filter(function(e){return e.parcela===ab;})[0]; };
+
+  if(modo==="retro"){
+    /* Percorre o contrato desde a parcela 1: o ativo bruto acumula TODAS as variações
+       de remensuração (inclusive as anteriores à adoção) e a depreciação acumulada
+       incorpora os períodos que ficaram de fora. O líquido reproduz o saldo do ROU
+       do contrato e, por isso, zera na última parcela. */
+    let anc=R.linhas[0].srI, depAc=0, catchUp=0;
+    for(let ab=1;ab<=n;ab++){
+      const l=R.linhas[ab-1], e=ev(ab);
+      if(e) anc+=e.deltaPassivo;
+      if(ab===deAbs) catchUp=depAc;
+      if(ab>=deAbs) map[ab]={anc:anc, depAcIni:depAc, dep:l.dep, depAcFim:depAc+l.dep};
+      depAc+=l.dep;
+    }
+    map.catchUp=catchUp;
+    map.modo="retro";
+  } else {
+    let anc=R.linhas[deAbs-1].spI, depAc=0;
+    let quota=anc/(n-deAbs+1);
+    for(let ab=deAbs;ab<=n;ab++){
+      const e=ev(ab);
+      if(e && ab>deAbs){ anc+=e.deltaPassivo; quota=(anc-depAc)/(n-ab+1); }
+      const dep=Math.min(quota, anc-depAc);
+      map[ab]={anc:anc, depAcIni:depAc, dep:dep, depAcFim:depAc+dep};
+      depAc+=dep;
+    }
+    map.catchUp=0;
+    map.modo="pros";
+  }
+  return map;
+}
+
+function marcarEscrituracao(){
+  if(!R) return;
+  const de=parseInt(el("concIni").value)||1;
+  const linhas=document.querySelectorAll('#out tbody tr[data-i]');
+  [].slice.call(linhas).forEach(function(tr){
+    tr.classList.remove("escrit");
+    const t=tr.querySelector(".tagesc"); if(t) t.remove();
+  });
+  if(de<=1) return;                       /* contabilizado desde o início: nada a marcar */
+  const alvo=document.querySelector('#out tbody tr[data-i="'+de+'"]');
+  if(alvo){
+    alvo.classList.add("escrit");
+    const td=alvo.children[2];
+    if(td){
+      const sp=document.createElement("span");
+      sp.className="tagesc"; sp.textContent="C"; sp.title="Início da escrituração";
+      td.appendChild(sp);
+    }
+  }
+}
+
+function preencherMeses(){
+  if(!R) return;
+  const ini=el("inicio").value, sel=el("concMes");
+  const de=parseInt(el("concIni").value)||1;
+  const antes=sel.value;
+  sel.innerHTML="";
+  R.linhas.filter(function(l){return l.abs>=de;}).forEach(function(l){
+    const o=document.createElement("option");
+    o.value=l.abs; o.textContent=competencia(ini,l.abs-1)+"  (parcela "+l.abs+")";
+    sel.appendChild(o);
+  });
+  if(antes && parseInt(antes)>=de) sel.value=antes;
+}
+
+function conciliar(){
+  if(!R) return;
+  const ini=el("inicio").value;
+  const m=parseInt(el("concMes").value);
+  const l=R.linhas.filter(function(x){return x.abs===m;})[0];
+  if(!l) return;
+  const S=function(arr,f){return arr.reduce(function(a,x){return a+f(x);},0);};
+
+  const base=el("concBase").value;                 /* "ab" abertura | "fe" fechamento */
+  const abertura=(base==="ab");
+  const deAbs=parseInt(el("concIni").value)||1;      /* início da contabilização */
+  const ate=R.linhas.filter(function(x){
+    return x.abs>=deAbs && (abertura ? x.abs<m : x.abs<=m);
+  });
+  const adocao=(m===deAbs);                          /* competência de entrada na escrituração */
+
+  /* Projeção pelas condições VIGENTES na data: usa o regime em curso e o seu prazo
+     contratado. Remensurações futuras não são antecipadas. */
+  const g=R.regimes.filter(function(x){return m>=x.inicio && m<=x.fim;})[0];
+  const rest=[];
+  if(g){
+    const de = abertura ? m : m+1;
+    for(let k=de;k<=g.fimContratado;k++){
+      const v=g.pgto/Math.pow(1+g.taxa,k);
+      rest.push({abs:k, pgto:g.pgto, vp:v, juros:g.pgto-v});
+    }
+  }
+
+  /* Curto prazo = vencimentos até 31/12 do exercício SEGUINTE ao da competência analisada.
+     A segregação acompanha o fechamento do exercício, não uma janela móvel de 12 meses. */
+  const dRef=dataDaParcela(m), anoLimite=dRef.getFullYear()+1;
+  const noPC=function(x){ return dataDaParcela(x.abs).getFullYear()<=anoLimite; };
+  const pc  =rest.filter(noPC);
+  const pnc =rest.filter(function(x){return !noPC(x);});
+
+  const saldoPassivo = abertura ? l.spI : l.spF;
+
+  const modo=el("concDepr").value||"pros";
+  const DU=esquemaDU(modo,deAbs);
+  const du=DU?DU[m]:null;
+  const ancDU   = du?du.anc:0;
+  const depAcDU = du?(abertura?du.depAcIni:du.depAcFim):0;
+  const depMesDU= du?du.dep:0;
+  const rouLiq  = ancDU-depAcDU;
+
+  const arrPC=S(pc,function(x){return x.pgto;}),  arrPNC=S(pnc,function(x){return x.pgto;});
+  const jurPC=S(pc,function(x){return x.juros;}), jurPNC=S(pnc,function(x){return x.juros;});
+  const liquido=(arrPC+arrPNC)-(jurPC+jurPNC);
+
+  const pagoAc=S(ate,function(x){return x.pgto;});
+  const jurAc =S(ate,function(x){return x.juros;});
+  const depAc =S(ate,function(x){return x.dep;});
+  const rouIni=R.linhas[0].srI;
+
+  const dif=Math.abs(liquido-saldoPassivo);
+
+  let h='<table class="ctab">'+
+    '<thead><tr><th>Conta</th><th>Saldo em '+competencia(ini,m-1)+
+      (abertura?' (abertura)':' (fechamento)')+'</th><th>Natureza</th></tr></thead><tbody>'+
+    '<tr class="grp"><td colspan="3">Ativo não circulante</td></tr>'+
+    '<tr><td>Direito de Uso (ANC)</td><td>'+BRL(ancDU)+'</td><td class="nat">Devedora</td></tr>'+
+    '<tr class="grp"><td colspan="3">Passivo circulante — vencimentos até 31/12/'+anoLimite+'</td></tr>'+
+    '<tr><td>Arrendamentos (PC)</td><td>'+BRL(arrPC)+'</td><td class="nat">Credora · '+pc.length+' parcelas</td></tr>'+
+    '<tr><td>( − ) Juros a Transcorrer (PC)</td><td>'+PAR(jurPC)+'</td><td class="nat">Devedora / redutora</td></tr>'+
+    '<tr class="sub"><td>Arrendamentos líquidos (PC)</td><td>'+BRL(arrPC-jurPC)+'</td><td></td></tr>'+
+    '<tr class="grp"><td colspan="3">Passivo não circulante — vencimentos a partir de 01/01/'+(anoLimite+1)+'</td></tr>'+
+    '<tr><td>Arrendamentos (PNC)</td><td>'+BRL(arrPNC)+'</td><td class="nat">Credora · '+pnc.length+' parcelas</td></tr>'+
+    '<tr><td>( − ) Juros a Transcorrer (PNC)</td><td>'+PAR(jurPNC)+'</td><td class="nat">Devedora / redutora</td></tr>'+
+    '<tr class="sub"><td>Arrendamentos líquidos (PNC)</td><td>'+BRL(arrPNC-jurPNC)+'</td><td></td></tr>'+
+    '<tr class="tot"><td>Passivo de arrendamento líquido (PC + PNC)</td><td>'+BRL(liquido)+'</td><td></td></tr>'+
+    '</tbody></table>';
+
+  h+='<div class="okline">Amarração: passivo líquido '+BRL(liquido)+
+     ' = saldo do passivo na memória de cálculo '+BRL(saldoPassivo)+
+     (dif<0.01?' &nbsp;✓ confere':' &nbsp;⚠ diferença de '+BRL(dif))+'</div>';
+
+  if(adocao){
+    /* Usa a MESMA projeção da tabela de saldos: condições vigentes na data de adoção.
+       Uma remensuração futura ainda não foi contratada e não pode ser antecipada aqui. */
+    const antesAd = R.linhas.filter(function(x){return x.abs< m;});
+    const nRest   = rest.length;
+    const brutoAd = arrPC+arrPNC;
+    const vpAd    = liquido;
+    const jurAd   = jurPC+jurPNC;
+    /* O Direito de Uso é reconhecido pelo valor presente das parcelas remanescentes */
+    const aDeprec = vpAd;
+    const quotaVig = nRest ? vpAd/nRest : 0;
+    const depAnt  = S(antesAd,function(x){return x.dep;});
+    const jurAnt  = S(antesAd,function(x){return x.juros;});
+    const ajuste  = depAnt+jurAnt;
+
+    h+='<table class="ctab">'+
+      '<thead><tr><th>Entrada na escrituração — '+competencia(ini,m-1)+'</th><th>Valor</th><th>Composição</th></tr></thead><tbody>'+
+      '<tr class="grp"><td colspan="3">Posição do contrato na data de adoção</td></tr>'+
+      '<tr><td>Arrendamentos (bruto)</td><td>'+BRL(brutoAd)+'</td><td class="nat">'+nRest+' parcelas a vencer</td></tr>'+
+      '<tr><td>( − ) Juros a Transcorrer</td><td>'+PAR(jurAd)+'</td><td class="nat">bruto − valor presente</td></tr>'+
+      '<tr class="sub"><td>Valor presente das parcelas remanescentes</td><td>'+BRL(vpAd)+'</td><td class="nat">passivo líquido</td></tr>'+
+      '<tr><td>Direito de Uso reconhecido</td><td>'+BRL(aDeprec)+'</td><td class="nat">= valor presente remanescente</td></tr>'+'<tr><td>Depreciação mensal a partir daqui</td><td>'+BRL(quotaVig)+'</td><td class="nat">'+BRL(aDeprec)+' ÷ '+nRest+' meses</td></tr>'+
+      '<tr class="grp"><td colspan="3">Ajuste de exercícios anteriores ('+antesAd.length+' parcela(s) não escriturada(s))</td></tr>'+
+      '<tr><td>Depreciação acumulada</td><td>'+BRL(depAnt)+'</td><td class="nat">quota × '+antesAd.length+'</td></tr>'+
+      '<tr><td>Juros acumulados</td><td>'+BRL(jurAnt)+'</td><td class="nat">parcelas − valor presente</td></tr>'+
+      '<tr class="tot"><td>Ajustes de Exercícios Anteriores</td><td>'+BRL(ajuste)+'</td><td></td></tr>'+
+      '</tbody></table>';
+
+    h+='<table class="ctab">'+
+      '<thead><tr><th>Lançamentos de entrada em '+competencia(ini,m-1)+'</th><th>D</th><th>C</th></tr></thead><tbody>'+
+      '<tr class="grp"><td colspan="3">1 · Reconhecimento do contrato pelo saldo remanescente</td></tr>'+
+      '<tr><td>Direito de Uso (ANC)</td><td>'+BRL(aDeprec)+'</td><td></td></tr>'+
+      '<tr><td>( − ) Juros a Transcorrer</td><td>'+BRL(jurAd)+'</td><td></td></tr>'+
+      '<tr><td>Arrendamentos (PC + PNC)</td><td></td><td>'+BRL(brutoAd)+'</td></tr>'+
+      '<tr><td>Ajustes de Exercícios Anteriores</td><td></td><td>'+BRL(aDeprec+jurAd-brutoAd)+'</td></tr>'+
+      '<tr class="grp"><td colspan="3">2 · Encargos dos períodos não escriturados</td></tr>'+
+      '<tr><td>Ajustes de Exercícios Anteriores</td><td>'+BRL(ajuste)+'</td><td></td></tr>'+
+      '<tr><td>Depreciação acumulada / Direito de Uso</td><td></td><td>'+BRL(depAnt)+'</td></tr>'+
+      '<tr><td>( − ) Juros a Transcorrer</td><td></td><td>'+BRL(jurAnt)+'</td></tr>'+
+      '</tbody></table>';
+
+    if(antesAd.length){
+      h+='<div class="msg info">O contrato começou em '+competencia(ini,0)+' e a escrituração inicia em '+
+         competencia(ini,m-1)+'. As '+antesAd.length+' parcela(s) anteriores geram '+BRL(ajuste)+
+         ' de Ajustes de Exercícios Anteriores ('+BRL(depAnt)+' de depreciação + '+BRL(jurAnt)+' de juros).</div>';
+    }
+    ADOC={bruto:brutoAd, jur:jurAd, vp:vpAd, aDeprec:aDeprec, quota:quotaVig, depAnt:depAnt,
+          jurAnt:jurAnt, ajuste:ajuste, nRest:nRest, nAnt:antesAd.length};
+  } else { ADOC=null; }
+
+  {
+  h+='<table class="ctab">'+
+    '<thead><tr><th>Movimento da competência '+competencia(ini,m-1)+'</th><th>D</th><th>C</th></tr></thead><tbody>'+
+    '<tr class="grp"><td colspan="3">Pagamento da parcela</td></tr>'+
+    '<tr><td>Arrendamentos (PC)</td><td>'+BRL(l.pgto)+'</td><td></td></tr>'+
+    '<tr><td>Bancos (AC)</td><td></td><td>'+BRL(l.pgto)+'</td></tr>'+
+    '<tr class="grp"><td colspan="3">Apropriação dos juros</td></tr>'+
+    '<tr><td>Despesas com Juros (DRE)</td><td>'+BRL(l.juros)+'</td><td></td></tr>'+
+    '<tr><td>( − ) Juros a Transcorrer (PC)</td><td></td><td>'+BRL(l.juros)+'</td></tr>'+
+    '<tr class="grp"><td colspan="3">Depreciação do direito de uso</td></tr>'+
+    '<tr><td>Despesa de depreciação (DRE)</td><td>'+BRL(depMesDU)+'</td><td></td></tr>'+
+    '<tr><td>Depreciação Acumulada</td><td></td><td>'+BRL(depMesDU)+'</td></tr>'+
+    '</tbody></table>';
+  }
+
+  h+='<table class="ctab">'+
+    '<thead><tr><th>Acumulado escriturado ('+competencia(ini,deAbs-1)+' a '+
+      (abertura?competencia(ini,Math.max(deAbs,m)-1-(m>deAbs?1:0)):competencia(ini,m-1))+
+      ')</th><th>Valor</th><th>Parcelas</th></tr></thead><tbody>'+
+    '<tr><td>Parcelas pagas</td><td>'+BRL(pagoAc)+'</td><td>'+ate.length+'</td></tr>'+
+    '<tr><td>Juros apropriados</td><td>'+BRL(jurAc)+'</td><td></td></tr>'+
+    '<tr><td>Depreciação acumulada</td><td>'+BRL(depAcDU)+'</td><td></td></tr>'+
+    '<tr class="tot"><td>Parcelas a vencer</td><td>'+BRL(arrPC+arrPNC)+'</td><td>'+rest.length+'</td></tr>'+
+    '</tbody></table>';
+
+  h+='<table class="ctab"><tbody>'+
+    '<tr><td>Direito de Uso (ANC)</td><td>'+BRL(ancDU)+'</td></tr>'+
+    '<tr><td>( − ) Depreciação Acumulada</td><td>'+PAR(depAcDU)+'</td></tr>'+
+    '<tr class="tot"><td>Direito de Uso líquido</td><td>'+BRL(rouLiq)+'</td></tr>'+
+    '</tbody></table>'+
+    '<div class="msg info">Tratamento '+(modo==="retro"
+      ? '<strong>retrospectivo</strong>: ativo reconhecido pelo valor original e ajuste de '+
+        BRL(DU.catchUp)+' na Depreciação Acumulada referente às '+(deAbs-1)+' parcela(s) anteriores à adoção.'
+      : '<strong>prospectivo</strong>: ativo reconhecido pelo valor presente remanescente na adoção, '+
+        'depreciado pelos meses restantes.')+'</div>';
+
+  CONC={
+    cliente:el("cliente").value, contrato:el("contrato").value,
+    comp:competencia(ini,m-1), base:abertura?"Abertura":"Fechamento",
+    inicioEscrit:competencia(ini,deAbs-1), adocao:adocao, anoLimite:anoLimite,
+    saldoRou:ancDU, rouLiquido:rouLiq, depAcDU:depAcDU, depMes:depMesDU, modo:modo, catchUp:DU?DU.catchUp:0, arrPC:arrPC, jurPC:jurPC, arrPNC:arrPNC, jurPNC:jurPNC,
+    liquido:liquido, saldoPassivo:saldoPassivo, dif:dif, nPC:pc.length, nPNC:pnc.length,
+    pgtoMes:l.pgto, jurosMes:l.juros,
+    pagoAc:pagoAc, jurAc:jurAc, depAc:depAc, nAte:ate.length, nRest:rest.length
+  };
+  el("concOut").innerHTML=h;
+}
+
+
+/* ================= BASE DE DADOS — GOOGLE SHEETS =================
+   Duas abas na planilha:
+   "Contratos"     : Cliente | Contrato | Competencia Inicial | Prazo | Parcela | Taxa
+   "Remensuracoes" : Contrato | Parcela | Novo Valor | Nova Taxa | Novo Prazo
+   A planilha precisa estar compartilhada como "qualquer pessoa com o link".
+================================================================= */
+let BASE={contratos:[], rems:[]};
+
+function gsMsg(txt,tipo){ el("gsMsg").innerHTML='<div class="msg '+(tipo||"info")+'">'+txt+'</div>'; }
+
+function pnum(v){
+  if(v===null||v===undefined) return null;
+  let t=String(v).replace(/[R$\s%]/g,"").trim();
+  if(t==="") return null;
+  if(t.indexOf(",")>-1 && t.indexOf(".")>-1) t=t.replace(/\./g,"").replace(",",".");
+  else if(t.indexOf(",")>-1) t=t.replace(",",".");
+  const n=parseFloat(t);
+  return isNaN(n)?null:n;
+}
+
+function pcomp(v){
+  const t=String(v||"").trim();
+  let m=t.match(/^(\d{1,2})[\/\-](\d{4})$/);          if(m) return m[2]+"-"+m[1].padStart(2,"0");
+  m=t.match(/^(\d{4})[\-\/](\d{1,2})/);                if(m) return m[1]+"-"+m[2].padStart(2,"0");
+  m=t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/); if(m) return m[3]+"-"+m[2].padStart(2,"0");
+  return "";
+}
+
+function carregarBase(){
+  if(!WEBAPP_URL){
+    gsMsg("Nenhuma base configurada. Abra este arquivo num editor de texto e preencha "+
+          "<strong>WEBAPP_URL</strong> no início do bloco &lt;script&gt; com a URL do Web App "+
+          "publicado pelo Apps Script da sua planilha. Use <strong>Baixar modelo</strong> para "+
+          "gerar a estrutura das abas.","err");
+    return;
+  }
+  gsMsg("Carregando base...","info");
+  fetch(WEBAPP_URL,{redirect:"follow"})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(function(d){
+      if(!d || d.ok===false) throw new Error((d&&d.erro)||"resposta inválida");
+
+      BASE.contratos=(d.contratos||[]).map(function(x){
+        return {
+          cliente : String(x.cliente||"").trim(),
+          contrato: String(x.contrato||"").trim(),
+          comp    : pcomp(x.competenciainicial||x.competencia||x.inicio||x.datainicio),
+          prazo   : pnum(x.prazo),
+          parcela : pnum(x.parcela!==undefined?x.parcela:x.valor),
+          taxa    : pnum(x.taxa!==undefined?x.taxa:x.taxaam)
+        };
+      }).filter(function(x){return x.cliente&&x.contrato;});
+
+      BASE.rems=(d.remensuracoes||[]).map(function(x){
+        return {
+          contrato: String(x.contrato||"").trim(),
+          parcela : pnum(x.parcela!==undefined?x.parcela:x.apartirdaparcela),
+          pgto    : pnum(x.novovalor!==undefined?x.novovalor:x.valor),
+          taxa    : pnum(x.novataxa!==undefined?x.novataxa:x.taxa),
+          prazo   : pnum(x.novoprazo!==undefined?x.novoprazo:x.prazo)
+        };
+      }).filter(function(x){return x.contrato&&x.parcela;});
+
+      const cli=[];
+      BASE.contratos.forEach(function(c){ if(cli.indexOf(c.cliente)<0) cli.push(c.cliente); });
+      const sc=el("gsCliente"); sc.innerHTML='<option value="">—</option>';
+      cli.sort().forEach(function(c){
+        const o=document.createElement("option"); o.value=c; o.textContent=c; sc.appendChild(o);
+      });
+      el("gsContrato").innerHTML='<option value="">—</option>';
+
+      gsMsg("Base carregada"+(d.planilha?" de <strong>"+d.planilha+"</strong>":"")+": "+
+            BASE.contratos.length+" contrato(s) e "+BASE.rems.length+" remensuração(ões)."+
+            (d.atualizado?" &nbsp;·&nbsp; "+d.atualizado:""),"ok");
+    })
+    .catch(function(e){
+      gsMsg("Não foi possível ler a base ("+e.message+"). Verifique se o Web App foi implantado "+
+            "com acesso para <strong>qualquer pessoa</strong> e se a URL termina em <strong>/exec</strong>.","err");
+    });
+}
+
+function filtrarContratos(){
+  const cli=el("gsCliente").value, sel=el("gsContrato");
+  sel.innerHTML='<option value="">—</option>';
+  const lista=BASE.contratos.filter(function(c){return !cli||c.cliente===cli;});
+  lista.forEach(function(c){
+    const o=document.createElement("option"); o.value=c.contrato; o.textContent=c.contrato; sel.appendChild(o);
+  });
+  if(lista.length===1){                 /* cliente com um único contrato: já aplica */
+    sel.value=lista[0].contrato;
+    aplicarContrato();
+  } else if(lista.length>1){
+    gsMsg("Selecione o contrato ("+lista.length+" disponíveis para "+cli+").","info");
+  }
+}
+
+function aplicarContrato(){
+  const cli=el("gsCliente").value, con=el("gsContrato").value;
+  if(!con){ return; }
+  const c=BASE.contratos.filter(function(x){
+    return x.contrato===con && (!cli||x.cliente===cli);
+  })[0];
+  if(!c){ gsMsg("Contrato \""+con+"\" não encontrado na base.","err"); return; }
+
+  /* diagnóstico: aponta o que veio vazio da planilha */
+  const faltando=[];
+  if(!c.comp)                      faltando.push("Competencia Inicial");
+  if(!c.prazo||c.prazo<1)          faltando.push("Prazo");
+  if(!c.parcela||c.parcela<=0)     faltando.push("Parcela");
+  if(c.taxa===null||c.taxa===undefined) faltando.push("Taxa");
+
+  el("cliente").value  = c.cliente;
+  el("contrato").value = c.contrato;
+  if(c.comp)    el("inicio").value = c.comp;
+  if(c.prazo)   el("prazo").value  = c.prazo;
+  if(c.parcela) el("pgto").value   = c.parcela;
+  if(c.taxa!==null&&c.taxa!==undefined) el("taxa").value = c.taxa;
+
+  el("rems").innerHTML=""; seq=0;
+  const rr=BASE.rems.filter(function(r){return r.contrato===con;})
+                    .sort(function(a,b){return a.parcela-b.parcela;});
+  rr.forEach(function(r){ addRem({parcela:r.parcela, pgto:r.pgto, taxa:r.taxa, prazo:r.prazo}); });
+  toggleEmpty();
+
+  el("concIni").value="";
+  CONC=null; ADOC=null;
+  render();
+
+  if(faltando.length){
+    gsMsg("Contrato <strong>"+c.contrato+"</strong> carregado, mas sem <strong>"+
+          faltando.join(", ")+"</strong> na planilha — esses campos mantiveram o valor anterior. "+
+          "Confira os cabeçalhos da aba Contratos: Cliente | Contrato | Competencia Inicial | Prazo | Parcela | Taxa.","err");
+  } else {
+    gsMsg("Contrato <strong>"+c.contrato+"</strong> · início "+c.comp.split("-").reverse().join("/")+
+          " · "+c.prazo+" meses · parcela "+BRL(c.parcela)+" · taxa "+c.taxa+"% a.m. · "+
+          rr.length+" remensuração(ões) — cálculo atualizado.","ok");
+  }
+}
+
+function msgSave(t,tipo){ el("gsSaveMsg").innerHTML='<div class="msg '+(tipo||"info")+'">'+t+'</div>'; }
+
+function coletarPayload(){
+  const iso=el("inicio").value;
+  const comp = iso ? iso.split("-")[1]+"/"+iso.split("-")[0] : "";
+  return {
+    token: TOKEN,
+    acao: "salvarContrato",
+    contrato: {
+      cliente: el("cliente").value.trim(),
+      contrato: el("contrato").value.trim(),
+      competencia: comp,
+      prazo: parseInt(el("prazo").value)||0,
+      parcela: parseFloat(el("pgto").value)||0,
+      taxa: Math.round((parseFloat(el("taxa").value)||0)*1e6)/1e6
+    },
+    remensuracoes: lerRems().map(function(r,i){
+      /* prazo em branco = "mantém o prazo atual": resolve pelo regime já calculado,
+         para gravar na planilha o número de meses efetivamente vigente */
+      var prazo=r.prazo;
+      if(prazo===null && R && R.regimes && R.regimes[i+1]){
+        var g=R.regimes[i+1];
+        prazo=g.fimContratado-g.inicio+1;
+      }
+      /* taxa em branco = mantém a anterior: grava a taxa vigente no regime */
+      var taxa=r.taxa;
+      if((taxa===null||taxa===undefined) && R && R.regimes && R.regimes[i+1]){
+        taxa=R.regimes[i+1].taxa;
+      }
+      return { parcela:r.parcela, valor:r.pgto,
+               taxa:(taxa===null||taxa===undefined?"":Math.round(taxa*100*1e6)/1e6),
+               prazo:(prazo===null?"":prazo) };
+    })
+  };
+}
+
+function enviar(payload, aoOk){
+  if(!WEBAPP_URL){ msgSave("Base não configurada.","err"); return; }
+  msgSave("Enviando para a planilha...","info");
+  fetch(WEBAPP_URL,{
+    method:"POST",
+    headers:{"Content-Type":"text/plain;charset=utf-8"},   /* evita o preflight do CORS */
+    body:JSON.stringify(payload),
+    redirect:"follow"
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if(!d){ throw new Error("resposta vazia"); }
+    if(d.ok===false){
+      /* recusa da planilha: mostra apenas o motivo, sem o texto de diagnóstico */
+      msgSave("<strong>Não gravado.</strong> "+(d.erro||"motivo não informado"),"err");
+      return;
+    }
+    msgSave(d.mensagem+" &nbsp;·&nbsp; "+d.atualizado,"ok");
+    if(aoOk) aoOk();
+    carregarBase();
+  })
+  .catch(function(e){
+    msgSave("Falha de comunicação com a planilha ("+e.message+"). Confirme se a implantação do "+
+            "Apps Script está com acesso para <strong>qualquer pessoa</strong>, se foi criada uma "+
+            "<strong>nova versão</strong> após atualizar o script, e se a senha (TOKEN) é a mesma "+
+            "nos dois arquivos.","err");
+  });
+}
+
+function salvarNaBase(){
+  const p=coletarPayload();
+  if(!p.contrato.cliente || !p.contrato.contrato){
+    msgSave("Informe o cliente e o contrato antes de salvar.","err"); return;
+  }
+  const n=p.remensuracoes.length;
+  if(!confirm("Salvar o contrato \""+p.contrato.contrato+"\" na planilha?\n\n"+
+              "Cliente: "+p.contrato.cliente+"\n"+
+              "Início: "+p.contrato.competencia+"\n"+
+              "Prazo: "+p.contrato.prazo+" meses\n"+
+              "Parcela: "+BRL(p.contrato.parcela)+"\n"+
+              "Taxa: "+p.contrato.taxa+"% a.m.\n"+
+              "Remensurações: "+n+"\n\n"+
+              "Se o contrato já existir, os dados serão substituídos e o histórico registrado.")) return;
+  enviar(p);
+}
+
+function excluirDaBase(){
+  const nome=el("contrato").value.trim();
+  if(!nome){ msgSave("Informe o contrato a excluir.","err"); return; }
+  if(!confirm("Excluir o contrato \""+nome+"\" da planilha?\n\n"+
+              "As remensurações dele também serão removidas.\n"+
+              "A exclusão fica registrada na aba Histórico.")) return;
+  enviar({token:TOKEN, acao:"excluirContrato", contrato:nome});
+}
+
+function baixarModelo(){
+  const wb=XLSX.utils.book_new();
+  const c=[["Cliente","Contrato","Competencia Inicial","Prazo","Parcela","Taxa"],
+           ["Empresa Exemplo Ltda","001/2020","04/2020",60,578854,1],
+           ["Empresa Exemplo Ltda","002/2021","01/2021",36,25000,0.9]];
+  const ws1=XLSX.utils.aoa_to_sheet(c);
+  ws1["!cols"]=[{wch:28},{wch:16},{wch:20},{wch:10},{wch:16},{wch:10}];
+  XLSX.utils.book_append_sheet(wb,ws1,"Contratos");
+  const r=[["Contrato","Parcela","Novo Valor","Nova Taxa","Novo Prazo"],
+           ["001/2020",13,694887.02,"",""],
+           ["001/2020",25,750000,"",""]];
+  const ws2=XLSX.utils.aoa_to_sheet(r);
+  ws2["!cols"]=[{wch:16},{wch:12},{wch:16},{wch:12},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,ws2,"Remensuracoes");
+  XLSX.writeFile(wb,"Modelo_Base_IFRS16.xlsx");
+}
+
+
+/* ---------- relatório de conciliação em PDF (via janela de impressão) ---------- */
+function relatorioConcPdf(){
+  if(!CONC){ alert("Apure os saldos antes de gerar o relatório."); return; }
+  const C=CONC;
+  const linha=function(a,b,c){
+    return '<tr><td>'+a+'</td><td class="n">'+(b===""?"":b)+'</td><td class="o">'+(c||"")+'</td></tr>';
+  };
+  const grp=function(t){ return '<tr class="g"><td colspan="3">'+t+'</td></tr>'; };
+
+  let corpo='<table>'+
+    '<thead><tr><th>Conta</th><th class="n">Saldo</th><th class="o">Observação</th></tr></thead><tbody>'+
+    grp('Ativo não circulante')+
+    linha('Direito de Uso (ANC)',BRL(C.saldoRou),'Devedora')+
+    grp('Passivo circulante — vencimentos até 31/12/'+C.anoLimite)+
+    linha('Arrendamentos (PC)',BRL(C.arrPC),C.nPC+' parcelas')+
+    linha('( − ) Juros a Transcorrer (PC)',PAR(C.jurPC),'Redutora')+
+    linha('<b>Arrendamentos líquidos (PC)</b>','<b>'+BRL(C.arrPC-C.jurPC)+'</b>','')+
+    grp('Passivo não circulante — a partir de 01/01/'+(C.anoLimite+1))+
+    linha('Arrendamentos (PNC)',BRL(C.arrPNC),C.nPNC+' parcelas')+
+    linha('( − ) Juros a Transcorrer (PNC)',PAR(C.jurPNC),'Redutora')+
+    linha('<b>Arrendamentos líquidos (PNC)</b>','<b>'+BRL(C.arrPNC-C.jurPNC)+'</b>','')+
+    '<tr class="t"><td>Passivo de arrendamento líquido</td><td class="n">'+BRL(C.liquido)+
+      '</td><td class="o">'+(C.nPC+C.nPNC)+' parcelas</td></tr>'+
+    '</tbody></table>'+
+    '<p class="ok">Amarração: passivo líquido '+BRL(C.liquido)+' = saldo na memória de cálculo '+
+      BRL(C.saldoPassivo)+(C.dif<0.01?' — confere.':' — diferença de '+BRL(C.dif)+'.')+'</p>';
+
+  if(ADOC){
+    corpo+='<h3>Entrada na escrituração</h3><table>'+
+      '<thead><tr><th>Item</th><th class="n">Valor</th><th class="o">Composição</th></tr></thead><tbody>'+
+      linha('Arrendamentos (bruto)',BRL(ADOC.bruto),ADOC.nRest+' parcelas a vencer')+
+      linha('( − ) Juros a Transcorrer',PAR(ADOC.jur),'bruto − valor presente')+
+      linha('<b>Valor presente das parcelas remanescentes</b>','<b>'+BRL(ADOC.vp)+'</b>','passivo líquido')+
+      linha('Direito de Uso a depreciar',BRL(ADOC.aDeprec),ADOC.nRest+' × quota mensal')+
+      grp('Ajuste de exercícios anteriores — '+ADOC.nAnt+' parcela(s) não escriturada(s)')+
+      linha('Depreciação acumulada',BRL(ADOC.depAnt),'')+
+      linha('Juros acumulados',BRL(ADOC.jurAnt),'')+
+      '<tr class="t"><td>Ajustes de Exercícios Anteriores</td><td class="n">'+BRL(ADOC.ajuste)+
+        '</td><td class="o"></td></tr>'+
+      '</tbody></table>';
+  }
+
+  corpo+='<h3>Movimento da competência '+C.comp+'</h3><table>'+
+    '<thead><tr><th>Conta</th><th class="n">Débito</th><th class="n">Crédito</th></tr></thead><tbody>'+
+    grp('Pagamento da parcela')+
+    '<tr><td>Arrendamentos (PC)</td><td class="n">'+BRL(C.pgtoMes)+'</td><td class="n"></td></tr>'+
+    '<tr><td>Bancos (AC)</td><td class="n"></td><td class="n">'+BRL(C.pgtoMes)+'</td></tr>'+
+    grp('Apropriação dos juros')+
+    '<tr><td>Despesas com Juros (DRE)</td><td class="n">'+BRL(C.jurosMes)+'</td><td class="n"></td></tr>'+
+    '<tr><td>( − ) Juros a Transcorrer (PC)</td><td class="n"></td><td class="n">'+BRL(C.jurosMes)+'</td></tr>'+
+    grp('Depreciação do direito de uso')+
+    '<tr><td>Despesa de depreciação (DRE)</td><td class="n">'+BRL(C.depMes)+'</td><td class="n"></td></tr>'+
+    '<tr><td>Direito de Uso (ANC)</td><td class="n"></td><td class="n">'+BRL(C.depMes)+'</td></tr>'+
+    '</tbody></table>';
+
+  corpo+='<h3>Acumulado escriturado</h3><table>'+
+    '<thead><tr><th>Item</th><th class="n">Valor</th><th class="o">Parcelas</th></tr></thead><tbody>'+
+    linha('Parcelas pagas',BRL(C.pagoAc),C.nAte)+
+    linha('Juros apropriados',BRL(C.jurAc),'')+
+    linha('Depreciação acumulada',BRL(C.depAcDU),'')+
+    '<tr class="t"><td>Parcelas a vencer</td><td class="n">'+BRL(C.arrPC+C.arrPNC)+
+      '</td><td class="o">'+C.nRest+'</td></tr>'+
+    '</tbody></table>'+
+    '<table><tbody>'+
+    '<tr><td>Direito de Uso (ANC)</td><td class="n">'+BRL(C.saldoRou)+'</td><td class="o"></td></tr>'+
+    '<tr><td>( − ) Depreciação Acumulada</td><td class="n">'+PAR(C.depAcDU)+'</td><td class="o"></td></tr>'+
+    '<tr class="t"><td><b>Direito de Uso líquido</b></td><td class="n"><b>'+BRL(C.rouLiquido)+
+      '</b></td><td class="o"></td></tr>'+
+    '</tbody></table>';
+
+  const doc='<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">'+
+    '<title>Conciliação '+(C.contrato||"")+' — '+C.comp+'</title><style>'+
+    '@page{size:A4 portrait;margin:16mm}'+
+    'body{font:12px/1.45 "Segoe UI",Arial,sans-serif;color:#12242e;margin:0}'+
+    'h1{font-size:17px;margin:0 0 2px;color:#1f3864}'+
+    '.sub{font-size:11px;color:#5b6b76;margin:0 0 14px}'+
+    '.cab{border-bottom:2px solid #1f3864;padding-bottom:10px;margin-bottom:16px}'+
+    '.meta{display:flex;flex-wrap:wrap;gap:0 26px;font-size:11px;margin-top:8px}'+
+    '.meta b{color:#1f3864}'+
+    'h3{font-size:13px;margin:20px 0 8px;color:#1f3864;border-bottom:1px solid #d4dde2;padding-bottom:4px}'+
+    'table{width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:6px}'+
+    'thead th{background:#1f3864;color:#fff;padding:6px 8px;text-align:left;font-weight:600}'+
+    'th.n,td.n{text-align:right;font-variant-numeric:tabular-nums}'+
+    'th.o,td.o{text-align:right;color:#5b6b76;font-size:10.5px}'+
+    'td{padding:5px 8px;border-bottom:1px solid #e8eef1}'+
+    'tr.g td{background:#e8edf6;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#1f3864}'+
+    'tr.t td{border-top:1.5px solid #12242e;font-weight:700}'+
+    '.ok{font-size:11px;background:#eaf5ee;border:1px solid #a9d4b8;color:#1a6b3c;padding:7px 10px;border-radius:3px}'+
+    '.rod{margin-top:22px;padding-top:8px;border-top:1px solid #d4dde2;font-size:10px;color:#5b6b76}'+
+    'table{page-break-inside:avoid}'+
+    '</style></head><body>'+
+    '<div class="cab"><h1>Relatório de Conciliação Contábil</h1>'+
+    '<p class="sub">Arrendamento — IFRS 16 / CPC 06 (R2)</p>'+
+    '<div class="meta">'+
+      '<span><b>Cliente:</b> '+(C.cliente||"—")+'</span>'+
+      '<span><b>Contrato:</b> '+(C.contrato||"—")+'</span>'+
+      '<span><b>Competência:</b> '+C.comp+'</span>'+
+      '<span><b>Base:</b> '+C.base+'</span>'+
+      '<span><b>Início da escrituração:</b> '+C.inicioEscrit+'</span>'+
+    '</div></div>'+
+    corpo+
+    '<p class="rod">Emitido em '+new Date().toLocaleString("pt-BR")+
+    '. Curto prazo compreende os vencimentos até 31/12/'+C.anoLimite+
+    ', conforme fechamento do exercício.</p>'+
+    '</body></html>';
+
+  const w=window.open("","_blank");
+  if(!w){ alert("Permita janelas pop-up para gerar o PDF."); return; }
+  w.document.write(doc);
+  w.document.close();
+  w.focus();
+  setTimeout(function(){ w.print(); },350);
+}
+
+function relatorioConcXls(){
+  if(!CONC){ alert("Apure os saldos antes de gerar o relatório."); return; }
+  const C=CONC, money='#,##0.00';
+  const a=[
+    ["RELATÓRIO DE CONCILIAÇÃO CONTÁBIL — IFRS 16 / CPC 06 (R2)"],[],
+    ["Cliente:",C.cliente],["Contrato:",C.contrato],
+    ["Competência analisada:",C.comp],["Base de apuração:",C.base],
+    ["Início da escrituração:",C.inicioEscrit],
+    ["Curto prazo até:","31/12/"+C.anoLimite],[],
+    ["SALDOS CONTÁBEIS","Valor","Natureza","Parcelas"],
+    ["Direito de Uso (ANC)",C.saldoRou,"Devedora",""],
+    ["Arrendamentos (PC)",C.arrPC,"Credora",C.nPC],
+    ["( - ) Juros a Transcorrer (PC)",-C.jurPC,"Devedora / redutora",C.nPC],
+    ["Arrendamentos líquidos (PC)",C.arrPC-C.jurPC,"",""],
+    ["Arrendamentos (PNC)",C.arrPNC,"Credora",C.nPNC],
+    ["( - ) Juros a Transcorrer (PNC)",-C.jurPNC,"Devedora / redutora",C.nPNC],
+    ["Arrendamentos líquidos (PNC)",C.arrPNC-C.jurPNC,"",""],
+    ["Passivo de arrendamento líquido",C.liquido,"",C.nPC+C.nPNC],[],
+    ["AMARRAÇÃO","Valor"],
+    ["Passivo líquido apurado",C.liquido],
+    ["Saldo na memória de cálculo",C.saldoPassivo],
+    ["Diferença",C.dif],
+    ["Situação",C.dif<0.01?"CONFERE":"VERIFICAR"],[],
+    ["MOVIMENTO DA COMPETÊNCIA","D","C"],
+    ["Arrendamentos (PC)",C.pgtoMes,""],
+    ["Bancos (AC)","",C.pgtoMes],
+    ["Despesas com Juros (DRE)",C.jurosMes,""],
+    ["( - ) Juros a Transcorrer (PC)","",C.jurosMes],
+    ["Despesa de depreciação (DRE)",C.depMes,""],
+    ["Direito de Uso (ANC)","",C.depMes],[],
+    ["ACUMULADO ESCRITURADO","Valor","Parcelas"],
+    ["Parcelas pagas",C.pagoAc,C.nAte],
+    ["Juros apropriados",C.jurAc,""],
+    ["Depreciação acumulada",C.depAcDU,""],
+    ["Parcelas a vencer",C.arrPC+C.arrPNC,C.nRest],[],
+    ["DIREITO DE USO LÍQUIDO","Valor"],
+    ["Direito de Uso (ANC)",C.saldoRou],
+    ["( - ) Depreciação Acumulada",-C.depAcDU],
+    ["Direito de Uso líquido",C.rouLiquido]
+  ];
+  if(ADOC){
+    a.push([]);
+    a.push(["ENTRADA NA ESCRITURAÇÃO","Valor","Composição"]);
+    a.push(["Arrendamentos (bruto)",ADOC.bruto,ADOC.nRest+" parcelas a vencer"]);
+    a.push(["( - ) Juros a Transcorrer",-ADOC.jur,"bruto - valor presente"]);
+    a.push(["Valor presente das parcelas remanescentes",ADOC.vp,"passivo líquido"]);
+    a.push(["Direito de Uso a depreciar",ADOC.aDeprec,ADOC.nRest+" x quota mensal"]);
+    a.push(["Depreciação acumulada (não escriturada)",ADOC.depAnt,ADOC.nAnt+" parcela(s)"]);
+    a.push(["Juros acumulados (não escriturados)",ADOC.jurAnt,""]);
+    a.push(["Ajustes de Exercícios Anteriores",ADOC.ajuste,"depreciação + juros"]);
+  }
+  const ws=XLSX.utils.aoa_to_sheet(a);
+  ws["!cols"]=[{wch:44},{wch:20},{wch:26},{wch:12}];
+  for(let r=0;r<a.length;r++){
+    for(let c=1;c<=2;c++){
+      const ref=XLSX.utils.encode_cell({r:r,c:c});
+      if(ws[ref]&&typeof ws[ref].v==="number") ws[ref].z=money;
+    }
+  }
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Conciliação");
+  const nome=(C.contrato||"contrato").replace(/[^\w\-]+/g,"_");
+  XLSX.writeFile(wb,"Conciliacao_"+nome+"_"+C.comp.replace("/","-")+".xlsx");
+}
+
+function exportar(){
+  if(!R){ alert("Calcule antes de exportar."); return; }
+  const ini=el("inicio").value, T=totais();
+  const wb=XLSX.utils.book_new(), money='#,##0.00', pctf='0.00%';
+
+  const a1=[
+    ["Cliente:",el("cliente").value],["Contrato:",el("contrato").value],
+    ["Competência inicial:",ini?competencia(ini,0):""],["Prazo (meses):",R.prazo0],
+    ["Parcela mensal:",R.pgto0],["Taxa a.m.:",R.taxa0],[],
+    ["","","","","","Passivo de arrendamento","","","","","Ativo de direito de uso (ROU)","",""],
+    ["Ordem","Mês/Ano","Regime","Taxa","Parcela",
+     "Valor Presente","Juros","Saldo Inicial","Amortização","Saldo Final",
+     "Saldo Inicial","Depreciação","Saldo Final"]
+  ];
+  const base=a1.length;
+  const deAbsX=parseInt(el("concIni").value)||1;
+  const sA={n:0,pgto:0,vp:0,jur:0,dep:0}, sD={n:0,pgto:0,vp:0,jur:0,dep:0};
+  const subX=function(rot,x){
+    return [rot+" — "+x.n+" parcela(s)","","","",x.pgto,x.vp,x.jur,"",x.vp,"","",-x.dep,""];
+  };
+  R.linhas.forEach(function(l){
+    const d=DUMAP?DUMAP[l.abs]:null;
+    const srI = d ? d.anc-d.depAcIni : l.srI;
+    const dep = d ? d.dep : l.dep;
+    const srF = d ? d.anc-d.depAcFim : l.srF;
+    const t=(l.abs<deAbsX)?sA:sD;
+    t.n++; t.pgto+=l.pgto; t.vp+=l.vp; t.jur+=l.juros; t.dep+=dep;
+
+    a1.push([l.ordem, competencia(ini,l.abs-1),
+             (l.abs===deAbsX&&deAbsX>1 ? "INÍCIO DA ESCRITURAÇÃO"
+               : (l.inicioRegime?"REMENSURADA":(l.tipo==="rem"?l.regime:""))),
+             l.taxa, l.pgto, l.vp, l.juros, l.spI, l.amort, l.spF, srI, -dep, srF]);
+    if(deAbsX>1 && l.abs===deAbsX-1) a1.push(subX("Subtotal anterior à escrituração",sA));
+  });
+  if(deAbsX>1) a1.push(subX("Subtotal do período escriturado",sD));
+  a1.push(["Total","","","",T.pgto,T.vp,T.juros,"",T.vp,"","",-(sA.dep+sD.dep),""]);
+  const ws1=XLSX.utils.aoa_to_sheet(a1);
+  ws1["!cols"]=[{wch:8},{wch:11},{wch:18},{wch:9},{wch:16},{wch:16},{wch:16},{wch:17},{wch:16},{wch:17},{wch:17},{wch:16},{wch:17}];
+  for(let i=base;i<a1.length;i++){
+    for(let c=3;c<=12;c++){
+      const ref=XLSX.utils.encode_cell({r:i,c:c});
+      if(ws1[ref]&&typeof ws1[ref].v==="number") ws1[ref].z = (c===3?pctf:money);
+    }
+  }
+  XLSX.utils.book_append_sheet(wb,ws1,"Memória de Cálculo");
+
+  if(R.eventos.length){
+    const a2=[["Remensurações — valores para contabilização"],[],
+      ["#","Regime","Parcela","Competência","Meses",
+       "Parcela antes","Parcela depois","Variação da parcela",
+       "Taxa antes","Taxa depois",
+       "Passivo antes","Passivo depois","Variação do passivo",
+       "ROU antes","ROU depois","Variação do ROU",
+       "Depreciação antes","Depreciação depois","Variação da depreciação",
+       "Parcelas remanesc. antes","Parcelas remanesc. depois",
+       "Desembolso remanesc. antes","Desembolso remanesc. depois","Variação do desembolso",
+       "Juros da parcela antes","Juros da parcela depois","Variação juros da parcela",
+       "Juros a apropriar antes","Juros a apropriar depois","Variação juros a apropriar",
+       "Juros médio/mês (diferença)"]];
+    const b2=a2.length;
+    R.eventos.forEach(function(e,i){
+      a2.push([i+1, e.rotulo, e.parcela, competencia(ini,e.parcela-1), e.meses,
+        e.pgtoAntes, e.pgtoNovo, e.pgtoNovo-e.pgtoAntes,
+        e.taxaAntes, e.taxaNova,
+        e.passivoAntes, e.passivoNovo, e.deltaPassivo,
+        e.rouAntes, e.rouNovo, e.deltaRou,
+        e.quotaAntes, e.quotaNova, e.quotaNova-e.quotaAntes,
+        e.mesesAntes, e.meses,
+        e.pagoAntes, e.pagoNovo, e.deltaPago,
+        e.jurosParcelaAntes, e.jurosParcelaNovo, e.deltaJurosParcela,
+        e.jurosRemAntes, e.jurosRemNovo, e.deltaJurosRem,
+        e.jurosMedioMes]);
+    });
+    a2.push([]); a2.push(["Lançamentos de ajuste sugeridos"]);
+    a2.push(["Competência","Lançamento","D/C","Conta","Valor"]);
+    const b3=a2.length;
+    R.eventos.forEach(function(e){
+      const cp=competencia(ini,e.parcela-1);
+      const v1=Math.abs(e.deltaPago), p1=e.deltaPago>=0;
+      const v2=Math.abs(e.deltaJurosRem), p2=e.deltaJurosRem>=0;
+      a2.push([cp,"1 · Diferença da parcela",p1?"D":"C","Ativo de direito de uso (ROU)",v1]);
+      a2.push([cp,"1 · Diferença da parcela",p1?"C":"D","Passivo de arrendamento",v1]);
+      a2.push([cp,"2 · Juros a transcorrer",p2?"C":"D","Ativo de direito de uso (ROU)",v2]);
+      a2.push([cp,"2 · Juros a transcorrer",p2?"D":"C","( - ) Juros a transcorrer",v2]);
+      a2.push([cp,"Efeito líquido no ROU","","",e.deltaPassivo]);
+    });
+    const ws2=XLSX.utils.aoa_to_sheet(a2);
+    const cols=[{wch:5},{wch:18},{wch:9},{wch:13},{wch:8}];
+    for(let i=0;i<27;i++) cols.push({wch:21});
+    ws2["!cols"]=cols;
+    R.eventos.forEach(function(e,i){
+      for(let c=5;c<=31;c++){
+        const ref=XLSX.utils.encode_cell({r:b2+i,c:c});
+        if(ws2[ref]) ws2[ref].z = ((c===8||c===9)?pctf:((c===19||c===20)?'0':money));
+      }
+    });
+    for(let i=0;i<R.eventos.length*5;i++){
+      const ref=XLSX.utils.encode_cell({r:b3+i,c:4});
+      if(ws2[ref]) ws2[ref].z = money;
+    }
+    XLSX.utils.book_append_sheet(wb,ws2,"Remensurações");
+  }
+
+  const nome=(el("contrato").value||"contrato").replace(/[^\w\-]+/g,"_");
+  XLSX.writeFile(wb,"IFRS16_"+nome+".xlsx");
+}
+
+el("add").onclick=function(){addRem();};
+el("calc").onclick=render;
+el("concBtn").onclick=conciliar;
+el("concXls").onclick=relatorioConcXls;
+el("concPdf").onclick=relatorioConcPdf;
+el("concIni").onchange=function(){ preencherMeses(); render(); };
+el("concDepr").onchange=function(){ const tinha=!!CONC; render(); if(tinha) conciliar(); };
+el("gsLoad").onclick=carregarBase;
+el("gsTpl").onclick=baixarModelo;
+el("gsCliente").addEventListener("change",filtrarContratos);
+el("gsContrato").addEventListener("change",aplicarContrato);
+el("gsSalvar").onclick=salvarNaBase;
+el("gsExcluir").onclick=excluirDaBase;
+if(WEBAPP_URL) carregarBase();
+el("xlsx").onclick=exportar;
+el("print").onclick=function(){window.print();};
+
+/* recalcula automaticamente quando qualquer parâmetro muda */
+document.addEventListener("change", function(ev){
+  const t=ev.target; if(!t||!t.id&&!t.className) return;
+  const campos=["inicio","prazo","pgto","taxa"];
+  const emRems = t.closest && t.closest("#rems");
+  if(campos.indexOf(t.id)>-1 || emRems) render();
+});
+
+el("inicio").value="2020-04";
+render();
+</script>
+</body>
+</html>

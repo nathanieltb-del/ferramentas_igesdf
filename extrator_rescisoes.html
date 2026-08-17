@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Extrator de Rescisões — PDF → Excel</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#1a2230;
+    --ink-soft:#4b5568;
+    --line:#d8dde5;
+    --bg:#f3f5f8;
+    --panel:#ffffff;
+    --accent:#1f5f4f;
+    --accent-soft:#e4efec;
+    --amber:#a35b1f;
+    --amber-soft:#faf1e6;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:var(--sans);
+    background:var(--bg);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 24px 80px;}
+
+  header.top{
+    display:flex;align-items:baseline;justify-content:space-between;
+    border-bottom:2px solid var(--ink);
+    padding-bottom:14px;margin-bottom:28px;flex-wrap:wrap;gap:8px;
+  }
+  header.top .brand{display:flex;align-items:baseline;gap:10px;}
+  header.top .brand .tag{
+    font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+    background:var(--ink);color:#fff;padding:3px 7px;border-radius:3px;
+  }
+  header.top h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-0.01em;}
+  header.top .sub{font-family:var(--mono);font-size:12px;color:var(--ink-soft);}
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:22px;
+    margin-bottom:20px;
+  }
+  .panel h2{
+    font-size:13px;text-transform:uppercase;letter-spacing:.07em;
+    color:var(--ink-soft);margin:0 0 14px;font-weight:600;
+    display:flex;align-items:center;gap:8px;
+  }
+  .panel h2 .num{
+    font-family:var(--mono);font-size:11px;color:#fff;background:var(--accent);
+    width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  }
+
+  .drop{
+    border:1.5px dashed var(--line);
+    border-radius:8px;
+    padding:28px 20px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s, background .15s;
+    background:#fbfcfd;
+  }
+  .drop:hover, .drop.drag{border-color:var(--accent);background:var(--accent-soft);}
+  .drop p{margin:0;color:var(--ink-soft);font-size:14px;}
+  .drop .icon{font-size:26px;margin-bottom:8px;display:block;}
+  #fileInput{display:none;}
+
+  .filelist{margin-top:14px;display:flex;flex-direction:column;gap:6px;}
+  .fileitem{
+    display:flex;align-items:center;justify-content:space-between;
+    font-family:var(--mono);font-size:12.5px;
+    background:#fbfcfd;border:1px solid var(--line);border-radius:6px;
+    padding:8px 12px;
+  }
+  .fileitem .name{color:var(--ink);}
+  .fileitem .status{color:var(--ink-soft);font-size:11px;}
+  .fileitem .status.ok{color:var(--accent);}
+  .fileitem .status.err{color:#b23b3b;}
+  .fileitem .rm{cursor:pointer;color:#b23b3b;font-weight:600;background:none;border:none;font-size:14px;padding:0 4px;}
+
+  .actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  button.primary{
+    background:var(--ink);color:#fff;border:none;border-radius:6px;
+    padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;
+    display:inline-flex;align-items:center;gap:8px;
+  }
+  button.primary:hover{background:#000;}
+  button.primary:disabled{background:#a7aeba;cursor:not-allowed;}
+  button.secondary{
+    background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:6px;
+    padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;
+  }
+  button.secondary:hover{border-color:var(--ink);}
+  button.excel{
+    background:var(--accent);color:#fff;border:none;border-radius:6px;
+    padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;
+    display:inline-flex;align-items:center;gap:8px;
+  }
+  button.excel:hover{background:#174a3d;}
+  button.excel:disabled{background:#a7aeba;cursor:not-allowed;}
+
+  .log{
+    font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);
+    max-height:110px;overflow-y:auto;margin-top:12px;line-height:1.6;
+    border-top:1px solid var(--line);padding-top:10px;display:none;
+  }
+  .log.show{display:block;}
+  .log .warn{color:var(--amber);}
+
+  .cols{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:2px;}
+  .cols label{
+    font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--ink-soft);
+  }
+  .cols label.core{color:var(--ink);font-weight:600;}
+  .cols input{accent-color:var(--accent);}
+
+  .stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px;}
+  .stat{
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:14px 18px;min-width:130px;
+  }
+  .stat .n{font-family:var(--mono);font-size:22px;font-weight:600;color:var(--ink);}
+  .stat .l{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin-top:2px;}
+  .stat.warnstat .n{color:var(--amber);}
+
+  table.data{
+    width:100%;border-collapse:collapse;font-size:12.5px;
+  }
+  table.data th{
+    text-align:left;background:#fbfcfd;color:var(--ink-soft);
+    font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;
+    padding:9px 10px;border-bottom:2px solid var(--ink);white-space:nowrap;position:sticky;top:0;
+  }
+  table.data td{
+    padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;
+    font-family:var(--mono);
+  }
+  table.data td.name{font-family:var(--sans);white-space:normal;min-width:180px;}
+  table.data tbody tr:hover{background:var(--accent-soft);}
+  .tablewrap{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:8px;}
+  .src{font-family:var(--sans);font-size:11px;color:var(--ink-soft);}
+
+  .empty{
+    text-align:center;padding:40px 20px;color:var(--ink-soft);font-size:13.5px;
+  }
+  .badge{
+    font-family:var(--mono);font-size:10px;background:var(--amber-soft);color:var(--amber);
+    padding:2px 6px;border-radius:4px;margin-left:6px;
+  }
+  footer{margin-top:26px;font-size:11.5px;color:var(--ink-soft);text-align:center;}
+  a.reset{color:var(--ink-soft);text-decoration:underline;cursor:pointer;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <span class="tag">RESCISÕES</span>
+      <h1>Extrator de Relatórios em PDF</h1>
+    </div>
+    <div class="sub">PDF → tabela → Excel · roda 100% no navegador</div>
+  </header>
+
+  <div class="panel">
+    <h2><span class="num">1</span>Arquivos PDF</h2>
+    <div class="drop" id="drop">
+      <span class="icon">⇪</span>
+      <p><strong>Clique para selecionar</strong> ou arraste um ou mais PDFs de "Relação de Rescisões Calculadas" aqui.</p>
+      <p style="margin-top:4px;font-size:12px;">Aceita múltiplos arquivos, mesmo com filiais/organogramas divididos.</p>
+    </div>
+    <input type="file" id="fileInput" accept="application/pdf" multiple>
+    <div class="filelist" id="fileList"></div>
+    <div class="actions">
+      <button class="primary" id="processBtn" disabled>Extrair dados</button>
+      <button class="secondary" id="clearBtn" style="display:none;">Limpar tudo</button>
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="panel" id="resultsPanel" style="display:none;">
+    <h2><span class="num">2</span>Colunas para exportar</h2>
+    <div class="cols" id="colToggles"></div>
+  </div>
+
+  <div id="statsBlock" style="display:none;">
+    <div class="stats">
+      <div class="stat"><div class="n" id="statRows">0</div><div class="l">Rescisões extraídas</div></div>
+      <div class="stat"><div class="n" id="statFiles">0</div><div class="l">Arquivos processados</div></div>
+      <div class="stat warnstat"><div class="n" id="statWarn">0</div><div class="l">Linhas ignoradas</div></div>
+    </div>
+  </div>
+
+  <div class="panel" id="tablePanel" style="display:none;">
+    <h2><span class="num">3</span>Conferência dos dados<span class="badge" id="rowBadge"></span></h2>
+    <div class="tablewrap">
+      <table class="data" id="dataTable">
+        <thead><tr id="tableHead"></tr></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button class="excel" id="exportBtn">⬇ Baixar Excel (.xlsx)</button>
+      <a class="reset" id="resetLink">Recomeçar</a>
+    </div>
+  </div>
+
+  <div class="empty" id="emptyState">Nenhum dado extraído ainda. Envie os PDFs acima para começar.</div>
+
+  <footer>Ferramenta local — os PDFs não saem do seu navegador. Confira sempre os totais contra o relatório original.</footer>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const COLUMNS = [
+  {key:'arquivo', label:'Arquivo', core:false},
+  {key:'filial', label:'Filial', core:false},
+  {key:'organograma', label:'Organograma', core:false},
+  {key:'contrato', label:'Contrato', core:true},
+  {key:'nome', label:'Empregado', core:true},
+  {key:'admissao', label:'Admissão', core:false},
+  {key:'avisoPrevio', label:'Aviso Prévio', core:false},
+  {key:'demissao', label:'Demissão', core:true},
+  {key:'seq', label:'Seq', core:true},
+  {key:'saldoFgts', label:'Saldo FGTS', core:false},
+  {key:'salario', label:'Salário', core:false},
+  {key:'proventos', label:'Proventos', core:false},
+  {key:'descontos', label:'Descontos', core:false},
+  {key:'liquido', label:'Líquido', core:true},
+  {key:'fgtsGrrf', label:'FGTS-GRRF', core:false},
+  {key:'causa', label:'Causa Demissão', core:false},
+];
+
+let files = [];      // {file, status}
+let extracted = [];  // row objects
+let ignoredCount = 0;
+let logLines = [];
+
+const dropEl = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const fileListEl = document.getElementById('fileList');
+const processBtn = document.getElementById('processBtn');
+const clearBtn = document.getElementById('clearBtn');
+const logEl = document.getElementById('log');
+
+dropEl.addEventListener('click', () => fileInput.click());
+dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('drag'); });
+dropEl.addEventListener('dragleave', () => dropEl.classList.remove('drag'));
+dropEl.addEventListener('drop', e => {
+  e.preventDefault(); dropEl.classList.remove('drag');
+  addFiles(Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')));
+});
+fileInput.addEventListener('change', e => { addFiles(Array.from(e.target.files)); fileInput.value = ''; });
+
+function addFiles(list){
+  list.forEach(f => files.push({file:f, status:'pendente'}));
+  renderFileList();
+  processBtn.disabled = files.length === 0;
+  clearBtn.style.display = files.length ? 'inline-flex' : 'none';
+}
+
+function renderFileList(){
+  fileListEl.innerHTML = '';
+  files.forEach((item, idx) => {
+    const div = document.createElement('div');
+    div.className = 'fileitem';
+    div.innerHTML = `<span class="name">${item.file.name}</span>
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="status ${item.status === 'ok' ? 'ok' : item.status === 'erro' ? 'err' : ''}">${item.status}</span>
+        <button class="rm" data-idx="${idx}" title="Remover">✕</button>
+      </span>`;
+    fileListEl.appendChild(div);
+  });
+  fileListEl.querySelectorAll('.rm').forEach(btn => {
+    btn.addEventListener('click', () => {
+      files.splice(Number(btn.dataset.idx), 1);
+      renderFileList();
+      processBtn.disabled = files.length === 0;
+      clearBtn.style.display = files.length ? 'inline-flex' : 'none';
+    });
+  });
+}
+
+clearBtn.addEventListener('click', resetAll);
+document.getElementById('resetLink').addEventListener('click', resetAll);
+
+function resetAll(){
+  files = []; extracted = []; ignoredCount = 0; logLines = [];
+  renderFileList();
+  processBtn.disabled = true;
+  clearBtn.style.display = 'none';
+  logEl.classList.remove('show'); logEl.innerHTML = '';
+  document.getElementById('resultsPanel').style.display = 'none';
+  document.getElementById('statsBlock').style.display = 'none';
+  document.getElementById('tablePanel').style.display = 'none';
+  document.getElementById('emptyState').style.display = 'block';
+}
+
+function log(msg, warn){
+  logLines.push((warn ? '<span class="warn">⚠ ' : '') + msg + (warn ? '</span>' : ''));
+  logEl.innerHTML = logLines.join('<br>');
+  logEl.classList.add('show');
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ---------- PDF text extraction: group items into visual lines ----------
+async function extractLines(pdfFile){
+  const buf = await pdfFile.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+  const lines = [];
+  for (let p = 1; p <= pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const rows = {}; // y (rounded) -> array of {x, str}
+    content.items.forEach(item => {
+      const y = Math.round(item.transform[5]);
+      if (!rows[y]) rows[y] = [];
+      rows[y].push({x: item.transform[4], str: item.str});
+    });
+    const ys = Object.keys(rows).map(Number).sort((a,b) => b - a);
+    // merge rows whose y is within 2px of each other (line wrap artifacts)
+    const merged = [];
+    ys.forEach(y => {
+      const last = merged[merged.length - 1];
+      if (last && Math.abs(last.y - y) <= 2){
+        last.items = last.items.concat(rows[y]);
+      } else {
+        merged.push({y, items: rows[y].slice()});
+      }
+    });
+    merged.forEach(row => {
+      row.items.sort((a,b) => a.x - b.x);
+      const text = row.items.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim();
+      if (text) lines.push(text);
+    });
+  }
+  return lines;
+}
+
+// ---------- Row parsing ----------
+const DATE_RE = /^\d{2}\/\d{2}\/\d{4}$/;
+const MONEY_RE = /^-?[\d.]+,\d{2}$/;
+
+function parseDataLine(line){
+  const tokens = line.split(' ').filter(Boolean);
+  if (!tokens.length) return null;
+  // "Contrato" is numeric; some PDF exports glue the employee name right onto it
+  // (e.g. "5189PRISCILA" instead of "5189 PRISCILA") — handle both cases.
+  const head = tokens[0].match(/^(\d+)([A-Za-zÀ-ÿ].*)?$/);
+  if (!head) return null;
+  const contrato = head[1];
+  let i = 1;
+  const nameTokens = [];
+  if (head[2]) nameTokens.push(head[2]);
+  while (i < tokens.length && !DATE_RE.test(tokens[i])) { nameTokens.push(tokens[i]); i++; }
+  if (nameTokens.length === 0 || i >= tokens.length) return null;
+
+  const dates = [];
+  while (i < tokens.length && DATE_RE.test(tokens[i])) { dates.push(tokens[i]); i++; }
+  if (dates.length < 1) return null;
+
+  // Seq: single/short letter token right after dates
+  if (i >= tokens.length || !/^[A-Za-z]{1,2}$/.test(tokens[i])) return null;
+  const seq = tokens[i]; i++;
+
+  const money = [];
+  while (i < tokens.length && MONEY_RE.test(tokens[i]) && money.length < 6) { money.push(tokens[i]); i++; }
+  if (money.length < 6) return null;
+
+  const causa = tokens.slice(i).join(' ');
+
+  const admissao = dates[0];
+  const demissao = dates[dates.length - 1];
+  const avisoPrevio = dates.length === 3 ? dates[1] : '';
+
+  return {
+    contrato: contrato,
+    nome: nameTokens.join(' '),
+    admissao, avisoPrevio, demissao, seq,
+    saldoFgts: money[0], salario: money[1], proventos: money[2],
+    descontos: money[3], liquido: money[4], fgtsGrrf: money[5],
+    causa
+  };
+}
+
+function processLines(lines, fileName){
+  let currentFilial = '';
+  let currentOrganograma = '';
+  const rows = [];
+  let skipped = 0;
+
+  lines.forEach(line => {
+    if (/^Filial:/.test(line)) { currentFilial = line.replace(/^Filial:\s*/, ''); return; }
+    if (/^Organograma:/.test(line)) { currentOrganograma = line.replace(/^Organograma:\s*/, ''); return; }
+    if (/^Totais/.test(line)) return;
+    if (/^Relação de Rescisões/.test(line)) return;
+    if (/^Período de/.test(line)) return;
+    if (/^Contrato do Empregado/.test(line)) return;
+    if (/Pág:\d+/.test(line)) return;
+    if (!/^\d/.test(line)) return; // not a data row (headers, page company line etc.)
+
+    const parsed = parseDataLine(line);
+    if (parsed){
+      rows.push({
+        arquivo: fileName,
+        filial: currentFilial,
+        organograma: currentOrganograma,
+        ...parsed
+      });
+    } else {
+      skipped++;
+    }
+  });
+  return {rows, skipped};
+}
+
+// ---------- Main processing ----------
+processBtn.addEventListener('click', async () => {
+  processBtn.disabled = true;
+  extracted = []; ignoredCount = 0; logLines = [];
+  logEl.innerHTML = ''; logEl.classList.add('show');
+
+  for (const item of files){
+    item.status = 'processando…';
+    renderFileList();
+    try {
+      const lines = await extractLines(item.file);
+      const {rows, skipped} = processLines(lines, item.file.name);
+      extracted = extracted.concat(rows);
+      ignoredCount += skipped;
+      item.status = `ok · ${rows.length} rescisões`;
+      log(`${item.file.name}: ${rows.length} linhas extraídas${skipped ? `, ${skipped} linha(s) ignorada(s)` : ''}.`, skipped > 0);
+    } catch (err) {
+      item.status = 'erro';
+      log(`${item.file.name}: falha ao processar — ${err.message}`, true);
+    }
+    renderFileList();
+  }
+
+  processBtn.disabled = false;
+  renderResults();
+});
+
+function renderResults(){
+  document.getElementById('emptyState').style.display = extracted.length ? 'none' : 'block';
+  if (!extracted.length) {
+    document.getElementById('resultsPanel').style.display = 'none';
+    document.getElementById('statsBlock').style.display = 'none';
+    document.getElementById('tablePanel').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('statsBlock').style.display = 'block';
+  document.getElementById('statRows').textContent = extracted.length;
+  document.getElementById('statFiles').textContent = files.filter(f => f.status.startsWith('ok')).length;
+  document.getElementById('statWarn').textContent = ignoredCount;
+
+  // column toggles
+  const colToggles = document.getElementById('colToggles');
+  colToggles.innerHTML = '';
+  COLUMNS.forEach(col => {
+    const label = document.createElement('label');
+    label.className = col.core ? 'core' : '';
+    label.innerHTML = `<input type="checkbox" data-key="${col.key}" ${col.core ? 'checked' : (col.key==='avisoPrevio'||col.key==='causa'||col.key==='filial'||col.key==='organograma') ? '' : 'checked'}> ${col.label}`;
+    colToggles.appendChild(label);
+  });
+  colToggles.querySelectorAll('input').forEach(cb => cb.addEventListener('change', renderTable));
+  document.getElementById('resultsPanel').style.display = 'block';
+  document.getElementById('tablePanel').style.display = 'block';
+  document.getElementById('rowBadge').textContent = `${extracted.length} registros`;
+
+  renderTable();
+}
+
+function getActiveColumns(){
+  return COLUMNS.filter(col => {
+    const cb = document.querySelector(`#colToggles input[data-key="${col.key}"]`);
+    return cb && cb.checked;
+  });
+}
+
+function renderTable(){
+  const cols = getActiveColumns();
+  const head = document.getElementById('tableHead');
+  head.innerHTML = cols.map(c => `<th>${c.label}</th>`).join('');
+  const body = document.getElementById('tableBody');
+  body.innerHTML = extracted.map(row => {
+    return '<tr>' + cols.map(c => {
+      const cls = c.key === 'nome' ? ' class="name"' : (c.key==='arquivo'?' class="src"':'');
+      return `<td${cls}>${row[c.key] ?? ''}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+}
+
+const MONEY_KEYS = new Set(['saldoFgts', 'salario', 'proventos', 'descontos', 'liquido', 'fgtsGrrf']);
+const DATE_KEYS = new Set(['admissao', 'avisoPrevio', 'demissao']);
+
+function toNumber(brStr){
+  if (!brStr) return null;
+  const n = parseFloat(String(brStr).replace(/\./g, '').replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+
+function toExcelDate(brDateStr){
+  if (!brDateStr) return null;
+  const [d, m, y] = brDateStr.split('/').map(Number);
+  if (!d || !m || !y) return null;
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const cols = getActiveColumns();
+  const data = extracted.map(row => {
+    const obj = {};
+    cols.forEach(c => {
+      const raw = row[c.key] ?? '';
+      if (MONEY_KEYS.has(c.key)) {
+        const n = toNumber(raw);
+        obj[c.label] = n === null ? raw : n;
+      } else if (DATE_KEYS.has(c.key)) {
+        const d = toExcelDate(raw);
+        obj[c.label] = d || raw;
+      } else {
+        obj[c.label] = raw;
+      }
+    });
+    return obj;
+  });
+
+  const ws = XLSX.utils.json_to_sheet(data, { cellDates: true });
+  ws['!cols'] = cols.map(c => ({wch: Math.max(c.label.length + 2, 14)}));
+
+  // Apply number/date formats so Excel treats these as real numbers/dates (SUM works, etc.)
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  cols.forEach((c, colIdx) => {
+    if (!MONEY_KEYS.has(c.key) && !DATE_KEYS.has(c.key)) return;
+    for (let r = range.s.r + 1; r <= range.e.r; r++) {
+      const cellRef = XLSX.utils.encode_cell({ r, c: colIdx });
+      const cell = ws[cellRef];
+      if (!cell) continue;
+      if (MONEY_KEYS.has(c.key) && cell.t === 'n') {
+        cell.z = '#,##0.00';
+      } else if (DATE_KEYS.has(c.key) && cell.t === 'd') {
+        cell.z = 'dd/mm/yyyy';
+      }
+    }
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Rescisões');
+  const now = new Date();
+  const stamp = now.toISOString().slice(0,10);
+  XLSX.writeFile(wb, `rescisoes_extraidas_${stamp}.xlsx`);
+});
+</script>
+</body>
+</html>

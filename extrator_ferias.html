@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Extrator de Líquidos de Férias — PDF → Excel (com rateio por competência)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#1a2230;
+    --ink-soft:#4b5568;
+    --line:#d8dde5;
+    --bg:#f3f5f8;
+    --panel:#ffffff;
+    --accent:#1f5f4f;
+    --accent-soft:#e4efec;
+    --amber:#a35b1f;
+    --amber-soft:#faf1e6;
+    --blue:#2b5a8c;
+    --blue-soft:#e8eff7;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1220px;margin:0 auto;padding:32px 24px 80px;}
+
+  header.top{
+    display:flex;align-items:baseline;justify-content:space-between;
+    border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:28px;flex-wrap:wrap;gap:8px;
+  }
+  header.top .brand{display:flex;align-items:baseline;gap:10px;}
+  header.top .brand .tag{
+    font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+    background:var(--ink);color:#fff;padding:3px 7px;border-radius:3px;
+  }
+  header.top h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-0.01em;}
+  header.top .sub{font-family:var(--mono);font-size:12px;color:var(--ink-soft);}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:22px;margin-bottom:20px;}
+  .panel h2{
+    font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);
+    margin:0 0 14px;font-weight:600;display:flex;align-items:center;gap:8px;
+  }
+  .panel h2 .num{
+    font-family:var(--mono);font-size:11px;color:#fff;background:var(--accent);
+    width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  }
+  .panel p.hint{font-size:13px;color:var(--ink-soft);margin:0 0 14px;}
+
+  .drop{
+    border:1.5px dashed var(--line);border-radius:8px;padding:28px 20px;text-align:center;
+    cursor:pointer;transition:border-color .15s, background .15s;background:#fbfcfd;
+  }
+  .drop:hover, .drop.drag{border-color:var(--accent);background:var(--accent-soft);}
+  .drop p{margin:0;color:var(--ink-soft);font-size:14px;}
+  .drop .icon{font-size:26px;margin-bottom:8px;display:block;}
+  #fileInput{display:none;}
+
+  .filelist{margin-top:14px;display:flex;flex-direction:column;gap:6px;}
+  .fileitem{
+    display:flex;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:12.5px;
+    background:#fbfcfd;border:1px solid var(--line);border-radius:6px;padding:8px 12px;
+  }
+  .fileitem .status{color:var(--ink-soft);font-size:11px;}
+  .fileitem .status.ok{color:var(--accent);}
+  .fileitem .status.err{color:#b23b3b;}
+  .fileitem .rm{cursor:pointer;color:#b23b3b;font-weight:600;background:none;border:none;font-size:14px;padding:0 4px;}
+
+  .actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center;}
+  button.primary{
+    background:var(--ink);color:#fff;border:none;border-radius:6px;padding:11px 20px;
+    font-size:14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
+  }
+  button.primary:hover{background:#000;}
+  button.primary:disabled{background:#a7aeba;cursor:not-allowed;}
+  button.secondary{
+    background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:6px;
+    padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;
+  }
+  button.secondary:hover{border-color:var(--ink);}
+  button.excel{
+    background:var(--accent);color:#fff;border:none;border-radius:6px;padding:11px 20px;
+    font-size:14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
+  }
+  button.excel:hover{background:#174a3d;}
+  button.excel:disabled{background:#a7aeba;cursor:not-allowed;}
+
+  .log{
+    font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);max-height:110px;overflow-y:auto;
+    margin-top:12px;line-height:1.6;border-top:1px solid var(--line);padding-top:10px;display:none;
+  }
+  .log.show{display:block;}
+  .log .warn{color:var(--amber);}
+
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
+  .switch{
+    display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;font-size:13px;
+  }
+  .switch button{
+    background:#fff;border:none;padding:9px 16px;cursor:pointer;color:var(--ink-soft);font-weight:600;
+    font-family:var(--sans);
+  }
+  .switch button.active{background:var(--ink);color:#fff;}
+
+  .cols{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:2px;}
+  .cols label{font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--ink-soft);}
+  .cols label.core{color:var(--ink);font-weight:600;}
+  .cols input{accent-color:var(--accent);}
+
+  .stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px;}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 18px;min-width:150px;}
+  .stat .n{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--ink);}
+  .stat .l{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin-top:2px;}
+  .stat.warnstat .n{color:var(--amber);}
+  .stat.okstat .n{color:var(--accent);}
+  .stat.badstat .n{color:#b23b3b;}
+
+  table.data{width:100%;border-collapse:collapse;font-size:12.5px;}
+  table.data th{
+    text-align:left;background:#fbfcfd;color:var(--ink-soft);font-size:10.5px;text-transform:uppercase;
+    letter-spacing:.05em;padding:9px 10px;border-bottom:2px solid var(--ink);white-space:nowrap;
+    position:sticky;top:0;
+  }
+  table.data td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;font-family:var(--mono);}
+  table.data td.name{font-family:var(--sans);white-space:normal;min-width:200px;}
+  table.data td.comp{color:var(--blue);font-weight:600;background:var(--blue-soft);}
+  table.data tbody tr:hover{background:var(--accent-soft);}
+  table.data tbody tr.grp-first td{border-top:2px solid var(--line);}
+  .tablewrap{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:8px;}
+  .src{font-family:var(--sans);font-size:11px;color:var(--ink-soft);}
+
+  .empty{text-align:center;padding:40px 20px;color:var(--ink-soft);font-size:13.5px;}
+  .badge{
+    font-family:var(--mono);font-size:10px;background:var(--amber-soft);color:var(--amber);
+    padding:2px 6px;border-radius:4px;margin-left:6px;
+  }
+  footer{margin-top:26px;font-size:11.5px;color:var(--ink-soft);text-align:center;}
+  a.reset{color:var(--ink-soft);text-decoration:underline;cursor:pointer;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <span class="tag">FÉRIAS</span>
+      <h1>Extrator de Líquidos de Férias</h1>
+    </div>
+    <div class="sub">PDF → rateio por competência → Excel</div>
+  </header>
+
+  <div class="panel">
+    <h2><span class="num">1</span>Arquivos PDF</h2>
+    <p class="hint">Envie um ou mais relatórios "Líquidos de Férias". Cada funcionário terá o valor rateado entre os meses (competências) cobertos pelo período de férias.</p>
+    <div class="drop" id="drop">
+      <span class="icon">⇪</span>
+      <p><strong>Clique para selecionar</strong> ou arraste os PDFs aqui.</p>
+    </div>
+    <input type="file" id="fileInput" accept="application/pdf" multiple>
+    <div class="filelist" id="fileList"></div>
+    <div class="actions">
+      <button class="primary" id="processBtn" disabled>Extrair e ratear</button>
+      <button class="secondary" id="clearBtn" style="display:none;">Limpar tudo</button>
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="panel" id="resultsPanel" style="display:none;">
+    <h2><span class="num">2</span>Colunas para exportar</h2>
+    <div class="cols" id="colToggles"></div>
+  </div>
+
+  <div id="statsBlock" style="display:none;">
+    <div class="stats" id="statsRow"></div>
+  </div>
+
+  <div class="panel" id="tablePanel" style="display:none;">
+    <div class="toggle-row">
+      <h2 style="margin:0;"><span class="num">3</span>Conferência dos dados<span class="badge" id="rowBadge"></span></h2>
+      <div class="switch" id="viewSwitch">
+        <button class="active" data-view="rateio">Por competência (rateado)</button>
+        <button data-view="resumo">Por funcionário (resumo)</button>
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table class="data" id="dataTable">
+        <thead><tr id="tableHead"></tr></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button class="excel" id="exportBtn">⬇ Baixar Excel (.xlsx)</button>
+      <a class="reset" id="resetLink">Recomeçar</a>
+    </div>
+  </div>
+
+  <div class="empty" id="emptyState">Nenhum dado extraído ainda. Envie os PDFs acima para começar.</div>
+
+  <footer>Ferramenta local — os PDFs não saem do seu navegador. O rateio usa dias corridos por mês dentro do período de férias; o último mês recebe o ajuste de arredondamento para que a soma bata exatamente com o valor total.</footer>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const MESES_PT = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+// Columns for the "rateio" (per-competência) exploded view
+const COLUMNS_RATEIO = [
+  {key:'arquivo', label:'Arquivo', core:false},
+  {key:'func', label:'Func', core:true},
+  {key:'nome', label:'Nome', core:true},
+  {key:'chap', label:'Chap', core:false},
+  {key:'banco', label:'Banco', core:false},
+  {key:'conta', label:'Conta', core:false},
+  {key:'periodoFerias', label:'Período Férias', core:false},
+  {key:'pagamento', label:'Pagamento', core:false},
+  {key:'valorTotal', label:'Valor Total', core:false},
+  {key:'competencia', label:'Competência', core:true},
+  {key:'diasCompetencia', label:'Dias na Competência', core:false},
+  {key:'valorRateio', label:'Valor Rateado', core:true},
+];
+
+// Columns for the "resumo" (one row per employee) view
+const COLUMNS_RESUMO = [
+  {key:'arquivo', label:'Arquivo', core:false},
+  {key:'func', label:'Func', core:true},
+  {key:'nome', label:'Nome', core:true},
+  {key:'chap', label:'Chap', core:false},
+  {key:'banco', label:'Banco', core:false},
+  {key:'conta', label:'Conta', core:false},
+  {key:'periodoFerias', label:'Período Férias', core:true},
+  {key:'pagamento', label:'Pagamento', core:false},
+  {key:'competencias', label:'Competências', core:true},
+  {key:'valorTotal', label:'Valor Total', core:true},
+];
+
+let files = [];
+let employees = [];   // one entry per employee row, with .rateio[] attached
+let rateioRows = [];  // exploded rows (one per employee x competência)
+let ignoredCount = 0;
+let logLines = [];
+let currentView = 'rateio';
+let reportedTotals = []; // {arquivo, total} parsed from "Total da Empresa:" lines
+
+const dropEl = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const fileListEl = document.getElementById('fileList');
+const processBtn = document.getElementById('processBtn');
+const clearBtn = document.getElementById('clearBtn');
+const logEl = document.getElementById('log');
+
+dropEl.addEventListener('click', () => fileInput.click());
+dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('drag'); });
+dropEl.addEventListener('dragleave', () => dropEl.classList.remove('drag'));
+dropEl.addEventListener('drop', e => {
+  e.preventDefault(); dropEl.classList.remove('drag');
+  addFiles(Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')));
+});
+fileInput.addEventListener('change', e => { addFiles(Array.from(e.target.files)); fileInput.value = ''; });
+
+function addFiles(list){
+  list.forEach(f => files.push({file:f, status:'pendente'}));
+  renderFileList();
+  processBtn.disabled = files.length === 0;
+  clearBtn.style.display = files.length ? 'inline-flex' : 'none';
+}
+
+function renderFileList(){
+  fileListEl.innerHTML = '';
+  files.forEach((item, idx) => {
+    const div = document.createElement('div');
+    div.className = 'fileitem';
+    div.innerHTML = `<span class="name">${item.file.name}</span>
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="status ${item.status === 'ok' ? 'ok' : item.status === 'erro' ? 'err' : ''}">${item.status}</span>
+        <button class="rm" data-idx="${idx}" title="Remover">✕</button>
+      </span>`;
+    fileListEl.appendChild(div);
+  });
+  fileListEl.querySelectorAll('.rm').forEach(btn => {
+    btn.addEventListener('click', () => {
+      files.splice(Number(btn.dataset.idx), 1);
+      renderFileList();
+      processBtn.disabled = files.length === 0;
+      clearBtn.style.display = files.length ? 'inline-flex' : 'none';
+    });
+  });
+}
+
+clearBtn.addEventListener('click', resetAll);
+document.getElementById('resetLink').addEventListener('click', resetAll);
+
+function resetAll(){
+  files = []; employees = []; rateioRows = []; ignoredCount = 0; logLines = []; reportedTotals = [];
+  renderFileList();
+  processBtn.disabled = true;
+  clearBtn.style.display = 'none';
+  logEl.classList.remove('show'); logEl.innerHTML = '';
+  document.getElementById('resultsPanel').style.display = 'none';
+  document.getElementById('statsBlock').style.display = 'none';
+  document.getElementById('tablePanel').style.display = 'none';
+  document.getElementById('emptyState').style.display = 'block';
+}
+
+function log(msg, warn){
+  logLines.push((warn ? '<span class="warn">⚠ ' : '') + msg + (warn ? '</span>' : ''));
+  logEl.innerHTML = logLines.join('<br>');
+  logEl.classList.add('show');
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ---------- PDF text extraction: group items into visual lines ----------
+async function extractLines(pdfFile){
+  const buf = await pdfFile.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+  const lines = [];
+  for (let p = 1; p <= pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const rows = {};
+    content.items.forEach(item => {
+      const y = Math.round(item.transform[5]);
+      if (!rows[y]) rows[y] = [];
+      rows[y].push({x: item.transform[4], str: item.str});
+    });
+    const ys = Object.keys(rows).map(Number).sort((a,b) => b - a);
+    const merged = [];
+    ys.forEach(y => {
+      const last = merged[merged.length - 1];
+      if (last && Math.abs(last.y - y) <= 2){
+        last.items = last.items.concat(rows[y]);
+      } else {
+        merged.push({y, items: rows[y].slice()});
+      }
+    });
+    merged.forEach(row => {
+      row.items.sort((a,b) => a.x - b.x);
+      const text = row.items.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim();
+      if (text) lines.push(text);
+    });
+  }
+  return lines;
+}
+
+// ---------- Row parsing ----------
+// Func  Nome  Chap  Banco  Conta(dígitos-dígito)  DataInício a DataFim  DataPagamento  Valor
+const LINE_RE = /^(\d+)\s+(.+?)\s+(\d+)\s+(\d+)\s+(\d+-\d)\s+(\d{2}\/\d{2}\/\d{4})\s+a\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+(-?[\d.]+,\d{2})$/;
+const TOTAL_RE = /^Total da Empresa:\s*(-?[\d.]+,\d{2})$/;
+
+function parseDataLine(line){
+  // handle rare case where "Func" glues onto the name (e.g. "27REGILANE")
+  let candidate = line;
+  const glued = line.match(/^(\d+)([A-Za-zÀ-ÿ].*)$/);
+  if (glued) candidate = glued[1] + ' ' + glued[2];
+
+  const m = candidate.match(LINE_RE);
+  if (!m) return null;
+  return {
+    func: m[1],
+    nome: m[2].trim(),
+    chap: m[3],
+    banco: m[4],
+    conta: m[5],
+    periodoInicio: m[6],
+    periodoFim: m[7],
+    pagamento: m[8],
+    valorTotal: m[9],
+  };
+}
+
+function toNumber(brStr){
+  if (!brStr) return null;
+  const n = parseFloat(String(brStr).replace(/\./g, '').replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+
+function toDate(brDateStr){
+  const [d, m, y] = brDateStr.split('/').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+// ---------- Rateio (monthly proration) ----------
+function prorate(startDate, endDate, totalValue){
+  const segments = [];
+  let cursor = new Date(startDate.getTime());
+  while (cursor <= endDate){
+    const y = cursor.getUTCFullYear(), mo = cursor.getUTCMonth();
+    const monthEnd = new Date(Date.UTC(y, mo + 1, 0));
+    const segEnd = monthEnd < endDate ? monthEnd : endDate;
+    const dias = Math.round((segEnd - cursor) / 86400000) + 1;
+    segments.push({ano: y, mes: mo + 1, dias});
+    cursor = new Date(segEnd.getTime());
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  const totalDias = segments.reduce((s, r) => s + r.dias, 0);
+  let allocated = 0;
+  segments.forEach((seg, idx) => {
+    if (idx === segments.length - 1){
+      seg.valor = Math.round((totalValue - allocated) * 100) / 100;
+    } else {
+      const v = Math.round((totalValue * seg.dias / totalDias) * 100) / 100;
+      seg.valor = v;
+      allocated += v;
+    }
+  });
+  return segments;
+}
+
+function processLines(lines, fileName){
+  const rows = [];
+  let skipped = 0;
+  let fileTotal = null;
+
+  lines.forEach(line => {
+    if (/^Líquidos de Férias/.test(line)) return;
+    if (/^Func\s+Nome\s+Chap/.test(line)) return;
+    if (/Pág:\s*\d+/.test(line)) return;
+    if (/^Empresa:/.test(line)) return;
+    if (/^_+$/.test(line)) return;
+    const totalMatch = line.match(TOTAL_RE);
+    if (totalMatch){ fileTotal = toNumber(totalMatch[1]); return; }
+    if (!/^\d/.test(line)) return;
+
+    const parsed = parseDataLine(line);
+    if (parsed){
+      rows.push({arquivo: fileName, ...parsed});
+    } else {
+      skipped++;
+    }
+  });
+  return {rows, skipped, fileTotal};
+}
+
+// ---------- Main processing ----------
+processBtn.addEventListener('click', async () => {
+  processBtn.disabled = true;
+  employees = []; rateioRows = []; ignoredCount = 0; logLines = []; reportedTotals = [];
+  logEl.innerHTML = ''; logEl.classList.add('show');
+
+  for (const item of files){
+    item.status = 'processando…';
+    renderFileList();
+    try {
+      const lines = await extractLines(item.file);
+      const {rows, skipped, fileTotal} = processLines(lines, item.file.name);
+
+      rows.forEach(row => {
+        const start = toDate(row.periodoInicio);
+        const end = toDate(row.periodoFim);
+        const valor = toNumber(row.valorTotal);
+        const segments = prorate(start, end, valor);
+        const competencias = segments.map(s => `${String(s.mes).padStart(2,'0')}/${s.ano}`).join(', ');
+
+        employees.push({...row, competencias, valorTotalNum: valor});
+
+        segments.forEach(seg => {
+          rateioRows.push({
+            arquivo: row.arquivo,
+            func: row.func,
+            nome: row.nome,
+            chap: row.chap,
+            banco: row.banco,
+            conta: row.conta,
+            periodoFerias: `${row.periodoInicio} a ${row.periodoFim}`,
+            pagamento: row.pagamento,
+            valorTotal: row.valorTotal,
+            competencia: `${MESES_PT[seg.mes]}/${seg.ano}`,
+            competenciaOrd: seg.ano * 100 + seg.mes,
+            diasCompetencia: seg.dias,
+            valorRateio: seg.valor,
+          });
+        });
+      });
+
+      ignoredCount += skipped;
+      if (fileTotal !== null) reportedTotals.push({arquivo: item.file.name, total: fileTotal});
+      item.status = `ok · ${rows.length} funcionários`;
+      log(`${item.file.name}: ${rows.length} funcionários extraídos${skipped ? `, ${skipped} linha(s) ignorada(s)` : ''}.`, skipped > 0);
+    } catch (err) {
+      item.status = 'erro';
+      log(`${item.file.name}: falha ao processar — ${err.message}`, true);
+    }
+    renderFileList();
+  }
+
+  processBtn.disabled = false;
+  renderResults();
+});
+
+function renderResults(){
+  const hasData = employees.length > 0;
+  document.getElementById('emptyState').style.display = hasData ? 'none' : 'block';
+  if (!hasData){
+    document.getElementById('resultsPanel').style.display = 'none';
+    document.getElementById('statsBlock').style.display = 'none';
+    document.getElementById('tablePanel').style.display = 'none';
+    return;
+  }
+
+  // Stats, including validation against "Total da Empresa" printed in each PDF
+  const calcTotal = employees.reduce((s, e) => s + e.valorTotalNum, 0);
+  const reportedSum = reportedTotals.reduce((s, r) => s + r.total, 0);
+  const statsRow = document.getElementById('statsRow');
+  let statsHtml = `
+    <div class="stat"><div class="n">${employees.length}</div><div class="l">Funcionários</div></div>
+    <div class="stat"><div class="n">${rateioRows.length}</div><div class="l">Linhas rateadas (competências)</div></div>
+    <div class="stat warnstat"><div class="n">${ignoredCount}</div><div class="l">Linhas ignoradas</div></div>
+    <div class="stat"><div class="n">${fmtBR(calcTotal)}</div><div class="l">Total calculado</div></div>
+  `;
+  if (reportedTotals.length){
+    const diff = Math.round((calcTotal - reportedSum) * 100) / 100;
+    const okClass = Math.abs(diff) < 0.01 ? 'okstat' : 'badstat';
+    statsHtml += `<div class="stat ${okClass}"><div class="n">${fmtBR(reportedSum)}</div><div class="l">Total informado no PDF</div></div>`;
+    if (Math.abs(diff) >= 0.01){
+      statsHtml += `<div class="stat badstat"><div class="n">${fmtBR(diff)}</div><div class="l">Diferença — conferir</div></div>`;
+    }
+  }
+  statsRow.innerHTML = statsHtml;
+  document.getElementById('statsBlock').style.display = 'block';
+
+  renderColumnToggles();
+  document.getElementById('resultsPanel').style.display = 'block';
+  document.getElementById('tablePanel').style.display = 'block';
+  document.getElementById('rowBadge').textContent = currentView === 'rateio'
+    ? `${rateioRows.length} linhas (rateadas)`
+    : `${employees.length} funcionários`;
+
+  renderTable();
+}
+
+function fmtBR(n){
+  return n.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function activeColumnSet(){
+  return currentView === 'rateio' ? COLUMNS_RATEIO : COLUMNS_RESUMO;
+}
+
+function renderColumnToggles(){
+  const cols = activeColumnSet();
+  const colToggles = document.getElementById('colToggles');
+  colToggles.innerHTML = '';
+  cols.forEach(col => {
+    const label = document.createElement('label');
+    label.className = col.core ? 'core' : '';
+    label.innerHTML = `<input type="checkbox" data-key="${col.key}" ${col.core ? 'checked' : ''}> ${col.label}`;
+    colToggles.appendChild(label);
+  });
+  colToggles.querySelectorAll('input').forEach(cb => cb.addEventListener('change', renderTable));
+}
+
+document.getElementById('viewSwitch').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-view]');
+  if (!btn) return;
+  currentView = btn.dataset.view;
+  document.querySelectorAll('#viewSwitch button').forEach(b => b.classList.toggle('active', b === btn));
+  document.getElementById('rowBadge').textContent = currentView === 'rateio'
+    ? `${rateioRows.length} linhas (rateadas)`
+    : `${employees.length} funcionários`;
+  renderColumnToggles();
+  renderTable();
+});
+
+function getActiveColumns(){
+  const cols = activeColumnSet();
+  return cols.filter(col => {
+    const cb = document.querySelector(`#colToggles input[data-key="${col.key}"]`);
+    return cb && cb.checked;
+  });
+}
+
+function renderTable(){
+  const cols = getActiveColumns();
+  const head = document.getElementById('tableHead');
+  head.innerHTML = cols.map(c => `<th>${c.label}</th>`).join('');
+  const body = document.getElementById('tableBody');
+  const data = currentView === 'rateio' ? rateioRows : employees;
+
+  let lastFunc = null;
+  body.innerHTML = data.map(row => {
+    const isNewGroup = currentView === 'rateio' && row.func !== lastFunc;
+    lastFunc = row.func;
+    const trClass = isNewGroup ? ' class="grp-first"' : '';
+    return '<tr' + trClass + '>' + cols.map(c => {
+      let cls = '';
+      if (c.key === 'nome') cls = ' class="name"';
+      else if (c.key === 'arquivo') cls = ' class="src"';
+      else if (c.key === 'competencia' || c.key === 'competencias') cls = ' class="comp"';
+      let val = row[c.key] ?? '';
+      if ((c.key === 'valorRateio' || c.key === 'valorTotal') && typeof val === 'number'){
+        val = fmtBR(val);
+      }
+      return `<td${cls}>${val}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+}
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const cols = getActiveColumns();
+  const data = currentView === 'rateio' ? rateioRows : employees;
+  const moneyKeys = new Set(['valorTotal', 'valorRateio']);
+  const dateKeys = new Set(['pagamento']);
+
+  const rows = data.map(row => {
+    const obj = {};
+    cols.forEach(c => {
+      let raw = row[c.key] ?? '';
+      if (moneyKeys.has(c.key)) {
+        const n = typeof raw === 'number' ? raw : toNumber(raw);
+        obj[c.label] = n === null ? raw : n;
+      } else if (dateKeys.has(c.key)) {
+        const [d, m, y] = String(raw).split('/').map(Number);
+        obj[c.label] = (d && m && y) ? new Date(Date.UTC(y, m - 1, d)) : raw;
+      } else {
+        obj[c.label] = raw;
+      }
+    });
+    return obj;
+  });
+
+  const ws = XLSX.utils.json_to_sheet(rows, {cellDates: true});
+  ws['!cols'] = cols.map(c => ({wch: Math.max(c.label.length + 2, 14)}));
+
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  cols.forEach((c, colIdx) => {
+    const isMoney = moneyKeys.has(c.key);
+    const isDate = dateKeys.has(c.key);
+    if (!isMoney && !isDate) return;
+    for (let r = range.s.r + 1; r <= range.e.r; r++){
+      const cellRef = XLSX.utils.encode_cell({r, c: colIdx});
+      const cell = ws[cellRef];
+      if (!cell) continue;
+      if (isMoney && cell.t === 'n') cell.z = '#,##0.00';
+      else if (isDate && cell.t === 'd') cell.z = 'dd/mm/yyyy';
+    }
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, currentView === 'rateio' ? 'Rateio por Competência' : 'Resumo por Funcionário');
+  const now = new Date();
+  const stamp = now.toISOString().slice(0,10);
+  XLSX.writeFile(wb, `ferias_rateio_${stamp}.xlsx`);
+});
+</script>
+</body>
+</html>

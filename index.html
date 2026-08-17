@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Ferramentas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#FFFFFF;
+    --surface:#FFFFFF;
+    --surface-2:#EEF3FA;
+    --line: rgba(19,41,75,0.14);
+    --paper:#13294B;
+    --paper-dim: rgba(19,41,75,0.58);
+    --gold:#1F4E8C;
+    --green:#1F4E8C;
+    --radius: 3px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink);
+    background-image:
+      linear-gradient(var(--ink), var(--ink)),
+      repeating-linear-gradient(180deg, rgba(19,41,75,0.035) 0px, rgba(19,41,75,0.035) 1px, transparent 1px, transparent 34px);
+    color:var(--paper);
+    font-family:'IBM Plex Sans', sans-serif;
+    min-height:100vh;
+  }
+  .wrap{
+    max-width:920px;
+    margin:0 auto;
+    padding: 64px 24px 96px;
+  }
+
+  /* ---------- Header ---------- */
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    border-bottom:2px solid var(--gold);
+    padding-bottom:22px;
+    margin-bottom:8px;
+  }
+  .brand-eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--gold);
+    margin:0 0 10px;
+  }
+  h1{
+    font-family:'Fraunces', serif;
+    font-weight:500;
+    font-size:clamp(32px, 5vw, 46px);
+    margin:0;
+    letter-spacing:-0.01em;
+  }
+  .date-stamp{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    color:var(--paper-dim);
+    text-align:right;
+    line-height:1.6;
+  }
+
+  /* ---------- Category (conta) blocks ---------- */
+  .conta{
+    margin-top:52px;
+  }
+  .conta-head{
+    display:flex;
+    align-items:baseline;
+    gap:14px;
+    margin-bottom:18px;
+  }
+  .conta-code{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:14px;
+    color:var(--gold);
+    letter-spacing:.03em;
+  }
+  .conta-title{
+    font-family:'Fraunces', serif;
+    font-size:22px;
+    font-weight:500;
+    margin:0;
+  }
+  .conta-rule{
+    flex:1;
+    height:1px;
+    background:var(--line);
+    transform:translateY(-4px);
+  }
+
+  /* ---------- Ledger line items ---------- */
+  .linhas{
+    display:flex;
+    flex-direction:column;
+    gap:1px;
+  }
+  a.linha{
+    display:flex;
+    align-items:center;
+    gap:18px;
+    text-decoration:none;
+    color:inherit;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:16px 18px;
+    box-shadow: 0 1px 2px rgba(19,41,75,0.05);
+    transition: background .15s ease, border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+  }
+  a.linha:hover{
+    background:var(--surface-2);
+    border-color: rgba(31,78,140,0.5);
+    box-shadow: 0 3px 10px rgba(19,41,75,0.08);
+    transform: translateX(3px);
+  }
+  a.linha:focus-visible{
+    outline:2px solid var(--gold);
+    outline-offset:2px;
+  }
+  .linha-item{
+    font-size:12px;
+    color:var(--paper-dim);
+  }
+  .linha-nome{
+    font-family:'Fraunces', serif;
+    font-size:17px;
+    flex:1;
+  }
+  .leader{
+    flex:1;
+    border-bottom:1px dotted var(--line);
+    margin: 0 4px;
+    height:0;
+    min-width:20px;
+  }
+  .stamp{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    padding:4px 9px;
+    border-radius:2px;
+    border:1px solid var(--green);
+    color:var(--green);
+    white-space:nowrap;
+  }
+
+  /* Placeholder (em breve) items */
+  .linha.vazia{
+    background:transparent;
+    border-style:dashed;
+    cursor:default;
+    opacity:.55;
+  }
+  .linha.vazia:hover{ transform:none; background:transparent; border-color:var(--line); }
+  .stamp.pendente{
+    border-color: rgba(19,41,75,0.28);
+    color:var(--paper-dim);
+  }
+
+  footer{
+    margin-top:72px;
+    padding-top:20px;
+    border-top:1px solid var(--line);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--paper-dim);
+    display:flex;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+
+  @media (max-width:560px){
+    a.linha{ flex-wrap:wrap; }
+    .leader{ display:none; }
+    .linha-item{ order:3; width:100%; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <p class="brand-eyebrow">Livro de Ferramentas &middot; Uso interno</p>
+      <h1>Painel de Sistemas</h1>
+    </div>
+    <div class="date-stamp">
+      atualizado em<br>
+      <span id="hoje"></span>
+    </div>
+  </header>
+
+  <!-- ======================================================
+       COMO ADICIONAR UMA NOVA FERRAMENTA:
+       Copie um bloco <a class="linha" ...>...</a> dentro da
+       categoria certa e ajuste href, número do item e nome.
+       Para trocar "EM BREVE" por "ATIVO", troque a classe
+       do <span> de "stamp pendente" para "stamp" e o texto.
+  ======================================================= -->
+
+  <!-- 1. ARRENDAMENTOS -->
+  <section class="conta">
+    <div class="conta-head">
+      <span class="conta-code">1.0</span>
+      <h2 class="conta-title">Arrendamentos</h2>
+      <div class="conta-rule"></div>
+    </div>
+    <div class="linhas">
+      <a class="linha" href="calculo_ifrs16.html">
+        <span class="linha-item">1.1</span>
+        <span class="linha-nome">Cálculo IFRS 16 / CPC 06 (R2)</span>
+        <span class="leader"></span>
+        <span class="stamp">Ativo</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- 2. FOLHA -->
+  <section class="conta">
+    <div class="conta-head">
+      <span class="conta-code">2.0</span>
+      <h2 class="conta-title">Folha</h2>
+      <div class="conta-rule"></div>
+    </div>
+    <div class="linhas">
+      <a class="linha" href="extrator_ferias.html">
+        <span class="linha-item">2.1</span>
+        <span class="linha-nome">Extrator de Férias</span>
+        <span class="leader"></span>
+        <span class="stamp">Ativo</span>
+      </a>
+      <a class="linha" href="extrator_folha.html">
+        <span class="linha-item">2.2</span>
+        <span class="linha-nome">Extrator de Folha</span>
+        <span class="leader"></span>
+        <span class="stamp">Ativo</span>
+      </a>
+      <a class="linha" href="extrator_rescisoes.html">
+        <span class="linha-item">2.3</span>
+        <span class="linha-nome">Extrator de Rescisões</span>
+        <span class="leader"></span>
+        <span class="stamp">Ativo</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- 3. FISCAL -->
+  <section class="conta">
+    <div class="conta-head">
+      <span class="conta-code">3.0</span>
+      <h2 class="conta-title">Fiscal</h2>
+      <div class="conta-rule"></div>
+    </div>
+    <div class="linhas">
+      <div class="linha vazia">
+        <span class="linha-item">3.1</span>
+        <span class="linha-nome">Reservado para nova ferramenta</span>
+        <span class="leader"></span>
+        <span class="stamp pendente">Em breve</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. BANCOS -->
+  <section class="conta">
+    <div class="conta-head">
+      <span class="conta-code">4.0</span>
+      <h2 class="conta-title">Bancos</h2>
+      <div class="conta-rule"></div>
+    </div>
+    <div class="linhas">
+      <div class="linha vazia">
+        <span class="linha-item">4.1</span>
+        <span class="linha-nome">Reservado para nova ferramenta</span>
+        <span class="leader"></span>
+        <span class="stamp pendente">Em breve</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>4 categorias &middot; 4 ferramentas ativas</span>
+    <span>arquivos .html na raiz do repositório</span>
+  </footer>
+
+</div>
+
+<script>
+  document.getElementById('hoje').textContent = new Date().toLocaleDateString('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric'
+  });
+</script>
+</body>
+</html>
