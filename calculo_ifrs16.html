@@ -65,6 +65,8 @@
                    border-bottom:1px solid var(--accent)}
   tbody tr.subt:hover td{background:#e4ebf4}
   tbody tr.subt td.lab{text-align:left;color:var(--accent);font-size:12px}
+  .qst{display:inline-block;font-size:11px;color:var(--ink-soft);margin-top:6px}
+  .qst.ok{color:var(--pos)} .qst.err{color:var(--neg)}
   input.qt{width:14px;height:14px;margin:0;cursor:pointer;accent-color:var(--accent)}
   tbody tr.escrit{background:#dff2e3}
   tbody tr.escrit:hover{background:#cfeada}
@@ -237,7 +239,7 @@
    Abas esperadas na planilha: "Contratos" e "Remensuracoes".
 =============================================================== */
 const TOKEN = "ifrs16";   /* mesma senha definida no Code.gs */
-const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbx-5LOckPhKt87logXA1Gto0wpxVV2pqZu9ysjWLDDFyq1DW22TPj60B3et0kOWwBaf/exec";
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbymb6_RPtufo7TuZEH_Vr-rsSwBXiLPFf8gIFmvOpXGGseaxyldMDJPBigH7uW4kms/exec";
 
 const BRL = v => (v<0?"-":"")+"R$ "+Math.abs(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const SIG = v => (v>=0?"+":"−")+"R$ "+Math.abs(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -393,6 +395,75 @@ function calcular(){
 
 let R=null, CONC=null, ADOC=null, DUMAP=null;
 let QUIT={};   /* parcelas com saída de caixa confirmada (não afeta apropriação) */
+let TQUIT=null;  /* debounce da gravação na planilha */
+
+/* As quitações são guardadas em dois lugares:
+   1. no navegador (localStorage), para sobreviver ao recarregar a página;
+   2. na planilha (aba Quitacoes), que é o registro definitivo e compartilhado. */
+function chaveQuit(){ return "ifrs16_quit_"+(el("contrato").value.trim()||"sem_contrato"); }
+
+function salvarQuitLocal(){
+  try{ localStorage.setItem(chaveQuit(), JSON.stringify(Object.keys(QUIT).map(Number))); }catch(e){}
+}
+
+function carregarQuitLocal(){
+  try{
+    const v=localStorage.getItem(chaveQuit());
+    if(!v) return false;
+    QUIT={};
+    JSON.parse(v).forEach(function(n){ QUIT[n]=true; });
+    return true;
+  }catch(e){ return false; }
+}
+
+function carregarQuitDaBase(contrato){
+  if(!BASE.quitacoes) return false;
+  const lista=BASE.quitacoes.filter(function(q){ return q.contrato===contrato; });
+  if(!lista.length) return false;
+  QUIT={};
+  lista.forEach(function(q){ if(q.parcela>0) QUIT[q.parcela]=true; });
+  return true;
+}
+
+function marcarQuit(abs, marcada){
+  if(marcada) QUIT[abs]=true; else delete QUIT[abs];
+  salvarQuitLocal();
+  if(CONC) conciliar();          /* caixa muda a conciliação, nunca a memória de cálculo */
+  agendarGravacaoQuit();
+}
+
+function agendarGravacaoQuit(){
+  if(!WEBAPP_URL) return;
+  const nome=el("contrato").value.trim();
+  if(!nome) return;
+  if(TQUIT) clearTimeout(TQUIT);
+  statusQuit("salvando quitações...");
+  TQUIT=setTimeout(function(){
+    const ini=el("inicio").value;
+    const parcelas=Object.keys(QUIT).map(Number).sort(function(a,b){return a-b;})
+      .map(function(n){ return {parcela:n, competencia:competencia(ini,n-1)}; });
+    fetch(WEBAPP_URL,{
+      method:"POST",
+      headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body:JSON.stringify({token:TOKEN, acao:"salvarQuitacoes", contrato:nome,
+                           cliente:el("cliente").value.trim(), parcelas:parcelas}),
+      redirect:"follow"
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d||d.ok===false) throw new Error((d&&d.erro)||"recusado");
+      statusQuit("quitações salvas na planilha · "+d.atualizado, "ok");
+    })
+    .catch(function(e){
+      statusQuit("salvo apenas neste navegador (planilha: "+e.message+")","err");
+    });
+  }, 1200);
+}
+
+function statusQuit(txt,tipo){
+  const el2=document.getElementById("quitStatus");
+  if(el2) el2.innerHTML='<span class="qst '+(tipo||"")+'">'+txt+'</span>';
+}
 function totais(){
   return R.linhas.reduce(function(a,l){
     return {pgto:a.pgto+l.pgto, vp:a.vp+l.vp, juros:a.juros+l.juros, dep:a.dep+l.dep};
@@ -531,6 +602,7 @@ function render(){
       'as colunas de ROU seguem o tratamento escolhido na conciliação &nbsp;·&nbsp; '+
       'a coluna <strong>Quitada</strong> registra a saída de caixa e não interfere na apropriação de juros e depreciação &nbsp;·&nbsp; '+
       'clique numa linha para ver o detalhamento.</p>'+
+    '<div id="quitStatus"></div>'+
     '<div class="memo" id="memo"></div></div>';
 
   out.innerHTML=html;
@@ -538,12 +610,7 @@ function render(){
   marcarEscrituracao();
   [].slice.call(out.querySelectorAll("input.qt")).forEach(function(cb){
     cb.onclick=function(ev){ ev.stopPropagation(); };     /* não abre o detalhamento */
-    cb.onchange=function(){
-      const ab=parseInt(cb.dataset.q);
-      if(cb.checked) QUIT[ab]=true; else delete QUIT[ab];
-      /* quitação é caixa: só a conciliação muda, a memória de cálculo permanece */
-      if(CONC) conciliar();
-    };
+    cb.onchange=function(){ marcarQuit(parseInt(cb.dataset.q), cb.checked); };
   });
   [].slice.call(out.querySelectorAll("tbody tr")).forEach(function(tr){
     tr.onclick=function(){
@@ -989,7 +1056,7 @@ function conciliar(){
    "Remensuracoes" : Contrato | Parcela | Novo Valor | Nova Taxa | Novo Prazo
    A planilha precisa estar compartilhada como "qualquer pessoa com o link".
 ================================================================= */
-let BASE={contratos:[], rems:[]};
+let BASE={contratos:[], rems:[], quitacoes:[]};
 
 function gsMsg(txt,tipo){ el("gsMsg").innerHTML='<div class="msg '+(tipo||"info")+'">'+txt+'</div>'; }
 
@@ -1035,6 +1102,10 @@ function carregarBase(){
           taxa    : pnum(x.taxa!==undefined?x.taxa:x.taxaam)
         };
       }).filter(function(x){return x.cliente&&x.contrato;});
+
+      BASE.quitacoes=(d.quitacoes||[]).map(function(x){
+        return { contrato:String(x.contrato||"").trim(), parcela:pnum(x.parcela) };
+      }).filter(function(x){return x.contrato && x.parcela;});
 
       BASE.rems=(d.remensuracoes||[]).map(function(x){
         return {
@@ -1109,6 +1180,7 @@ function aplicarContrato(){
 
   el("concIni").value="";
   CONC=null; ADOC=null; QUIT={};
+  if(!carregarQuitDaBase(con)) carregarQuitLocal();
   render();
 
   if(faltando.length){
@@ -1534,6 +1606,8 @@ el("gsCliente").addEventListener("change",filtrarContratos);
 el("gsContrato").addEventListener("change",aplicarContrato);
 el("gsSalvar").onclick=salvarNaBase;
 el("gsExcluir").onclick=excluirDaBase;
+carregarQuitLocal();
+render();
 if(WEBAPP_URL) carregarBase();
 el("xlsx").onclick=exportar;
 el("print").onclick=function(){window.print();};
