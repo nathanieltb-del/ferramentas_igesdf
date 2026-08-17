@@ -55,7 +55,7 @@
   .fit tbody td{padding:4px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .fit tfoot td{padding:6px 5px}
   .fit col.c1{width:4.2%} .fit col.c2{width:6.0%} .fit col.c3{width:11%}
-  .fit col.c4{width:5.4%} .fit col.cm{width:9.2%}
+  .fit col.c4{width:5.0%} .fit col.cm{width:8.8%} .fit col.ck{width:4.2%}
   thead tr.group th{background:var(--accent);text-align:center;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
   th.c,td.c{text-align:center} th.l,td.l{text-align:left}
   tbody td{padding:6px 10px;text-align:right;border-bottom:1px solid var(--line-soft);white-space:nowrap}
@@ -65,6 +65,7 @@
                    border-bottom:1px solid var(--accent)}
   tbody tr.subt:hover td{background:#e4ebf4}
   tbody tr.subt td.lab{text-align:left;color:var(--accent);font-size:12px}
+  input.qt{width:14px;height:14px;margin:0;cursor:pointer;accent-color:var(--accent)}
   tbody tr.escrit{background:#dff2e3}
   tbody tr.escrit:hover{background:#cfeada}
   tbody tr.escrit td{font-weight:600}
@@ -110,6 +111,17 @@
   .ctab tr.grp td{background:var(--accent-soft);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)}
   .ctab tr.tot td{border-top:2px solid var(--ink);font-weight:700}
   .ctab tr.sub td{border-top:1px solid var(--line);font-weight:700}
+  .exp{display:inline-block;width:18px;height:18px;line-height:1;padding:0;margin-left:6px;
+       border:1px solid var(--line);background:var(--white);color:var(--accent);
+       border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;vertical-align:middle}
+  .exp:hover{background:var(--accent-soft);border-color:var(--accent)}
+  .det{padding:6px 0 10px 14px}
+  .dtab2{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+  .dtab2 thead th{background:var(--paper);color:var(--ink-soft);font-weight:600;font-size:11px;
+                  padding:4px 8px;text-align:right;border-bottom:1px solid var(--line)}
+  .dtab2 thead th:first-child,.dtab2 tbody td:first-child,.dtab2 tfoot td:first-child{text-align:left}
+  .dtab2 tbody td{padding:3px 8px;text-align:right;border-bottom:1px solid var(--line-soft)}
+  .dtab2 tfoot td{padding:4px 8px;text-align:right;font-weight:700;border-top:1px solid var(--line)}
   .nat{font-size:11px;color:var(--ink-soft);font-weight:400}
   .msg{margin-top:12px;font-size:13px;padding:9px 13px;border-radius:4px}
   .msg.ok{background:#eaf5ee;border:1px solid #a9d4b8;color:#1a6b3c}
@@ -380,6 +392,7 @@ function calcular(){
 }
 
 let R=null, CONC=null, ADOC=null, DUMAP=null;
+let QUIT={};   /* parcelas com saída de caixa confirmada (não afeta apropriação) */
 function totais(){
   return R.linhas.reduce(function(a,l){
     return {pgto:a.pgto+l.pgto, vp:a.vp+l.vp, juros:a.juros+l.juros, dep:a.dep+l.dep};
@@ -457,10 +470,11 @@ function render(){
   html+='<div class="card"><h2>Memória de cálculo</h2><div class="scroll fit"><table>'+
     '<colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4">'+
     '<col class="cm"><col class="cm"><col class="cm"><col class="cm"><col class="cm">'+
-    '<col class="cm"><col class="cm"><col class="cm"><col class="cm"></colgroup>'+
+    '<col class="cm"><col class="cm"><col class="cm"><col class="cm"><col class="ck"></colgroup>'+
     '<thead><tr class="group">'+
       '<th colspan="3">Período</th><th colspan="2">Contrato</th>'+
       '<th colspan="5">Passivo de arrendamento</th>'+
+      '<th rowspan="2" class="c" title="Saída de caixa — não interfere na apropriação">Quitada</th>'+
       '<th colspan="3">Ativo de direito de uso (ROU)'+
       (deAbsT>1?' — '+(modoT==="retro"?"retrospectivo":"prospectivo"):'')+'</th></tr>'+
     '<tr><th class="c">Ordem</th><th class="c">Mês/Ano</th><th class="c">Regime</th>'+
@@ -473,7 +487,7 @@ function render(){
     return '<tr class="subt">'+
       '<td class="lab" colspan="3">'+rot+' — '+a.n+' parcela(s)</td>'+
       '<td></td><td>'+BRL(a.pgto)+'</td><td>'+BRL(a.vp)+'</td><td>'+BRL(a.jur)+'</td>'+
-      '<td></td><td>'+BRL(a.vp)+'</td><td></td>'+
+      '<td></td><td>'+BRL(a.vp)+'</td><td></td><td></td>'+
       '<td></td><td class="dep">'+PAR(a.dep)+'</td><td></td></tr>';
   };
   r.linhas.forEach(function(l){
@@ -489,6 +503,7 @@ function render(){
       '<td>'+PCT(l.taxa)+'</td><td>'+BRL(l.pgto)+'</td>'+
       '<td>'+BRL(l.vp)+'</td><td>'+BRL(l.juros)+'</td>'+
       '<td>'+BRL(l.spI)+'</td><td>'+BRL(l.amort)+'</td><td>'+BRL(l.spF)+'</td>'+
+      '<td class="c"><input type="checkbox" class="qt" data-q="'+l.abs+'"'+(QUIT[l.abs]?' checked':'')+'></td>'+
       (function(){
         const d=DUMAP?DUMAP[l.abs]:null;
         if(!d) return '<td>'+BRL(l.srI)+'</td><td class="dep">'+PAR(l.dep)+'</td><td>'+BRL(l.srF)+'</td>';
@@ -514,12 +529,22 @@ function render(){
       '<span class="tagesc">C</span> início da escrituração &nbsp;·&nbsp; '+
       'linha em verde: competência a partir da qual o contrato passa a ser contabilizado &nbsp;·&nbsp; '+
       'as colunas de ROU seguem o tratamento escolhido na conciliação &nbsp;·&nbsp; '+
+      'a coluna <strong>Quitada</strong> registra a saída de caixa e não interfere na apropriação de juros e depreciação &nbsp;·&nbsp; '+
       'clique numa linha para ver o detalhamento.</p>'+
     '<div class="memo" id="memo"></div></div>';
 
   out.innerHTML=html;
   preencherConc();
   marcarEscrituracao();
+  [].slice.call(out.querySelectorAll("input.qt")).forEach(function(cb){
+    cb.onclick=function(ev){ ev.stopPropagation(); };     /* não abre o detalhamento */
+    cb.onchange=function(){
+      const ab=parseInt(cb.dataset.q);
+      if(cb.checked) QUIT[ab]=true; else delete QUIT[ab];
+      /* quitação é caixa: só a conciliação muda, a memória de cálculo permanece */
+      if(CONC) conciliar();
+    };
+  });
   [].slice.call(out.querySelectorAll("tbody tr")).forEach(function(tr){
     tr.onclick=function(){
       [].slice.call(out.querySelectorAll("tbody tr")).forEach(function(x){x.classList.remove("sel");});
@@ -688,11 +713,26 @@ function esquemaDU(modo, deAbs){
     map.catchUp=catchUp;
     map.modo="retro";
   } else {
+    /* PROSPECTIVO — a quota é dividida pelos meses CONTRATADOS do regime vigente,
+       nunca pelo prazo total do contrato. Assim, uma remensuração futura (que estende
+       o contrato) não redistribui a depreciação de competências já apropriadas:
+       o regime anterior conserva o seu próprio fim contratado. */
+    const regimeDe=function(ab){
+      for(let i=0;i<R.regimes.length;i++){
+        if(ab>=R.regimes[i].inicio && ab<=R.regimes[i].fim) return R.regimes[i];
+      }
+      return R.regimes[R.regimes.length-1];
+    };
     let anc=R.linhas[deAbs-1].spI, depAc=0;
-    let quota=anc/(n-deAbs+1);
+    const g0=regimeDe(deAbs);
+    let quota=anc/Math.max(1,g0.fimContratado-deAbs+1);
     for(let ab=deAbs;ab<=n;ab++){
       const e=ev(ab);
-      if(e && ab>deAbs){ anc+=e.deltaPassivo; quota=(anc-depAc)/(n-ab+1); }
+      if(e && ab>deAbs){
+        const g=regimeDe(ab);
+        anc+=e.deltaPassivo;
+        quota=(anc-depAc)/Math.max(1,g.fimContratado-ab+1);
+      }
       const dep=Math.min(quota, anc-depAc);
       map[ab]={anc:anc, depAcIni:depAc, dep:dep, depAcFim:depAc+dep};
       depAc+=dep;
@@ -701,6 +741,15 @@ function esquemaDU(modo, deAbs){
     map.modo="pros";
   }
   return map;
+}
+
+function toggleDet(id,btn){
+  const tr=document.getElementById(id);
+  if(!tr) return;
+  const aberto = tr.style.display!=="none";
+  tr.style.display = aberto ? "none" : "table-row";
+  btn.textContent = aberto ? "+" : "−";
+  btn.title = aberto ? "Ver detalhamento" : "Recolher";
 }
 
 function marcarEscrituracao(){
@@ -879,26 +928,46 @@ function conciliar(){
     '</tbody></table>';
   }
 
+  /* ---- Acumulado escriturado — separa apropriação (contábil) de quitação (caixa) ---- */
+  const quit  = ate.filter(function(x){return QUIT[x.abs];});
+  const naoQ  = ate.filter(function(x){return !QUIT[x.abs];});
+  const vQuit = S(quit,function(x){return x.pgto;});
+  const vNaoQ = S(naoQ,function(x){return x.pgto;});
+
+  const detTab=function(id,linhas,campo,rot){
+    if(!linhas.length) return '<tr id="'+id+'" style="display:none"><td colspan="3">'+
+      '<div class="det"><em>Nenhuma parcela neste grupo.</em></div></td></tr>';
+    let t='<tr id="'+id+'" style="display:none"><td colspan="3"><div class="det">'+
+      '<table class="dtab2"><thead><tr><th>Competência</th><th>Parcela</th><th>'+rot+'</th></tr></thead><tbody>';
+    linhas.forEach(function(x){
+      t+='<tr><td>'+competencia(ini,x.abs-1)+'</td><td>'+x.abs+'/'+R.linhas.length+'</td>'+
+         '<td>'+BRL(campo(x))+'</td></tr>';
+    });
+    t+='</tbody><tfoot><tr><td colspan="2">Total — '+linhas.length+' parcela(s)</td><td>'+
+       BRL(S(linhas,campo))+'</td></tr></tfoot></table></div></td></tr>';
+    return t;
+  };
+  const btn=function(id){
+    return '<button type="button" class="exp" onclick="toggleDet(\''+id+'\',this)">+</button>';
+  };
+
   h+='<table class="ctab">'+
-    '<thead><tr><th>Acumulado escriturado ('+competencia(ini,deAbs-1)+' a '+
-      (abertura?competencia(ini,Math.max(deAbs,m)-1-(m>deAbs?1:0)):competencia(ini,m-1))+
-      ')</th><th>Valor</th><th>Parcelas</th></tr></thead><tbody>'+
-    '<tr><td>Parcelas pagas</td><td>'+BRL(pagoAc)+'</td><td>'+ate.length+'</td></tr>'+
-    '<tr><td>Juros apropriados</td><td>'+BRL(jurAc)+'</td><td></td></tr>'+
-    '<tr><td>Depreciação acumulada</td><td>'+BRL(depAcDU)+'</td><td></td></tr>'+
+    '<thead><tr><th>Acumulado escriturado ('+competencia(ini,deAbs-1)+' a '+competencia(ini,m-1)+')</th>'+
+      '<th>Valor</th><th>Parcelas</th></tr></thead><tbody>'+
+    '<tr class="grp"><td colspan="3">Movimento financeiro (caixa)</td></tr>'+
+    '<tr><td>Parcelas quitadas '+btn("dQuit")+'</td><td>'+BRL(vQuit)+'</td><td>'+quit.length+'</td></tr>'+
+    detTab("dQuit",quit,function(x){return x.pgto;},"Valor pago")+
+    '<tr><td>Parcelas a quitar '+btn("dNaoQ")+'</td><td>'+BRL(vNaoQ)+'</td><td>'+naoQ.length+'</td></tr>'+
+    detTab("dNaoQ",naoQ,function(x){return x.pgto;},"Valor devido")+
+    '<tr class="grp"><td colspan="3">Apropriação contábil — independe da quitação</td></tr>'+
+    '<tr><td>Parcelas apropriadas '+btn("dApr")+'</td><td>'+BRL(pagoAc)+'</td><td>'+ate.length+'</td></tr>'+
+    detTab("dApr",ate,function(x){return x.pgto;},"Parcela")+
+    '<tr><td>Juros apropriados '+btn("dJur")+'</td><td>'+BRL(jurAc)+'</td><td>'+ate.length+'</td></tr>'+
+    detTab("dJur",ate,function(x){return x.juros;},"Juros")+
+    '<tr><td>Depreciação acumulada '+btn("dDep")+'</td><td>'+BRL(depAcDU)+'</td><td></td></tr>'+
+    detTab("dDep",ate,function(x){const q=DUMAP?DUMAP[x.abs]:null; return q?q.dep:x.dep;},"Depreciação")+
     '<tr class="tot"><td>Parcelas a vencer</td><td>'+BRL(arrPC+arrPNC)+'</td><td>'+rest.length+'</td></tr>'+
     '</tbody></table>';
-
-  h+='<table class="ctab"><tbody>'+
-    '<tr><td>Direito de Uso (ANC)</td><td>'+BRL(ancDU)+'</td></tr>'+
-    '<tr><td>( − ) Depreciação Acumulada</td><td>'+PAR(depAcDU)+'</td></tr>'+
-    '<tr class="tot"><td>Direito de Uso líquido</td><td>'+BRL(rouLiq)+'</td></tr>'+
-    '</tbody></table>'+
-    '<div class="msg info">Tratamento '+(modo==="retro"
-      ? '<strong>retrospectivo</strong>: ativo reconhecido pelo valor original e ajuste de '+
-        BRL(DU.catchUp)+' na Depreciação Acumulada referente às '+(deAbs-1)+' parcela(s) anteriores à adoção.'
-      : '<strong>prospectivo</strong>: ativo reconhecido pelo valor presente remanescente na adoção, '+
-        'depreciado pelos meses restantes.')+'</div>';
 
   CONC={
     cliente:el("cliente").value, contrato:el("contrato").value,
@@ -907,7 +976,8 @@ function conciliar(){
     saldoRou:ancDU, rouLiquido:rouLiq, depAcDU:depAcDU, depMes:depMesDU, modo:modo, catchUp:DU?DU.catchUp:0, arrPC:arrPC, jurPC:jurPC, arrPNC:arrPNC, jurPNC:jurPNC,
     liquido:liquido, saldoPassivo:saldoPassivo, dif:dif, nPC:pc.length, nPNC:pnc.length,
     pgtoMes:l.pgto, jurosMes:l.juros,
-    pagoAc:pagoAc, jurAc:jurAc, depAc:depAc, nAte:ate.length, nRest:rest.length
+    pagoAc:pagoAc, jurAc:jurAc, depAc:depAc, nAte:ate.length, nRest:rest.length,
+    vQuit:vQuit, nQuit:quit.length, vNaoQ:vNaoQ, nNaoQ:naoQ.length
   };
   el("concOut").innerHTML=h;
 }
@@ -1038,7 +1108,7 @@ function aplicarContrato(){
   toggleEmpty();
 
   el("concIni").value="";
-  CONC=null; ADOC=null;
+  CONC=null; ADOC=null; QUIT={};
   render();
 
   if(faltando.length){
@@ -1218,7 +1288,9 @@ function relatorioConcPdf(){
 
   corpo+='<h3>Acumulado escriturado</h3><table>'+
     '<thead><tr><th>Item</th><th class="n">Valor</th><th class="o">Parcelas</th></tr></thead><tbody>'+
-    linha('Parcelas pagas',BRL(C.pagoAc),C.nAte)+
+    linha('Parcelas quitadas (caixa)',BRL(C.vQuit),C.nQuit)+
+    linha('Parcelas a quitar',BRL(C.vNaoQ),C.nNaoQ)+
+    linha('Parcelas apropriadas',BRL(C.pagoAc),C.nAte)+
     linha('Juros apropriados',BRL(C.jurAc),'')+
     linha('Depreciação acumulada',BRL(C.depAcDU),'')+
     '<tr class="t"><td>Parcelas a vencer</td><td class="n">'+BRL(C.arrPC+C.arrPNC)+
@@ -1306,7 +1378,9 @@ function relatorioConcXls(){
     ["Despesa de depreciação (DRE)",C.depMes,""],
     ["Direito de Uso (ANC)","",C.depMes],[],
     ["ACUMULADO ESCRITURADO","Valor","Parcelas"],
-    ["Parcelas pagas",C.pagoAc,C.nAte],
+    ["Parcelas quitadas (caixa)",C.vQuit,C.nQuit],
+    ["Parcelas a quitar",C.vNaoQ,C.nNaoQ],
+    ["Parcelas apropriadas",C.pagoAc,C.nAte],
     ["Juros apropriados",C.jurAc,""],
     ["Depreciação acumulada",C.depAcDU,""],
     ["Parcelas a vencer",C.arrPC+C.arrPNC,C.nRest],[],
