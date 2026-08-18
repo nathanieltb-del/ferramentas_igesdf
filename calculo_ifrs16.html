@@ -99,6 +99,15 @@
   .dtab td:first-child{text-align:left;font-weight:600}
   .dtab tr.delta td{background:#fffdf5;font-weight:700}
   .up{color:var(--pos)} .down{color:var(--neg)}
+  .cplp{margin-top:14px;padding:12px;background:var(--paper);border:1px solid var(--line);border-radius:6px}
+  .cplp h5{margin:0 0 8px;font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:.03em}
+  .cplp table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .cplp td{padding:4px 6px;border-bottom:1px solid var(--line-soft)}
+  .cplp td.v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .cplp td.o{text-align:right;color:var(--ink-soft);font-size:11px}
+  .cplp tr.sub td{font-weight:700;background:var(--white)}
+  .cplp tr.t td{border-top:2px solid var(--line);font-weight:700;border-bottom:none}
+  .cplp .obs{margin:8px 0 0;font-size:11px;color:var(--ink-soft)}
   .lanc{margin-top:14px;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:12px 14px;font-size:13px}
   .lanc h5{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent)}
   .lanc table td{padding:3px 8px;border:none}
@@ -243,7 +252,7 @@
    Abas esperadas na planilha: "Contratos" e "Remensuracoes".
 =============================================================== */
 const TOKEN = "ifrs16";   /* mesma senha definida no Code.gs */
-const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwDWf9WonlfMm4BJcnkGaNiLkI3kGmzBSgNV6NA-s937MqauccH4DPDnhgQn8ZOLXOf/exec";
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyrhIloD64M1tciUlGAAcQIu4ulxj8iK679cyb8gN8/dev";
 
 const BRL = v => (v<0?"-":"")+"R$ "+Math.abs(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const SIG = v => (v>=0?"+":"−")+"R$ "+Math.abs(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -546,7 +555,18 @@ function saldoCPLP(mAbs, base){
   const pc=rest.filter(noPC), pnc=rest.filter(function(x){return !noPC(x);});
   const cp = S(pc,function(x){return x.vp;});
   const lp = S(pnc,function(x){return x.vp;});
-  return {cp:cp, lp:lp, total:cp+lp, nPC:pc.length, nPNC:pnc.length, anoLimite:anoLimite};
+  return {cp:cp, lp:lp, total:cp+lp, nPC:pc.length, nPNC:pnc.length, anoLimite:anoLimite,
+          brutoCP:S(pc,function(x){return x.pgto;}), brutoPNC:S(pnc,function(x){return x.pgto;}),
+          jurCP:S(pc,function(x){return x.juros;}), jurPNC:S(pnc,function(x){return x.juros;})};
+}
+
+/* Posição CP/PNC considerando as parcelas JÁ PAGAS (que saem do passivo).
+   Reaproveita saldoCPLP e desconta do CP as parcelas quitadas até mAbs. */
+function posicaoCPLP(mAbs){
+  const s=saldoCPLP(mAbs);
+  if(!s) return null;
+  /* parcelas pagas até mAbs saem do curto prazo (bruto e juros) */
+  return s;
 }
 
 function segCPLP(e){
@@ -556,16 +576,21 @@ function segCPLP(e){
   const alvo=Math.max(mSel, e.parcela);      /* posição não pode ser anterior à própria remensuração */
   const r=saldoCPLP(alvo, base);
   if(!r) return "";
+  const cpLiq=r.brutoCP-r.jurCP, pncLiq=r.brutoPNC-r.jurPNC;
   return '<div class="cplp"><h5>Curto e Longo Prazo — posição em '+competencia(ini,alvo-1)+'</h5>'+
     '<table><tbody>'+
-    '<tr><td>Curto Prazo</td><td class="v">'+BRL(r.cp)+'</td><td class="o">'+r.nPC+
+    '<tr><td>Passivo circulante (bruto)</td><td class="v">'+BRL(r.brutoCP)+'</td><td class="o">'+r.nPC+
       ' parcela(s) até 31/12/'+r.anoLimite+'</td></tr>'+
-    '<tr><td>Longo Prazo</td><td class="v">'+BRL(r.lp)+'</td><td class="o">'+r.nPNC+' parcela(s)</td></tr>'+
-    '<tr class="t"><td>Total</td><td class="v">'+BRL(r.total)+'</td><td class="o">saldo do passivo na competência</td></tr>'+
+    '<tr><td>( − ) Juros a transcorrer CP</td><td class="v">'+PAR(r.jurCP)+'</td><td class="o">juros das parcelas do curto prazo</td></tr>'+
+    '<tr class="sub"><td>Curto Prazo líquido</td><td class="v">'+BRL(cpLiq)+'</td><td class="o">&nbsp;</td></tr>'+
+    '<tr><td>Passivo não circulante (bruto)</td><td class="v">'+BRL(r.brutoPNC)+'</td><td class="o">'+r.nPNC+' parcela(s)</td></tr>'+
+    '<tr><td>( − ) Juros a transcorrer PNC</td><td class="v">'+PAR(r.jurPNC)+'</td><td class="o">juros das parcelas do longo prazo</td></tr>'+
+    '<tr class="sub"><td>Longo Prazo líquido</td><td class="v">'+BRL(pncLiq)+'</td><td class="o">&nbsp;</td></tr>'+
+    '<tr class="t"><td>Passivo líquido total</td><td class="v">'+BRL(cpLiq+pncLiq)+'</td><td class="o">saldo do passivo na competência</td></tr>'+
     '</tbody></table>'+
-    '<p class="obs">Valores em valor presente pelos termos vigentes desta remensuração. '+
-    'A competência acompanha o seletor <em>Competência a validar</em> da conciliação; competências '+
-    'anteriores à remensuração não são recalculadas.</p></div>';
+    '<p class="obs">Passivo pelo valor bruto (soma das parcelas) e juros a transcorrer segregados '+
+    'entre curto e longo prazo, pelos termos vigentes desta remensuração. A competência acompanha o '+
+    'seletor <em>Competência a validar</em> da conciliação; competências anteriores à remensuração não são recalculadas.</p></div>';
 }
 
 function render(){
@@ -1624,8 +1649,10 @@ function relatorioConcXls(){
 function contasRazao(){
   return {
     rou:      "Direito de Uso (ANC)",
-    passivo:  "Arrendamentos a Pagar (bruto)",
-    jurTransc:"( - ) Juros a Transcorrer",
+    passCP:   "Arrendamentos a Pagar CP (bruto)",
+    passPNC:  "Arrendamentos a Pagar PNC (bruto)",
+    jurTrCP:  "( - ) Juros a Transcorrer CP",
+    jurTrPNC: "( - ) Juros a Transcorrer PNC",
     despJur:  "Despesa de Juros de Arrendamento",
     despDep:  "Despesa de Depreciação",
     depAcum:  "Depreciação Acumulada",
@@ -1646,31 +1673,25 @@ function eventosRazao(deAbs, mFim, modo){
     return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear(); };
   const dataComp=function(ab){ const d=dataDaParcela(ab);
     return String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear(); };
+  const regimeDe=function(ab){ return R.regimes.filter(function(x){return ab>=x.inicio && ab<=x.fim;})[0]; };
 
-  /* Soma do bruto e do valor presente das parcelas a vencer a partir de "ab",
-     sob o regime vigente na data (não antecipa remensurações futuras). */
   const posicao=function(ab){
-    const g=R.regimes.filter(function(x){return ab>=x.inicio && ab<=x.fim;})[0];
-    let bruto=0, vp=0;
-    if(g){ for(let k=ab;k<=g.fimContratado;k++){ const v=g.pgto/Math.pow(1+g.taxa,k);
-      bruto+=g.pgto; vp+=v; } }
+    const g=regimeDe(ab); let bruto=0, vp=0;
+    if(g){ for(let k=ab;k<=g.fimContratado;k++){ const v=g.pgto/Math.pow(1+g.taxa,k); bruto+=g.pgto; vp+=v; } }
     return {bruto:bruto, vp:vp, jur:bruto-vp};
   };
 
-  /* ----- RECONHECIMENTO INICIAL / NA ADOÇÃO — em duas etapas -----
-     1) reconhece o direito de uso e o passivo pelo total das parcelas (bruto);
-     2) ajusta o direito de uso pelos juros a transcorrer (bruto − valor presente),
-        contra a conta redutora (−) Juros a Transcorrer.
-     Saldo final: ROU pelo valor presente, passivo bruto, redutora com os juros. */
+  /* ----- RECONHECIMENTO em duas etapas (todo o passivo entra no CP; a
+     reclassificação final segrega o PNC pela posição da competência) ----- */
   const p0=posicao(deAbs);
   const histRec=(deAbs>1?"Reconhecimento na adoção — pela posição existente":"Reconhecimento inicial do arrendamento");
   ev.push({ab:deAbs, data:dataISO(deAbs), comp:dataComp(deAbs),
     hist:histRec+" — pelo total das parcelas (bruto)",
-    cD:CT.rou, cC:CT.passivo, d:p0.bruto, c:p0.bruto,
+    cD:CT.rou, cC:CT.passCP, d:p0.bruto, c:p0.bruto,
     rastro:"Direito de uso e passivo pelo valor bruto = "+BRL(p0.bruto)});
   ev.push({ab:deAbs, data:dataISO(deAbs), comp:dataComp(deAbs),
     hist:histRec+" — juros a transcorrer (bruto − valor presente)",
-    cD:CT.jurTransc, cC:CT.rou, d:p0.jur, c:p0.jur,
+    cD:CT.jurTrCP, cC:CT.rou, d:p0.jur, c:p0.jur,
     rastro:"Ajuste do direito de uso ao valor presente · juros a transcorrer = "+BRL(p0.jur)});
 
   if(modo==="retro" && DU.catchUp>0){
@@ -1685,47 +1706,59 @@ function eventosRazao(deAbs, mFim, modo){
       rastro:"Direito de uso reconhecido pelo valor original do contrato"});
   }
 
-  /* ----- COMPETÊNCIA A COMPETÊNCIA ----- */
+  /* ----- COMPETÊNCIA A COMPETÊNCIA (movimentos no CP) ----- */
   for(let ab=deAbs; ab<=mFim; ab++){
     const l=lin[ab-1];
     const du=DU[ab];
 
-    /* remensuração: apresentação bruta — ajusta passivo bruto e juros a transcorrer */
+    /* remensuração: ajusta passivo bruto e juros a transcorrer (no CP; a
+       reclassificação final segrega) */
     const e=R.eventos.filter(function(x){return x.parcela===ab && ab>deAbs;})[0];
     if(e){
-      const dBruto=e.deltaPago, dJur=e.deltaJurosRem;   /* variações já calculadas */
-      /* 1) diferença do bruto: D ROU / C Arrendamentos (ou inverso) */
+      const dBruto=e.deltaPago, dJur=e.deltaJurosRem;
       ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
         hist:"Remensuração — diferença da parcela (valor bruto)",
-        cD:(dBruto>=0?CT.rou:CT.passivo), cC:(dBruto>=0?CT.passivo:CT.rou),
+        cD:(dBruto>=0?CT.rou:CT.passCP), cC:(dBruto>=0?CT.passCP:CT.rou),
         d:Math.abs(dBruto), c:Math.abs(dBruto),
         rastro:e.rotulo+": variação do desembolso bruto remanescente = "+SIG(dBruto)});
-      /* 2) diferença dos juros a transcorrer: C ROU / D (-)Juros (ou inverso) */
       ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
         hist:"Remensuração — diferença dos juros a transcorrer",
-        cD:(dJur>=0?CT.jurTransc:CT.rou), cC:(dJur>=0?CT.rou:CT.jurTransc),
+        cD:(dJur>=0?CT.jurTrCP:CT.rou), cC:(dJur>=0?CT.rou:CT.jurTrCP),
         d:Math.abs(dJur), c:Math.abs(dJur),
         rastro:e.rotulo+": ajuste dos juros a apropriar = "+SIG(dJur)});
     }
 
-    /* (A) apropriação dos juros — reduz a conta (−) Juros a Transcorrer */
     if(l.juros>0.005) ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
       hist:"Apropriação de juros da competência",
-      cD:CT.despJur, cC:CT.jurTransc, d:l.juros, c:l.juros,
+      cD:CT.despJur, cC:CT.jurTrCP, d:l.juros, c:l.juros,
       rastro:"Memória de cálculo "+dataComp(ab)+" · Juros = "+BRL(l.juros)});
 
-    /* (B) depreciação da competência */
     const dep=du?du.dep:l.dep;
     if(dep>0.005) ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
       hist:"Apropriação da depreciação da competência",
       cD:CT.despDep, cC:CT.depAcum, d:dep, c:dep,
       rastro:"Memória de cálculo "+dataComp(ab)+" · Depreciação = "+BRL(dep)});
 
-    /* (C) pagamento — baixa o passivo BRUTO pela parcela cheia; só se marcada */
     if(QUIT[ab]) ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
-      hist:"Pagamento da parcela (baixa do passivo)",
-      cD:CT.passivo, cC:CT.banco, d:l.pgto, c:l.pgto,
+      hist:"Pagamento da parcela (baixa do passivo CP)",
+      cD:CT.passCP, cC:CT.banco, d:l.pgto, c:l.pgto,
       rastro:"Parcela "+ab+" paga · "+BRL(l.pgto)});
+  }
+
+  /* ----- SEGREGAÇÃO CP/PNC na competência de validação (mFim) -----
+     Move para o PNC exatamente a posição de longo prazo calculada pela mesma
+     regra da conciliação (vencimentos após 31/12 do exercício seguinte).
+     Assim CP e PNC do razão reproduzem a conciliação por construção. */
+  const seg=saldoCPLP(mFim);
+  if(seg && (seg.brutoPNC>0.005 || seg.jurPNC>0.005)){
+    ev.push({ab:mFim, data:dataISO(mFim), comp:dataComp(mFim),
+      hist:"Segregação Longo Prazo — Arrendamentos PNC",
+      cD:CT.passCP, cC:CT.passPNC, d:seg.brutoPNC, c:seg.brutoPNC,
+      rastro:"Parcelas com vencimento após 31/12/"+seg.anoLimite+" ("+seg.nPNC+" parcelas, bruto)"});
+    ev.push({ab:mFim, data:dataISO(mFim), comp:dataComp(mFim),
+      hist:"Segregação Longo Prazo — Juros a Transcorrer PNC",
+      cD:CT.jurTrPNC, cC:CT.jurTrCP, d:seg.jurPNC, c:seg.jurPNC,
+      rastro:"Juros a transcorrer das parcelas de longo prazo"});
   }
 
   return {eventos:ev, contas:CT};
