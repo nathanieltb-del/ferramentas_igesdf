@@ -255,6 +255,22 @@
 const TOKEN = "ifrs16";   /* mesma senha definida no Code.gs */
 const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbymb6_RPtufo7TuZEH_Vr-rsSwBXiLPFf8gIFmvOpXGGseaxyldMDJPBigH7uW4kms/exec";
 
+/* Trava simples de senha para os botões "Salvar na base" e "Excluir da base",
+   já que o link é compartilhado com várias pessoas. Usa a MESMA senha do
+   TOKEN (validada de qualquer forma no Code.gs) para não manter dois segredos
+   — não é segurança forte (o valor fica visível no código-fonte da página),
+   é só um filtro contra clique casual de quem tem apenas o link. Pedida uma
+   vez por sessão do navegador; recarregar a página pede de novo. */
+let senhaEscritaOk=false;
+function exigirSenhaEscrita(){
+  if(senhaEscritaOk) return true;
+  const s=prompt("Digite a senha para salvar ou excluir contratos na base:");
+  if(s===null) return false;              /* cancelou */
+  if(s!==TOKEN){ alert("Senha incorreta."); return false; }
+  senhaEscritaOk=true;
+  return true;
+}
+
 const BRL = v => (v<0?"-":"")+"R$ "+Math.abs(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const SIG = v => (v>=0?"+":"−")+"R$ "+Math.abs(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const PAR = v => "("+BRL(Math.abs(v))+")";
@@ -1372,6 +1388,7 @@ function enviar(payload, aoOk){
 }
 
 function salvarNaBase(){
+  if(!exigirSenhaEscrita()) return;
   const p=coletarPayload();
   if(!p.contrato.cliente || !p.contrato.contrato){
     msgSave("Informe o cliente e o contrato antes de salvar.","err"); return;
@@ -1389,6 +1406,7 @@ function salvarNaBase(){
 }
 
 function excluirDaBase(){
+  if(!exigirSenhaEscrita()) return;
   const nome=el("contrato").value.trim();
   if(!nome){ msgSave("Informe o contrato a excluir.","err"); return; }
   if(!confirm("Excluir o contrato \""+nome+"\" da planilha?\n\n"+
