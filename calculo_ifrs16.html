@@ -143,6 +143,7 @@
   .dtab2 thead th:first-child,.dtab2 tbody td:first-child,.dtab2 tfoot td:first-child{text-align:left}
   .dtab2 tbody td{padding:3px 8px;text-align:right;border-bottom:1px solid var(--line-soft)}
   .dtab2 tfoot td{padding:4px 8px;text-align:right;font-weight:700;border-top:1px solid var(--line)}
+  .dtab2 tr.marco td{background:var(--accent-soft);font-weight:700;font-size:11px;color:var(--accent)}
   .nat{font-size:11px;color:var(--ink-soft);font-weight:400}
   .msg{margin-top:12px;font-size:13px;padding:9px 13px;border-radius:4px}
   .msg.ok{background:#eaf5ee;border:1px solid #a9d4b8;color:#1a6b3c}
@@ -252,7 +253,7 @@
    Abas esperadas na planilha: "Contratos" e "Remensuracoes".
 =============================================================== */
 const TOKEN = "ifrs16";   /* mesma senha definida no Code.gs */
-const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwA0gQ_KUkYpzrp037GKOP5NV-JdZNMI_23268KAdLNfWb1WXbJ9djP4MOQRJbSZSTb/exec";
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbymb6_RPtufo7TuZEH_Vr-rsSwBXiLPFf8gIFmvOpXGGseaxyldMDJPBigH7uW4kms/exec";
 
 const BRL = v => (v<0?"-":"")+"R$ "+Math.abs(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const SIG = v => (v>=0?"+":"−")+"R$ "+Math.abs(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1125,55 +1126,17 @@ function conciliar(){
     '</tbody></table>';
   }
 
-  /* ---- Acumulado escriturado — separa apropriação (contábil) de quitação (caixa) ---- */
+  /* ---- Acumulado escriturado — agora é o próprio Razão Contábil renderizado em
+     tela, com o mesmo saldo progressivo por conta do Excel (débito soma, crédito
+     subtrai, reclassificação Longo → Curto Prazo a cada fechamento de dezembro).
+     quit/naoQ seguem calculados aqui pois alimentam o relatório PDF/Excel. */
   const quit  = ate.filter(function(x){return QUIT[x.abs];});
   const naoQ  = ate.filter(function(x){return !QUIT[x.abs];});
   const vQuit = S(quit,function(x){return x.pgto;});
   const vNaoQ = S(naoQ,function(x){return x.pgto;});
 
-  const detTab=function(id,linhas,campo,rot,saldoIni,modoSaldo){
-    if(!linhas.length) return '<tr id="'+id+'" style="display:none"><td colspan="3">'+
-      '<div class="det"><em>Nenhuma parcela neste grupo.</em></div></td></tr>';
-    const temSaldo=(saldoIni!==undefined && saldoIni!==null);
-    const acumula=(modoSaldo==="acumula");   /* saldo crescente (juros, depreciação) */
-    let t='<tr id="'+id+'" style="display:none"><td colspan="3"><div class="det">'+
-      '<table class="dtab2"><thead><tr><th>Competência</th><th>Parcela</th><th>'+rot+'</th>'+
-      (temSaldo?'<th>'+(acumula?"Acumulado":"Saldo")+'</th>':'')+'</tr></thead><tbody>';
-    let saldo=temSaldo?saldoIni:0;
-    if(temSaldo && !acumula){
-      t+='<tr class="ab"><td>Saldo inicial</td><td>—</td><td>—</td><td>'+BRL(saldo)+'</td></tr>';
-    }
-    linhas.forEach(function(x){
-      const val=campo(x);
-      if(temSaldo) saldo = acumula ? saldo+val : saldo-val;
-      t+='<tr><td>'+competencia(ini,x.abs-1)+'</td><td>'+x.abs+'/'+R.linhas.length+'</td>'+
-         '<td>'+BRL(val)+'</td>'+(temSaldo?'<td>'+BRL(saldo)+'</td>':'')+'</tr>';
-    });
-    t+='</tbody><tfoot><tr><td colspan="2">Total — '+linhas.length+' parcela(s)</td><td>'+
-       BRL(S(linhas,campo))+'</td>'+(temSaldo?'<td>'+BRL(saldo)+'</td>':'')+'</tr></tfoot></table></div></td></tr>';
-    return t;
-  };
-  const btn=function(id){
-    return '<button type="button" class="exp" onclick="toggleDet(\''+id+'\',this)">+</button>';
-  };
-
-  h+='<table class="ctab">'+
-    '<thead><tr><th>Acumulado escriturado ('+competencia(ini,deAbs-1)+' a '+competencia(ini,m-1)+')</th>'+
-      '<th>Valor</th><th>Parcelas</th></tr></thead><tbody>'+
-    '<tr class="grp"><td colspan="3">Movimento financeiro (caixa)</td></tr>'+
-    '<tr><td>Parcelas quitadas '+btn("dQuit")+'</td><td>'+BRL(vQuit)+'</td><td>'+quit.length+'</td></tr>'+
-    detTab("dQuit",quit,function(x){return x.pgto;},"Valor pago",vQuit+vNaoQ)+
-    '<tr><td>Parcelas a quitar '+btn("dNaoQ")+'</td><td>'+BRL(vNaoQ)+'</td><td>'+naoQ.length+'</td></tr>'+
-    detTab("dNaoQ",naoQ,function(x){return x.pgto;},"Valor devido",vNaoQ)+
-    '<tr class="grp"><td colspan="3">Apropriação contábil — independe da quitação</td></tr>'+
-    '<tr><td>Parcelas apropriadas '+btn("dApr")+'</td><td>'+BRL(pagoAc)+'</td><td>'+ate.length+'</td></tr>'+
-    detTab("dApr",ate,function(x){return x.pgto;},"Parcela",pagoAc)+
-    '<tr><td>Juros apropriados '+btn("dJur")+'</td><td>'+BRL(jurAc)+'</td><td>'+ate.length+'</td></tr>'+
-    detTab("dJur",ate,function(x){return x.juros;},"Juros",0,"acumula")+
-    '<tr><td>Depreciação acumulada '+btn("dDep")+'</td><td>'+BRL(depAcDU)+'</td><td></td></tr>'+
-    detTab("dDep",ate,function(x){const q=DUMAP?DUMAP[x.abs]:null; return q?q.dep:x.dep;},"Depreciação",0,"acumula")+
-    '<tr class="tot"><td>Parcelas a vencer</td><td>'+BRL(arrPC+arrPNC)+'</td><td>'+rest.length+'</td></tr>'+
-    '</tbody></table>';
+  h+='<h3 style="margin:18px 0 6px">Acumulado escriturado</h3>'+
+     renderRazaoHTML(deAbs, m, modo, ini);
 
   CONC={
     cliente:el("cliente").value, contrato:el("contrato").value,
@@ -1707,25 +1670,95 @@ function eventosRazao(deAbs, mFim, modo){
   }
 
   /* ----- COMPETÊNCIA A COMPETÊNCIA (movimentos no CP) ----- */
+  /* Acompanha o ano-limite vigente (definido pelo último fechamento) para que
+     uma remensuração no meio do exercício divida corretamente seu ajuste entre
+     CP e PNC — em vez de jogar tudo no CP e sujar a próxima reclassificação. */
+  let anoLimiteAtual=null;   /* null = ainda não houve fechamento; tudo é CP */
+  const ehDezembro=function(ab){ return dataDaParcela(ab).getMonth()===11; };
+
+  const reclassificar=function(ab){
+    if(anoLimiteAtual===null){
+      /* PRIMEIRO fechamento: até aqui, todo o passivo está no CP (reconhecimento
+         inicial). Segrega para o PNC exatamente o que está além do próximo
+         exercício, pela mesma regra da conciliação (saldoCPLP). */
+      const seg=saldoCPLP(ab);
+      if(!seg) return;
+      anoLimiteAtual=seg.anoLimite;
+      if(seg.brutoPNC<=0.005 && seg.jurPNC<=0.005) return;
+      ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
+        hist:"Segregação inicial de Longo Prazo — fechamento "+dataComp(ab),
+        cD:CT.passCP, cC:CT.passPNC, d:seg.brutoPNC, c:seg.brutoPNC,
+        rastro:"Parcelas com vencimento após 31/12/"+seg.anoLimite+" vão para o PNC ("+seg.nPNC+" parcela(s), bruto)"});
+      ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
+        hist:"Segregação inicial de juros a transcorrer — Longo Prazo",
+        cD:CT.jurTrPNC, cC:CT.jurTrCP, d:seg.jurPNC, c:seg.jurPNC,
+        rastro:"Juros a transcorrer das parcelas que vão para o PNC"});
+      return;
+    }
+    /* FECHAMENTOS SEGUINTES: sempre traz para o CP exatamente as próximas
+       12 parcelas da memória de cálculo (até 12, ou o que restar do contrato),
+       pelos valores já conhecidos na data. Como a remensuração (abaixo) já
+       divide seu ajuste entre CP e PNC no momento em que ocorre, o CP nunca
+       fica contaminado — a reclassificação fecha exatamente com a posição
+       real, sem resíduo escondido. */
+    let bruto=0, vp=0, n=0;
+    for(let k=ab+1; k<=ab+12; k++){
+      const g=regimeDe(k);
+      if(!g) break;
+      const v=g.pgto/Math.pow(1+g.taxa,k);
+      bruto+=g.pgto; vp+=v; n++;
+    }
+    const jur=bruto-vp;
+    anoLimiteAtual=dataDaParcela(ab).getFullYear()+1;
+    if(bruto<=0.005) return;
+    ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
+      hist:"Reclassificação para Curto Prazo — próximas "+n+" parcela(s) da memória de cálculo",
+      cD:CT.passPNC, cC:CT.passCP, d:bruto, c:bruto,
+      rastro:"Parcelas "+dataComp(ab+1)+(n>1?" a "+dataComp(ab+n):"")+" (valores da memória de cálculo)"});
+    ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
+      hist:"Reclassificação de juros a transcorrer — Curto Prazo",
+      cD:CT.jurTrCP, cC:CT.jurTrPNC, d:jur, c:jur,
+      rastro:"Juros a transcorrer das parcelas reclassificadas"});
+  };
+
   for(let ab=deAbs; ab<=mFim; ab++){
     const l=lin[ab-1];
     const du=DU[ab];
 
-    /* remensuração: ajusta passivo bruto e juros a transcorrer (no CP; a
-       reclassificação final segrega) */
+    /* remensuração: ajusta passivo bruto e juros a transcorrer. Se já houve
+       algum fechamento, o ajuste é dividido entre CP e PNC conforme o
+       ano-limite vigente (quantas das parcelas remanescentes do novo regime
+       vencem até lá) — assim o CP nunca fica "sujo" com valor que pertence
+       ao longo prazo, e a próxima reclassificação sai limpa. */
     const e=R.eventos.filter(function(x){return x.parcela===ab && ab>deAbs;})[0];
     if(e){
       const dBruto=e.deltaPago, dJur=e.deltaJurosRem;
-      ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
-        hist:"Remensuração — diferença da parcela (valor bruto)",
-        cD:(dBruto>=0?CT.rou:CT.passCP), cC:(dBruto>=0?CT.passCP:CT.rou),
-        d:Math.abs(dBruto), c:Math.abs(dBruto),
-        rastro:e.rotulo+": variação do desembolso bruto remanescente = "+SIG(dBruto)});
-      ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
-        hist:"Remensuração — diferença dos juros a transcorrer",
-        cD:(dJur>=0?CT.jurTrCP:CT.rou), cC:(dJur>=0?CT.rou:CT.jurTrCP),
-        d:Math.abs(dJur), c:Math.abs(dJur),
-        rastro:e.rotulo+": ajuste dos juros a apropriar = "+SIG(dJur)});
+      let fracCP=1;
+      if(anoLimiteAtual!==null){
+        const g=regimeDe(ab); let nCP=0, nTot=0;
+        if(g){ for(let k=ab;k<=g.fimContratado;k++){ nTot++; if(dataDaParcela(k).getFullYear()<=anoLimiteAtual) nCP++; } }
+        fracCP = nTot ? nCP/nTot : 1;
+      }
+      const dBrutoCP=dBruto*fracCP, dBrutoPNC=dBruto-dBrutoCP;
+      const dJurCP=dJur*fracCP, dJurPNC=dJur-dJurCP;
+      [["CP",dBrutoCP,CT.passCP],["PNC",dBrutoPNC,CT.passPNC]].forEach(function(seg){
+        const rot=seg[0], v=seg[1], conta=seg[2];
+        if(Math.abs(v)<0.005) return;
+        ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
+          hist:"Remensuração — diferença da parcela ("+rot+", valor bruto)",
+          cD:(v>=0?CT.rou:conta), cC:(v>=0?conta:CT.rou),
+          d:Math.abs(v), c:Math.abs(v),
+          rastro:e.rotulo+": variação do desembolso bruto remanescente ("+rot+") = "+SIG(v)});
+      });
+      [["CP",dJurCP,CT.jurTrCP],["PNC",dJurPNC,CT.jurTrPNC]].forEach(function(seg){
+        const rot=seg[0], v=seg[1], conta=seg[2];
+        if(Math.abs(v)<0.005) return;
+        ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
+          hist:"Remensuração — diferença dos juros a transcorrer ("+rot+")",
+          cD:(v>=0?conta:CT.rou), cC:(v>=0?CT.rou:conta),
+          d:Math.abs(v), c:Math.abs(v),
+          rastro:e.rotulo+": ajuste dos juros a apropriar ("+rot+") = "+SIG(v)});
+      });
     }
 
     if(l.juros>0.005) ev.push({ab:ab, data:dataISO(ab), comp:dataComp(ab),
@@ -1743,25 +1776,97 @@ function eventosRazao(deAbs, mFim, modo){
       hist:"Pagamento da parcela (baixa do passivo CP)",
       cD:CT.passCP, cC:CT.banco, d:l.pgto, c:l.pgto,
       rastro:"Parcela "+ab+" paga · "+BRL(l.pgto)});
-  }
 
-  /* ----- SEGREGAÇÃO CP/PNC na competência de validação (mFim) -----
-     Move para o PNC exatamente a posição de longo prazo calculada pela mesma
-     regra da conciliação (vencimentos após 31/12 do exercício seguinte).
-     Assim CP e PNC do razão reproduzem a conciliação por construção. */
-  const seg=saldoCPLP(mFim);
-  if(seg && (seg.brutoPNC>0.005 || seg.jurPNC>0.005)){
-    ev.push({ab:mFim, data:dataISO(mFim), comp:dataComp(mFim),
-      hist:"Segregação Longo Prazo — Arrendamentos PNC",
-      cD:CT.passCP, cC:CT.passPNC, d:seg.brutoPNC, c:seg.brutoPNC,
-      rastro:"Parcelas com vencimento após 31/12/"+seg.anoLimite+" ("+seg.nPNC+" parcelas, bruto)"});
-    ev.push({ab:mFim, data:dataISO(mFim), comp:dataComp(mFim),
-      hist:"Segregação Longo Prazo — Juros a Transcorrer PNC",
-      cD:CT.jurTrPNC, cC:CT.jurTrCP, d:seg.jurPNC, c:seg.jurPNC,
-      rastro:"Juros a transcorrer das parcelas de longo prazo"});
+    /* ----- RECLASSIFICAÇÃO CP/PNC a cada fechamento de exercício -----
+       Só em dezembro (virada do ano). O primeiro fechamento segrega o PNC pela
+       posição da conciliação; os seguintes trazem sempre as próximas 12
+       parcelas da memória de cálculo para o CP. */
+    if(ehDezembro(ab)) reclassificar(ab);
   }
 
   return {eventos:ev, contas:CT};
+}
+
+/* Desmembra os eventos em partidas por conta, aplica a natureza (devedora/credora)
+   e devolve o saldo progressivo de cada conta — a mesma base usada tanto no Excel
+   quanto na visualização em tela (aba "Razão Contábil" e "Acumulado escriturado"
+   da conciliação). Um único lugar evita as duas versões divergirem. */
+function montarRazao(deAbs, mFim, modo){
+  const {eventos, contas}=eventosRazao(deAbs, mFim, modo);
+  const partidas=[];
+  eventos.forEach(function(e,idx){
+    partidas.push({ordem:idx, ab:e.ab, data:e.data, comp:e.comp, conta:e.cD,
+                   hist:e.hist, contrap:e.cC, d:e.d, c:0, rastro:e.rastro});
+    partidas.push({ordem:idx, ab:e.ab, data:e.data, comp:e.comp, conta:e.cC,
+                   hist:e.hist, contrap:e.cD, d:0, c:e.c, rastro:e.rastro});
+  });
+
+  const natureza={};
+  natureza[contas.rou]=1; natureza[contas.despJur]=1; natureza[contas.despDep]=1;
+  natureza[contas.banco]=1; natureza["Ajustes de Exercícios Anteriores"]=1;
+  natureza[contas.depAcum]=-1;
+  natureza[contas.passCP]=-1; natureza[contas.passPNC]=-1;
+  natureza[contas.jurTrCP]=1; natureza[contas.jurTrPNC]=1;   /* redutoras do passivo, saldo devedor */
+  const nat=function(conta){ return natureza[conta]===undefined?1:natureza[conta]; };
+
+  const ordemContas=[contas.rou, contas.depAcum,
+                     contas.passCP, contas.jurTrCP, contas.passPNC, contas.jurTrPNC,
+                     contas.despJur, contas.despDep, contas.banco,
+                     "Ajustes de Exercícios Anteriores"];
+  const contasUsadas=ordemContas.filter(function(cc){
+    return partidas.some(function(p){return p.conta===cc;});
+  });
+
+  const saldosFinais={};
+  let totD=0, totC=0;
+  const gruposPorConta={};
+  contasUsadas.forEach(function(cc){
+    const grupo=partidas.filter(function(p){return p.conta===cc;})
+                        .sort(function(x,y){return x.ordem-y.ordem;});
+    let saldo=0;
+    grupo.forEach(function(p){ saldo+=(p.d-p.c); totD+=p.d; totC+=p.c; });
+    saldosFinais[cc]=saldo;
+    gruposPorConta[cc]=grupo;
+  });
+
+  return {eventos:eventos, contas:contas, partidas:partidas, nat:nat, ordemContas:ordemContas,
+          contasUsadas:contasUsadas, saldosFinais:saldosFinais, gruposPorConta:gruposPorConta,
+          totD:totD, totC:totC};
+}
+
+/* Renderiza o razão por conta em HTML — a mesma movimentação da aba "Razão
+   Contábil" do Excel, direto na tela da conciliação, para validar sem precisar
+   baixar a planilha. */
+function renderRazaoHTML(deAbs, mFim, modo, iniStr){
+  const RZ=montarRazao(deAbs, mFim, modo);
+  const btnR=function(id){ return '<button type="button" class="exp" onclick="toggleDet(\''+id+'\',this)">+</button>'; };
+  let h='<table class="ctab">'+
+    '<thead><tr><th>Razão Contábil — movimentação ('+competencia(iniStr,deAbs-1)+' a '+competencia(iniStr,mFim-1)+
+    ')</th><th>Saldo</th><th>Natureza</th></tr></thead><tbody>';
+  RZ.contasUsadas.forEach(function(cc,i){
+    const dev=RZ.nat(cc)>0;
+    const saldoNat=dev?RZ.saldosFinais[cc]:-RZ.saldosFinais[cc];
+    const id="rz"+i;
+    h+='<tr><td>'+cc+' '+btnR(id)+'</td><td>'+BRL(saldoNat)+'</td><td class="nat">'+(dev?"Devedora":"Credora")+'</td></tr>';
+    const grupo=RZ.gruposPorConta[cc];
+    h+='<tr id="'+id+'" style="display:none"><td colspan="3"><div class="det">'+
+       '<table class="dtab2"><thead><tr><th>Data</th><th>Competência</th><th>Histórico</th>'+
+       '<th>Contrapartida</th><th>Débito</th><th>Crédito</th><th>Saldo</th></tr></thead><tbody>';
+    let saldo=0, sd=0, sc=0;
+    grupo.forEach(function(p){
+      saldo+=(p.d-p.c); sd+=p.d; sc+=p.c;
+      h+='<tr class="'+(p.hist.indexOf("Fechamento")===0||p.hist.indexOf("Reclassifica")===0?"marco":"")+'">'+
+         '<td>'+p.data+'</td><td>'+p.comp+'</td><td style="text-align:left">'+p.hist+'</td>'+
+         '<td style="text-align:left">'+p.contrap+'</td><td>'+(p.d?BRL(p.d):"")+'</td>'+
+         '<td>'+(p.c?BRL(p.c):"")+'</td><td>'+BRL(saldo)+'</td></tr>';
+    });
+    h+='</tbody><tfoot><tr><td colspan="4">Saldo da conta ('+(dev?"D":"C")+') — '+grupo.length+' lançamento(s)</td>'+
+       '<td>'+BRL(sd)+'</td><td>'+BRL(sc)+'</td><td>'+BRL(saldoNat)+'</td></tr></tfoot></table></div></td></tr>';
+  });
+  h+='<tr class="tot"><td>Totais gerais</td><td colspan="2">D '+BRL(RZ.totD)+'  ·  C '+BRL(RZ.totC)+
+     (Math.abs(RZ.totD-RZ.totC)<0.01?'':'  ⚠ diferença de '+BRL(RZ.totD-RZ.totC))+'</td></tr>'+
+     '</tbody></table>';
+  return h;
 }
 
 function validarRazao(){
@@ -1786,50 +1891,27 @@ function gerarRazao(){
   /* período inteiro: da adoção até a competência selecionada (inclusive) */
   const mFim=mSel;
 
-  const {eventos,contas}=eventosRazao(deAbs, mFim, modo);
+  const RZ=montarRazao(deAbs, mFim, modo);
+  const {eventos,contas}=RZ;
   if(!eventos.length){ alert("Não há eventos contábeis no período selecionado."); return; }
 
   const money='#,##0.00';
   const nome=(CONC.contrato||"contrato").replace(/[^\w\-]+/g,"_");
   const compFim=CONC.comp;
 
-  /* Desmembra cada evento (partida dobrada) em duas meias-partidas por conta,
-     preservando a ordem cronológica. É a base do razão por conta. */
-  const partidas=[];
-  eventos.forEach(function(e,idx){
-    partidas.push({ordem:idx, ab:e.ab, data:e.data, comp:e.comp, conta:e.cD,
-                   hist:e.hist, contrap:e.cC, d:e.d, c:0, rastro:e.rastro});
-    partidas.push({ordem:idx, ab:e.ab, data:e.data, comp:e.comp, conta:e.cC,
-                   hist:e.hist, contrap:e.cD, d:0, c:e.c, rastro:e.rastro});
-  });
-
-  /* natureza de cada conta para o saldo progressivo (devedora +1 / credora -1) */
-  const natureza={};
-  natureza[contas.rou]=1; natureza[contas.despJur]=1; natureza[contas.despDep]=1;
-  natureza[contas.banco]=1; natureza["Ajustes de Exercícios Anteriores"]=1;
-  natureza[contas.passivo]=-1; natureza[contas.depAcum]=-1;
-  natureza[contas.jurTransc]=1;   /* redutora do passivo, saldo devedor */
-  const nat=function(conta){ return natureza[conta]===undefined?1:natureza[conta]; };
+  const nat=RZ.nat;
 
   /* ---------- Aba 1: Razão Contábil — agrupado por conta, saldo progressivo ---------- */
   const cab=["Data","Competência","Histórico","Contrapartida","Débito","Crédito","Saldo"];
   const a1=[["RAZÃO CONTÁBIL — "+(CONC.contrato||"")+" — até "+compFim],
             ["Saldo progressivo por conta, respeitando a natureza (devedora/credora)."],[]];
-  const linhaConta={};   /* guarda a linha do saldo final de cada conta p/ a aba balancete */
-  let totD=0, totC=0;
 
-  /* ordem de apresentação das contas */
-  const ordemContas=[contas.rou, contas.depAcum, contas.passivo, contas.jurTransc,
-                     contas.despJur, contas.despDep, contas.banco,
-                     "Ajustes de Exercícios Anteriores"];
-  const contasUsadas=ordemContas.filter(function(cc){
-    return partidas.some(function(p){return p.conta===cc;});
-  });
+  const contasUsadas=RZ.contasUsadas;
+  const saldosFinais=RZ.saldosFinais;
+  const totD=RZ.totD, totC=RZ.totC;
 
-  const saldosFinais={};
   contasUsadas.forEach(function(cc){
-    const doGrupo=partidas.filter(function(p){return p.conta===cc;})
-                          .sort(function(x,y){return x.ordem-y.ordem;});
+    const doGrupo=RZ.gruposPorConta[cc];
     if(!doGrupo.length) return;
     a1.push([]);
     a1.push([cc+"  ("+(nat(cc)>0?"devedora":"credora")+")"]);
@@ -1837,13 +1919,12 @@ function gerarRazao(){
     let saldo=0, sd=0, sc=0;
     doGrupo.forEach(function(p){
       saldo += (p.d - p.c);              /* partida dobrada pura: débito soma, crédito subtrai */
-      sd+=p.d; sc+=p.c; totD+=p.d; totC+=p.c;
+      sd+=p.d; sc+=p.c;
       a1.push([p.data, p.comp, p.hist, p.contrap, p.d, p.c, saldo]);
     });
     /* apresenta o saldo na natureza da conta (devedora positiva / credora positiva) */
     const saldoNat = nat(cc)>0 ? saldo : -saldo;
     a1.push(["","","","Saldo da conta ("+(nat(cc)>0?"D":"C")+")", sd, sc, saldoNat]);
-    saldosFinais[cc]=saldo;   /* guarda em convenção pura para o balancete */
   });
 
   a1.push([]); a1.push([]);
@@ -1874,7 +1955,9 @@ function gerarRazao(){
     ["Direito de Uso líquido",CONC.rouLiquido],[],
     ["Total de débitos",totD],
     ["Total de créditos",totC],
-    ["Passivo líquido de arrendamento (razão)",-(saldosFinais[contas.passivo]||0)-(saldosFinais[contas.jurTransc]||0)],
+    ["Passivo líquido de arrendamento (razão)",
+      -(saldosFinais[contas.passCP]||0)-(saldosFinais[contas.jurTrCP]||0)
+      -(saldosFinais[contas.passPNC]||0)-(saldosFinais[contas.jurTrPNC]||0)],
     ["Direito de uso líquido (saldo do razão)",(saldosFinais[contas.rou]||0)+(saldosFinais[contas.depAcum]||0)],[],
     ["Curto Prazo (posição)",CONC.arrPC-CONC.jurPC],
     ["Longo Prazo (posição)",CONC.arrPNC-CONC.jurPNC],
@@ -1936,17 +2019,21 @@ function gerarRazao(){
   ab.push([]);
   ab.push(["CONFRONTO COM A CONCILIAÇÃO","",""]);
   /* passivo líquido pelo razão = Arrendamentos a Pagar (bruto, credor)
-     menos (−) Juros a Transcorrer (redutor, devedor).
+     menos (−) Juros a Transcorrer (redutor, devedor), CP + PNC.
      Em convenção pura: bruto tem saldo negativo, juros a transcorrer positivo. */
-  const passBrutoRz = -(saldosFinais[contas.passivo]||0);
-  const jurTranscRz =  (saldosFinais[contas.jurTransc]||0);
-  const passRazao = passBrutoRz - jurTranscRz;
+  const passBrutoCP  = -(saldosFinais[contas.passCP]||0);
+  const jurTranscCP  =  (saldosFinais[contas.jurTrCP]||0);
+  const passBrutoPNC = -(saldosFinais[contas.passPNC]||0);
+  const jurTranscPNC =  (saldosFinais[contas.jurTrPNC]||0);
+  const passRazao = (passBrutoCP - jurTranscCP) + (passBrutoPNC - jurTranscPNC);
   const parcNaoPagas = (function(){ let n=0,v=0;
     for(let ab2=deAbs; ab2<=mFim; ab2++){ if(!QUIT[ab2]){ n++; v+=R.linhas[ab2-1].pgto; } }
     return {n:n, v:v};
   })();
-  ab.push(["Arrendamentos a Pagar (bruto)", "", passBrutoRz]);
-  ab.push(["( - ) Juros a Transcorrer", "", -jurTranscRz]);
+  ab.push(["Arrendamentos a Pagar CP (bruto)", "", passBrutoCP]);
+  ab.push(["( - ) Juros a Transcorrer CP", "", -jurTranscCP]);
+  ab.push(["Arrendamentos a Pagar PNC (bruto)", "", passBrutoPNC]);
+  ab.push(["( - ) Juros a Transcorrer PNC", "", -jurTranscPNC]);
   ab.push(["Passivo líquido pelo razão", "", passRazao]);
   ab.push(["( - ) Parcelas ainda não pagas (bruto)", parcNaoPagas.n+" parcela(s)", -parcNaoPagas.v]);
   ab.push(["Passivo ajustado (razão)", "", passRazao-parcNaoPagas.v]);
