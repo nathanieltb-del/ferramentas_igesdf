@@ -1750,21 +1750,35 @@ function eventosRazao(deAbs, mFim, modo){
     const du=DU[ab];
 
     /* remensuração: ajusta passivo bruto e juros a transcorrer. Se já houve
-       algum fechamento, o ajuste é dividido entre CP e PNC conforme o
-       ano-limite vigente (quantas das parcelas remanescentes do novo regime
-       vencem até lá) — assim o CP nunca fica "sujo" com valor que pertence
-       ao longo prazo, e a próxima reclassificação sai limpa. */
+       algum fechamento, o ajuste é dividido entre CP e PNC — mas NÃO por uma
+       fração simples de contagem (nCP/nTot): o desconto cresce com o prazo,
+       então parcelas mais distantes carregam mais juros embutido por parcela.
+       Uma fração de contagem funciona certinho para o BRUTO (delta uniforme
+       por parcela) mas erra os JUROS. Por isso o cálculo abaixo refaz
+       bruto/VP parcela a parcela nos regimes antigo e novo, só para a janela
+       CP e só para a janela PNC — exato, sem depender de rateio. */
     const e=R.eventos.filter(function(x){return x.parcela===ab && ab>deAbs;})[0];
     if(e){
-      const dBruto=e.deltaPago, dJur=e.deltaJurosRem;
-      let fracCP=1;
-      if(anoLimiteAtual!==null){
-        const g=regimeDe(ab); let nCP=0, nTot=0;
-        if(g){ for(let k=ab;k<=g.fimContratado;k++){ nTot++; if(dataDaParcela(k).getFullYear()<=anoLimiteAtual) nCP++; } }
-        fracCP = nTot ? nCP/nTot : 1;
+      const g=regimeDe(ab);   /* regime novo, já vigente em ab */
+      let dBrutoCP=0, dBrutoPNC=0, dJurCP=0, dJurPNC=0;
+      if(g){
+        const oldPgto=e.pgtoAntes, oldTaxa=(e.taxaAntes!=null?e.taxaAntes:g.taxa);
+        /* Se a remensuração ESTENDE o prazo, o regime antigo não cobre as
+           parcelas além do seu próprio fimContratado — para essas, não há
+           "diferença" a calcular, é reconhecimento novo puro (delta = o
+           próprio valor novo, sem nada a subtrair). */
+        const gAntes=R.regimes.filter(function(x){return x.fim===ab-1;})[0];
+        const oldFimContratado = gAntes ? gAntes.fimContratado : (ab-1);
+        for(let k=ab;k<=g.fimContratado;k++){
+          const temAntigo = k<=oldFimContratado;
+          const pOld = temAntigo?oldPgto:0;
+          const vOld = temAntigo?oldPgto/Math.pow(1+oldTaxa,k):0;
+          const vNew=g.pgto/Math.pow(1+g.taxa,k);
+          const dB=g.pgto-pOld, dJ=(g.pgto-vNew)-(pOld-vOld);
+          const isCP = anoLimiteAtual===null || dataDaParcela(k).getFullYear()<=anoLimiteAtual;
+          if(isCP){ dBrutoCP+=dB; dJurCP+=dJ; } else { dBrutoPNC+=dB; dJurPNC+=dJ; }
+        }
       }
-      const dBrutoCP=dBruto*fracCP, dBrutoPNC=dBruto-dBrutoCP;
-      const dJurCP=dJur*fracCP, dJurPNC=dJur-dJurCP;
       [["CP",dBrutoCP,CT.passCP],["PNC",dBrutoPNC,CT.passPNC]].forEach(function(seg){
         const rot=seg[0], v=seg[1], conta=seg[2];
         if(Math.abs(v)<0.005) return;
@@ -2123,10 +2137,18 @@ function gerarRazao(){
   if(nPCbal>0){
     setF(linPassCP,2, "SUM("+MC+"E"+rCPini+":E"+rCPfim+")", passBrutoCP);
     setF(linJurCP,2, "SUM("+MC+"F"+rCPini+":F"+rCPfim+")-SUM("+MC+"E"+rCPini+":E"+rCPfim+")", -jurTranscCP);
+  } else {
+    /* sem parcelas no curto prazo nesta competência — zera explicitamente,
+       não deixa o saldo antigo do razão (ledger) sobrando na célula */
+    setF(linPassCP,2, "0", 0);
+    setF(linJurCP,2, "0", 0);
   }
   if(nPNCbal>0){
     setF(linPassPNC,2, "SUM("+MC+"E"+rPNCini+":E"+rPNCfim+")", passBrutoPNC);
     setF(linJurPNC,2, "SUM("+MC+"F"+rPNCini+":F"+rPNCfim+")-SUM("+MC+"E"+rPNCini+":E"+rPNCfim+")", -jurTranscPNC);
+  } else {
+    setF(linPassPNC,2, "0", 0);
+    setF(linJurPNC,2, "0", 0);
   }
   setF(linPassRazao,2, "C"+(linPassCP+1)+"+C"+(linJurCP+1)+"+C"+(linPassPNC+1)+"+C"+(linJurPNC+1), passRazao);
   setF(linNaoPagas,2, "-SUMIFS("+MC+"E"+rDeAbs+":E"+rMFim+","+MC+"N"+rDeAbs+":N"+rMFim+",\"Não\")", -parcNaoPagas.v);
