@@ -1934,6 +1934,7 @@ function gerarRazao(){
   const saldosFinais=RZ.saldosFinais;
   const totD=RZ.totD, totC=RZ.totC;
 
+  const linhaSaldoConta={};   /* linha (0-indexed) do "Saldo da conta" de cada conta na aba Razão Contábil */
   contasUsadas.forEach(function(cc){
     const doGrupo=RZ.gruposPorConta[cc];
     if(!doGrupo.length) return;
@@ -1948,6 +1949,7 @@ function gerarRazao(){
     });
     /* apresenta o saldo na natureza da conta (devedora positiva / credora positiva) */
     const saldoNat = nat(cc)>0 ? saldo : -saldo;
+    linhaSaldoConta[cc]=a1.length;
     a1.push(["","","","Saldo da conta ("+(nat(cc)>0?"D":"C")+")", sd, sc, saldoNat]);
   });
 
@@ -2036,8 +2038,10 @@ function gerarRazao(){
   /* ---------- Aba Balancete — saldo por conta, confronto com a conciliação ---------- */
   const ab=[["BALANCETE DE VERIFICAÇÃO — posição em "+compFim],[],
     ["Conta","Natureza","Saldo"]];
+  const linhaContaBal={};   /* linha (0-indexed) de cada conta no Balancete, p/ setar a fórmula depois */
   contasUsadas.forEach(function(cc){
     const sn = nat(cc)>0 ? (saldosFinais[cc]||0) : -(saldosFinais[cc]||0);
+    linhaContaBal[cc]=ab.length;
     ab.push([cc, nat(cc)>0?"Devedora":"Credora", sn]);
   });
   ab.push([]);
@@ -2103,6 +2107,19 @@ function gerarRazao(){
      de Cálculo — assim qualquer erro de contagem de parcelas ou de taxa fica
      visível recalculando (F9) direto no Excel, sem depender de conferir no JS. */
   const setF=function(r,c,f,v){ wsB[XLSX.utils.encode_cell({r:r,c:c})]={t:'n',f:f,v:v,z:money}; };
+
+  /* Lista de contas do topo do Balancete: cada saldo passa a ser uma referência
+     direta à linha "Saldo da conta" já calculada na aba Razão Contábil — é
+     exatamente de onde esse número vem, então não há cálculo duplicado; se o
+     razão mudar, o Balancete atualiza sozinho ao recalcular (F9). */
+  const RZS="'Razão Contábil'!";
+  contasUsadas.forEach(function(cc){
+    const linRZ=linhaSaldoConta[cc];
+    if(linRZ===undefined) return;
+    const sn = nat(cc)>0 ? (saldosFinais[cc]||0) : -(saldosFinais[cc]||0);
+    setF(linhaContaBal[cc],2, RZS+"G"+(linRZ+1), sn);
+  });
+
   if(nPCbal>0){
     setF(linPassCP,2, "SUM("+MC+"E"+rCPini+":E"+rCPfim+")", passBrutoCP);
     setF(linJurCP,2, "SUM("+MC+"F"+rCPini+":F"+rCPfim+")-SUM("+MC+"E"+rCPini+":E"+rCPfim+")", -jurTranscCP);
