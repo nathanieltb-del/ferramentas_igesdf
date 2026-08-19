@@ -1714,17 +1714,23 @@ function eventosRazao(deAbs, mFim, modo){
       return;
     }
     /* FECHAMENTOS SEGUINTES: sempre traz para o CP exatamente as próximas
-       12 parcelas da memória de cálculo (até 12, ou o que restar do contrato),
-       pelos valores já conhecidos na data. Como a remensuração (abaixo) já
-       divide seu ajuste entre CP e PNC no momento em que ocorre, o CP nunca
-       fica contaminado — a reclassificação fecha exatamente com a posição
-       real, sem resíduo escondido. */
+       12 parcelas da memória de cálculo, usando o regime EM VIGOR na própria
+       competência do fechamento (regimeDe(ab), uma única vez) projetado de
+       forma uniforme — a mesma convenção do saldoCPLP. Importante: NÃO se
+       pode consultar regimeDe(k) mês a mês dentro da janela, porque isso
+       "vaza" uma remensuração que ainda vai acontecer no futuro (mas já está
+       cadastrada) para dentro do fechamento atual — violando a regra de não
+       antecipar remensuração futura e duplicando o ajuste quando a
+       remensuração for de fato lançada mais adiante no razão. */
+    const g=regimeDe(ab);
     let bruto=0, vp=0, n=0;
-    for(let k=ab+1; k<=ab+12; k++){
-      const g=regimeDe(k);
-      if(!g) break;
-      const v=g.pgto/Math.pow(1+g.taxa,k);
-      bruto+=g.pgto; vp+=v; n++;
+    if(g){
+      for(let i=1;i<=12;i++){
+        const k=ab+i;
+        if(k>R.linhas.length || k>g.fimContratado) break;
+        const v=g.pgto/Math.pow(1+g.taxa,k);
+        bruto+=g.pgto; vp+=v; n++;
+      }
     }
     const jur=bruto-vp;
     anoLimiteAtual=dataDaParcela(ab).getFullYear()+1;
@@ -2048,24 +2054,70 @@ function gerarRazao(){
     for(let ab2=deAbs; ab2<=mFim; ab2++){ if(!QUIT[ab2]){ n++; v+=R.linhas[ab2-1].pgto; } }
     return {n:n, v:v};
   })();
-  ab.push(["Arrendamentos a Pagar CP (bruto)", "", passBrutoCP]);
+
+  /* Posição CP/PNC pela mesma regra da conciliação — usada só para saber quais
+     linhas da Memória de Cálculo (aba 3) entram nas fórmulas =SOMA abaixo.
+     "Parcela" (coluna E) e "Valor Presente" (coluna F) da memória usam o MESMO
+     desconto que o razão — por isso dá para reconstruir bruto e juros a
+     transcorrer via SOMA direto, sem duplicar cálculo em outro lugar. */
+  const segBal=saldoCPLP(mFim);
+  const nPCbal=segBal?segBal.nPC:0, nPNCbal=segBal?segBal.nPNC:0;
+  const rCPini=mFim+4, rCPfim=mFim+3+nPCbal;
+  const rPNCini=rCPfim+1, rPNCfim=rCPfim+nPNCbal;
+  const rDeAbs=deAbs+3, rMFim=mFim+3;
+  const MC="'Memória de Cálculo'!";
+
+  const linPassCP=ab.length;
+  ab.push(["Arrendamentos a Pagar CP (bruto)", nPCbal+" parcela(s), linhas "+rCPini+"-"+rCPfim, passBrutoCP]);
+  const linJurCP=ab.length;
   ab.push(["( - ) Juros a Transcorrer CP", "", -jurTranscCP]);
-  ab.push(["Arrendamentos a Pagar PNC (bruto)", "", passBrutoPNC]);
+  const linPassPNC=ab.length;
+  ab.push(["Arrendamentos a Pagar PNC (bruto)", nPNCbal+" parcela(s), linhas "+rPNCini+"-"+rPNCfim, passBrutoPNC]);
+  const linJurPNC=ab.length;
   ab.push(["( - ) Juros a Transcorrer PNC", "", -jurTranscPNC]);
+  const linPassRazao=ab.length;
   ab.push(["Passivo líquido pelo razão", "", passRazao]);
+  const linNaoPagas=ab.length;
   ab.push(["( - ) Parcelas ainda não pagas (bruto)", parcNaoPagas.n+" parcela(s)", -parcNaoPagas.v]);
+  const linAjustado=ab.length;
   ab.push(["Passivo ajustado (razão)", "", passRazao-parcNaoPagas.v]);
-  ab.push(["Passivo líquido (conciliação)", "", CONC.liquido]);
+  const linConcLiq=ab.length;
+  ab.push(["Passivo líquido (conciliação)", "célula direta — linha "+rMFim, CONC.liquido]);
+  const linDifPass=ab.length;
   ab.push(["Diferença", "", (passRazao-parcNaoPagas.v)-CONC.liquido]);
   ab.push([]);
   const rouRazao = (saldosFinais[contas.rou]||0)+(saldosFinais[contas.depAcum]||0);
+  const linRouRazao=ab.length;
   ab.push(["Direito de Uso líquido (razão)", "", rouRazao]);
-  ab.push(["Direito de Uso líquido (conciliação)", "", CONC.rouLiquido]);
+  const linConcRou=ab.length;
+  ab.push(["Direito de Uso líquido (conciliação)", "célula direta — linha "+rMFim, CONC.rouLiquido]);
+  const linDifRou=ab.length;
   ab.push(["Diferença", "", rouRazao-CONC.rouLiquido]);
+
   const wsB=XLSX.utils.aoa_to_sheet(ab);
-  wsB["!cols"]=[{wch:38},{wch:14},{wch:20}];
+  wsB["!cols"]=[{wch:38},{wch:26},{wch:20}];
   for(let r=0;r<ab.length;r++){ const ref=XLSX.utils.encode_cell({r:r,c:2});
     if(wsB[ref]&&typeof wsB[ref].v==="number") wsB[ref].z=money; }
+
+  /* Substitui os valores estáticos por fórmulas =SOMA apontando para a Memória
+     de Cálculo — assim qualquer erro de contagem de parcelas ou de taxa fica
+     visível recalculando (F9) direto no Excel, sem depender de conferir no JS. */
+  const setF=function(r,c,f,v){ wsB[XLSX.utils.encode_cell({r:r,c:c})]={t:'n',f:f,v:v,z:money}; };
+  if(nPCbal>0){
+    setF(linPassCP,2, "SUM("+MC+"E"+rCPini+":E"+rCPfim+")", passBrutoCP);
+    setF(linJurCP,2, "SUM("+MC+"F"+rCPini+":F"+rCPfim+")-SUM("+MC+"E"+rCPini+":E"+rCPfim+")", -jurTranscCP);
+  }
+  if(nPNCbal>0){
+    setF(linPassPNC,2, "SUM("+MC+"E"+rPNCini+":E"+rPNCfim+")", passBrutoPNC);
+    setF(linJurPNC,2, "SUM("+MC+"F"+rPNCini+":F"+rPNCfim+")-SUM("+MC+"E"+rPNCini+":E"+rPNCfim+")", -jurTranscPNC);
+  }
+  setF(linPassRazao,2, "C"+(linPassCP+1)+"+C"+(linJurCP+1)+"+C"+(linPassPNC+1)+"+C"+(linJurPNC+1), passRazao);
+  setF(linNaoPagas,2, "-SUMIFS("+MC+"E"+rDeAbs+":E"+rMFim+","+MC+"N"+rDeAbs+":N"+rMFim+",\"Não\")", -parcNaoPagas.v);
+  setF(linAjustado,2, "C"+(linPassRazao+1)+"+C"+(linNaoPagas+1), passRazao-parcNaoPagas.v);
+  setF(linConcLiq,2, MC+"J"+rMFim, CONC.liquido);
+  setF(linDifPass,2, "C"+(linAjustado+1)+"-C"+(linConcLiq+1), (passRazao-parcNaoPagas.v)-CONC.liquido);
+  setF(linConcRou,2, MC+"M"+rMFim, CONC.rouLiquido);
+  setF(linDifRou,2, "C"+(linRouRazao+1)+"-C"+(linConcRou+1), rouRazao-CONC.rouLiquido);
 
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws1,"Razão Contábil");
