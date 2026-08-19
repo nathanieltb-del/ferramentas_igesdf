@@ -2061,8 +2061,10 @@ function gerarRazao(){
   ab.push([]);
   ab.push(["CONFRONTO COM A CONCILIAÇÃO","",""]);
   /* passivo líquido pelo razão = Arrendamentos a Pagar (bruto, credor)
-     menos (−) Juros a Transcorrer (redutor, devedor), CP + PNC.
-     Em convenção pura: bruto tem saldo negativo, juros a transcorrer positivo. */
+     menos (−) Juros a Transcorrer (redutor, devedor), CP + PNC — direto do
+     que o razão (ledger) realmente acumulou. Isso é o que de fato valida a
+     escrituração; por isso NUNCA troque por saldoCPLP aqui, senão o
+     confronto vira tautológico e para de pegar bug de lançamento. */
   const passBrutoCP  = -(saldosFinais[contas.passCP]||0);
   const jurTranscCP  =  (saldosFinais[contas.jurTrCP]||0);
   const passBrutoPNC = -(saldosFinais[contas.passPNC]||0);
@@ -2077,20 +2079,33 @@ function gerarRazao(){
      linhas da Memória de Cálculo (aba 3) entram nas fórmulas =SOMA abaixo.
      "Parcela" (coluna E) e "Valor Presente" (coluna F) da memória usam o MESMO
      desconto que o razão — por isso dá para reconstruir bruto e juros a
-     transcorrer via SOMA direto, sem duplicar cálculo em outro lugar. */
+     transcorrer via SOMA direto, sem duplicar cálculo em outro lugar.
+
+     CUIDADO: isso só é seguro se NENHUMA remensuração já cadastrada cair
+     dentro da janela CP/PNC depois da competência validada. A memória de
+     cálculo mostra os valores REAIS (com o benefício de já saber o que
+     aconteceu depois); a conciliação, propositalmente, NÃO antecipa uma
+     remensuração futura. Quando isso acontece, a fórmula fica incorreta —
+     nesse caso, NÃO escrevemos fórmula alguma: a célula guarda o valor puro
+     do razão (que já reconcilia certinho, só não é "conferível" célula a
+     célula contra a memória), com uma nota explicando o motivo. */
   const segBal=saldoCPLP(mFim);
   const nPCbal=segBal?segBal.nPC:0, nPNCbal=segBal?segBal.nPNC:0;
   const rCPini=mFim+4, rCPfim=mFim+3+nPCbal;
   const rPNCini=rCPfim+1, rPNCfim=rCPfim+nPNCbal;
   const rDeAbs=deAbs+3, rMFim=mFim+3;
   const MC="'Memória de Cálculo'!";
+  const gAtualBal=R.regimes.filter(function(x){return mFim>=x.inicio && mFim<=x.fim;})[0];
+  const janelaFimBal=mFim+nPCbal+nPNCbal;
+  const somaSegura = !!gAtualBal && janelaFimBal<=gAtualBal.fim;
+  const notaSoma = somaSegura ? "" : " — valor do razão (não conferível por soma: há remensuração cadastrada após esta competência)";
 
   const linPassCP=ab.length;
-  ab.push(["Arrendamentos a Pagar CP (bruto)", nPCbal+" parcela(s), linhas "+rCPini+"-"+rCPfim, passBrutoCP]);
+  ab.push(["Arrendamentos a Pagar CP (bruto)", nPCbal+" parcela(s), linhas "+rCPini+"-"+rCPfim+notaSoma, passBrutoCP]);
   const linJurCP=ab.length;
   ab.push(["( - ) Juros a Transcorrer CP", "", -jurTranscCP]);
   const linPassPNC=ab.length;
-  ab.push(["Arrendamentos a Pagar PNC (bruto)", nPNCbal+" parcela(s), linhas "+rPNCini+"-"+rPNCfim, passBrutoPNC]);
+  ab.push(["Arrendamentos a Pagar PNC (bruto)", nPNCbal+" parcela(s), linhas "+rPNCini+"-"+rPNCfim+notaSoma, passBrutoPNC]);
   const linJurPNC=ab.length;
   ab.push(["( - ) Juros a Transcorrer PNC", "", -jurTranscPNC]);
   const linPassRazao=ab.length;
@@ -2134,19 +2149,22 @@ function gerarRazao(){
     setF(linhaContaBal[cc],2, RZS+"G"+(linRZ+1), sn);
   });
 
-  if(nPCbal>0){
+  if(somaSegura && nPCbal>0){
     setF(linPassCP,2, "SUM("+MC+"E"+rCPini+":E"+rCPfim+")", passBrutoCP);
     setF(linJurCP,2, "SUM("+MC+"F"+rCPini+":F"+rCPfim+")-SUM("+MC+"E"+rCPini+":E"+rCPfim+")", -jurTranscCP);
-  } else {
+  } else if(!nPCbal){
     /* sem parcelas no curto prazo nesta competência — zera explicitamente,
        não deixa o saldo antigo do razão (ledger) sobrando na célula */
     setF(linPassCP,2, "0", 0);
     setF(linJurCP,2, "0", 0);
   }
-  if(nPNCbal>0){
+  /* quando !somaSegura (remensuração futura já cadastrada dentro da janela),
+     as células ficam com o valor fixo já escrito no ab.push acima — correto,
+     só não é fórmula, pelo motivo explicado na nota ao lado. */
+  if(somaSegura && nPNCbal>0){
     setF(linPassPNC,2, "SUM("+MC+"E"+rPNCini+":E"+rPNCfim+")", passBrutoPNC);
     setF(linJurPNC,2, "SUM("+MC+"F"+rPNCini+":F"+rPNCfim+")-SUM("+MC+"E"+rPNCini+":E"+rPNCfim+")", -jurTranscPNC);
-  } else {
+  } else if(!nPNCbal){
     setF(linPassPNC,2, "0", 0);
     setF(linJurPNC,2, "0", 0);
   }
