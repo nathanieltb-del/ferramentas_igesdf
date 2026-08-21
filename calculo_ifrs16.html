@@ -182,6 +182,14 @@
   .screen{display:none}
   .screen.active{display:block}
   .field-nova label{color:var(--brand4)}
+  .pergunta{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:16px 18px}
+  .ptxt{font-size:15px;font-weight:600;color:var(--ink)}
+  .pref{font-size:12px;color:var(--ink-soft);margin-top:6px;font-style:italic}
+  .concl{padding:18px 20px;border-radius:6px;font-size:16px;font-weight:700;text-align:center}
+  .concl-sim{background:#e6f3f8;color:#1a5580;border:1px solid var(--brand1)}
+  .concl-nao{background:var(--line-soft);color:var(--ink-soft);border:1px solid var(--line)}
+  .trilha{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .trilha .chip{font-size:11px;background:var(--white);border:1px solid var(--line);border-radius:20px;padding:3px 10px;color:var(--ink-soft)}
   @media print{.sidebar,.topbar{display:none}}
 </style>
 </head>
@@ -198,6 +206,7 @@
   <div class="field"><label for="gsCliente">Cliente</label><select id="gsCliente"><option value="">—</option></select></div>
   <div class="field"><label for="gsContrato">Contrato</label><select id="gsContrato"><option value="">—</option></select></div>
   <div class="field btnfield"><button class="ghost" id="gsLoad">Recarregar</button></div>
+  <div class="field btnfield"><button id="gsNovo" title="Limpa a tela para cadastrar um contrato do zero">+ Novo contrato</button></div>
   <div class="field btnfield"><button class="ghost" id="gsTpl">Baixar modelo</button></div>
   <div class="topbar-sep"></div>
   <div class="field"><label for="concIni">Contabilização a partir de</label><select id="concIni"></select></div>
@@ -218,6 +227,7 @@
     <div class="nav-sub">
       <div class="nav-item active" data-screen="scr-contrato">Contrato</div>
       <div class="nav-item" data-screen="scr-remensuracoes">Remensurações</div>
+      <div class="nav-item" data-screen="scr-avaliar">Avaliar arrendamento (CPC 06)</div>
     </div>
     <div class="nav-group" data-group="contabil"><i class="navdot"></i>Contábil</div>
     <div class="nav-sub">
@@ -270,6 +280,15 @@
         </div>
         <div id="rems"></div>
         <div class="empty" id="remEmpty">Nenhuma remensuração cadastrada. O contrato será calculado com os termos originais do início ao fim.</div>
+      </div>
+    </div>
+
+    <div class="screen" id="scr-avaliar">
+      <div class="card">
+        <h2>O contrato contém arrendamento?</h2>
+        <p class="hint">Fluxo de avaliação do CPC 06 (R2) / IFRS 16, item B9 — responda Sim ou Não a cada pergunta.
+          Base legal: CFC/NBC TG 06 (R3): Pronunciamento Técnico CPC 06 (R2) — Correlação IASB: IFRS 16.</p>
+        <div id="avaliarOut"></div>
       </div>
     </div>
 
@@ -448,7 +467,7 @@
    Abas esperadas na planilha: "Contratos" e "Remensuracoes".
 =============================================================== */
 const TOKEN = "ifrs16";   /* mesma senha definida no Code.gs */
-const WEBAPP_URL = "https://script.google.com/macros/s/AKfycby8iOp5k2ZRGrejh3NMGTc04jYxEsUJV1ve1BLz5bar__P8IuFV41LQejjJM3if1wsW/exec";
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwYdVHyL3IsB7O1IThLBBpI4iwEjwWWDbE-eorh0zSaM3HXKaiZ_5-f-J1VlAGT7fiO/exec";
 
 /* Trava simples de senha para os botões "Salvar na base" e "Excluir da base",
    já que o link é compartilhado com várias pessoas. Usa a MESMA senha do
@@ -1487,6 +1506,89 @@ function filtrarContratos(){
   } else if(lista.length>1){
     gsMsg("Selecione o contrato ("+lista.length+" disponíveis para "+cli+").","info");
   }
+}
+
+/* Limpa a tela para cadastrar um contrato do zero — evita que os dados do
+   contrato selecionado no topo fiquem "grudados" ao incluir um novo
+   (inclusive as remensurações, que antes continuavam associadas ao contrato
+   carregado por último). */
+/* ---------- fluxo interativo "o contrato contém arrendamento?" (CPC 06 / IFRS 16, B9) ---------- */
+const AVAL_FLUXO = {
+  q1: { texto:"Existe ativo identificado?", ref:"Considere os itens B13 a B20.",
+        opcoes:[{rot:"Sim",ir:"q2"},{rot:"Não",ir:"fim_nao"}] },
+  q2: { texto:"O cliente tem o direito de obter substancialmente todos os benefícios econômicos do uso do ativo durante todo o período de uso?",
+        ref:"Considere os itens B21 a B23.",
+        opcoes:[{rot:"Sim",ir:"q3"},{rot:"Não",ir:"fim_nao"}] },
+  q3: { texto:"O cliente, o fornecedor, ou nenhuma das partes, têm o direito de direcionar como e para qual finalidade o ativo é usado durante todo o período de uso?",
+        ref:"Considere os itens B25 a B30.",
+        opcoes:[{rot:"Cliente",ir:"fim_sim"},{rot:"Fornecedor",ir:"fim_nao"},
+                {rot:"Ninguém — a forma e finalidade de uso já está predeterminada",ir:"q4"}] },
+  q4: { texto:"O cliente tem o direito de operar o ativo durante todo o período de uso, sem o fornecedor ter o direito de alterar essas instruções operacionais?",
+        ref:"Considere o item B24(b)(i).",
+        opcoes:[{rot:"Sim",ir:"fim_sim"},{rot:"Não",ir:"q5"}] },
+  q5: { texto:"O cliente projetou o ativo de modo que predetermina como e para qual finalidade o ativo será usado durante todo o período de uso?",
+        ref:"Considere o item B24(b)(ii).",
+        opcoes:[{rot:"Sim",ir:"fim_sim"},{rot:"Não",ir:"fim_nao"}] }
+};
+let avalHist=[];
+function avaliarIr(destino, rotEscolhida, textoPergunta){
+  avalHist.push({no:destino, escolha:rotEscolhida, pergunta:textoPergunta});
+  avaliarRender();
+}
+function avaliarVoltar(){ avalHist.pop(); avaliarRender(); }
+function avaliarReiniciar(){ avalHist=[]; avaliarRender(); }
+function avaliarRender(){
+  const atual = avalHist.length ? avalHist[avalHist.length-1].no : "q1";
+  const out=el("avaliarOut");
+  let h='';
+  if(avalHist.length){
+    h+='<div class="trilha">';
+    avalHist.forEach(function(p){
+      if(p.pergunta) h+='<span class="chip">'+p.escolha+'</span>';
+    });
+    h+='</div>';
+  }
+  if(atual==="fim_sim"||atual==="fim_nao"){
+    const sim = atual==="fim_sim";
+    h+='<div class="concl '+(sim?"concl-sim":"concl-nao")+'">'+
+       (sim?"✔ O contrato CONTÉM arrendamento":"✕ O contrato NÃO CONTÉM arrendamento")+'</div>';
+    h+='<div class="actions" style="margin-top:14px">'+
+       (avalHist.length?'<button class="ghost" id="avalVoltar">← Voltar</button>':'')+
+       '<button class="ghost" id="avalReiniciar">Recomeçar avaliação</button></div>';
+  } else {
+    const q=AVAL_FLUXO[atual];
+    h+='<div class="pergunta"><div class="ptxt">'+q.texto+'</div>'+
+       '<div class="pref">'+q.ref+'</div>'+
+       '<div class="actions" style="margin-top:12px">'+
+       q.opcoes.map(function(o,i){ return '<button class="ghost aval-op" data-i="'+i+'">'+o.rot+'</button>'; }).join('')+
+       '</div></div>';
+    if(avalHist.length) h+='<div class="actions" style="margin-top:10px"><button class="link" id="avalVoltar">← Voltar</button></div>';
+  }
+  out.innerHTML=h;
+  out.querySelectorAll(".aval-op").forEach(function(btn){
+    btn.onclick=function(){
+      const o=AVAL_FLUXO[atual].opcoes[parseInt(btn.dataset.i)];
+      avaliarIr(o.ir, o.rot, AVAL_FLUXO[atual].texto);
+    };
+  });
+  const vb=el("avalVoltar"); if(vb) vb.onclick=avaliarVoltar;
+  const rb=el("avalReiniciar"); if(rb) rb.onclick=avaliarReiniciar;
+}
+
+function novoContrato(){
+  el("gsCliente").value=""; el("gsContrato").innerHTML='<option value="">—</option>';
+  ["cliente","contrato","inicio","prazo","pgto","taxa","ctrLink","ctrSei","ctrObs"]
+    .forEach(function(id){ el(id).value=""; });
+  el("prazo").value=60; el("taxa").value=1;
+  el("rems").innerHTML=""; seq=0; toggleEmpty();
+  el("gsSaveMsg").innerHTML=""; el("gsMsg").innerHTML="";
+  R=null; CONC=null; ADOC=null; DUMAP=null; QUIT={};
+  el("out").innerHTML=""; el("concOut").innerHTML="";
+  el("concCard").style.display="none";
+  const grupos=document.querySelectorAll(".nav-item");
+  grupos.forEach(function(i){ i.classList.toggle("active", i.dataset.screen==="scr-contrato"); });
+  document.querySelectorAll(".screen").forEach(function(s){ s.classList.toggle("active", s.id==="scr-contrato"); });
+  el("cliente").focus();
 }
 
 function aplicarContrato(){
@@ -2632,6 +2734,8 @@ el("relContratoBtn").onclick=relatorioContrato;
 el("concIni").onchange=function(){ preencherMeses(); render(); agendarGravacaoCfg(); };
 el("concDepr").onchange=function(){ const tinha=!!CONC; render(); if(tinha) conciliar(); agendarGravacaoCfg(); };
 el("gsLoad").onclick=carregarBase;
+el("gsNovo").onclick=novoContrato;
+avaliarRender();
 el("gsTpl").onclick=baixarModelo;
 el("gsCliente").addEventListener("change",filtrarContratos);
 el("gsContrato").addEventListener("change",aplicarContrato);
