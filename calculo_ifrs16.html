@@ -8,8 +8,9 @@
 <style>
   :root{
     --ink:#12242e; --ink-soft:#4a6572; --line:#d4dde2; --line-soft:#e8eef1;
-    --paper:#f7f9fa; --white:#fff; --accent:#1f3864; --accent-soft:#e8edf6;
-    --ta:#8a5a00; --ta-soft:#fdf3e0; --neg:#a8323f; --pos:#1a6b3c;
+    --paper:#f7f9fa; --white:#fff; --accent:#256a94; --accent-soft:#e6f3f8;
+    --ta:#c15f00; --ta-soft:#fdf1e2; --neg:#a8323f; --pos:#1a6b3c;
+    --brand1:#338fc0; --brand2:#41b4c7; --brand3:#c4d100; --brand4:#e87400;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 "Segoe UI",Roboto,Helvetica,Arial,sans-serif}
@@ -153,6 +154,35 @@
   .warn{background:#fdeaec;border:1px solid #e0a0aa;border-radius:4px;padding:11px 14px;font-size:13px;margin-bottom:16px}
   .formula{font-size:12px;color:var(--ink-soft);margin-top:10px;line-height:1.7}
   @media print{body{background:#fff}.card:has(button),.actions,.memo{display:none}.scroll{border:none}}
+
+  /* ---------- layout de menu lateral (topbar + sidebar + telas) ---------- */
+  .topbar{display:flex;flex-wrap:wrap;gap:14px;align-items:end;position:sticky;top:0;z-index:20;
+          border-bottom:3px solid var(--brand1)}
+  .topbar .field{min-width:170px}
+  .topbar .field label{margin-bottom:5px}
+  .topbar .btnfield{min-width:0}
+  .topbar-sep{width:1px;align-self:stretch;background:var(--line);margin:0 2px}
+  .brand-logo{height:40px;flex-shrink:0}
+  .app-shell{display:flex;align-items:flex-start;gap:20px}
+  .sidebar{width:224px;flex-shrink:0;background:var(--white);border:1px solid var(--line);border-radius:6px;
+           padding:10px 8px;position:sticky;top:96px}
+  .nav-group{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:4px;font-size:13px;
+             font-weight:700;color:var(--accent);user-select:none}
+  .navdot{width:6px;height:6px;border-radius:50%;background:var(--brand1);flex-shrink:0}
+  .nav-sub{padding-left:24px;display:flex;flex-direction:column;margin:2px 0 10px}
+  .nav-item{padding:7px 10px;border-radius:4px;font-size:13px;color:var(--ink-soft);cursor:pointer}
+  .nav-item:hover{background:var(--paper)}
+  .nav-item.active{background:var(--accent-soft);color:var(--accent);font-weight:700;
+                    box-shadow:inset 2px 0 0 var(--brand1)}
+  .nav-label-sm{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);padding:8px 10px 2px}
+  .nav-sep{height:1px;background:var(--line-soft);margin:6px 4px}
+  .nav-item.help{color:var(--brand4)}
+  .nav-item.help.active{background:var(--ta-soft);color:var(--brand4);box-shadow:inset 2px 0 0 var(--brand4)}
+  .content-area{flex:1;min-width:0}
+  .screen{display:none}
+  .screen.active{display:block}
+  .field-nova label{color:var(--brand4)}
+  @media print{.sidebar,.topbar{display:none}}
 </style>
 </head>
 <body>
@@ -163,77 +193,242 @@
   <p>Memória de cálculo do passivo de arrendamento e do ativo de direito de uso, com múltiplas remensurações.</p>
 </header>
 
-<div class="card">
-  <h2>Base de dados — Google Sheets (Apps Script)</h2>
-  <div class="grid" style="grid-template-columns:1fr 1fr auto auto;align-items:end">
-    <div><label for="gsCliente">Cliente</label><select id="gsCliente"><option value="">—</option></select></div>
-    <div><label for="gsContrato">Contrato</label><select id="gsContrato"><option value="">—</option></select></div>
-    <div><button class="ghost" id="gsLoad">Recarregar</button></div>
-    <div><button class="ghost" id="gsTpl">Baixar modelo</button></div>
+<div class="card topbar">
+  <img class="brand-logo" src="data:image/png;base64,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" alt="IGESDF">
+  <div class="field"><label for="gsCliente">Cliente</label><select id="gsCliente"><option value="">—</option></select></div>
+  <div class="field"><label for="gsContrato">Contrato</label><select id="gsContrato"><option value="">—</option></select></div>
+  <div class="field btnfield"><button class="ghost" id="gsLoad">Recarregar</button></div>
+  <div class="field btnfield"><button class="ghost" id="gsTpl">Baixar modelo</button></div>
+  <div class="topbar-sep"></div>
+  <div class="field"><label for="concIni">Contabilização a partir de</label><select id="concIni"></select></div>
+  <div class="field"><label for="concMes">Competência a validar</label><select id="concMes"></select></div>
+  <div class="field" style="min-width:280px">
+    <label for="concDepr">Tratamento da depreciação</label>
+    <select id="concDepr">
+      <option value="pros">Prospectivo — depreciar o saldo remanescente</option>
+      <option value="retro">Retrospectivo — ajustar a depreciação acumulada</option>
+    </select>
   </div>
-  <div id="gsMsg"></div>
+  <div id="gsMsg" style="flex-basis:100%"></div>
 </div>
 
-<div class="card">
-  <h2>Contrato</h2>
-  <div class="grid">
-    <div><label for="cliente">Cliente</label><input id="cliente" type="text" placeholder="Nome do cliente"></div>
-    <div><label for="contrato">Contrato</label><input id="contrato" type="text" placeholder="Nº do contrato"></div>
-    <div><label for="inicio">Competência inicial</label><input id="inicio" type="month"></div>
-    <div><label for="prazo">Prazo (meses)</label><input id="prazo" type="number" min="1" step="1" value="60"></div>
-    <div><label for="pgto">Parcela mensal (R$)</label><input id="pgto" type="number" step="0.01" value="578854"></div>
-    <div><label for="taxa">Taxa de desconto (% a.m.)</label><input id="taxa" type="number" step="0.000001" value="1"></div>
-  </div>
-  <div class="actions" style="margin-top:14px">
-    <button class="ghost" id="gsSalvar">Salvar na base</button>
-    <button class="ghost" id="gsExcluir">Excluir da base</button>
-    <span class="hint" style="margin:0">Grava na planilha e registra o antes/depois na aba Histórico</span>
-  </div>
-  <div id="gsSaveMsg"></div>
-</div>
-
-<div class="card">
-  <div class="rem-head">
-    <h2>Remensurações</h2>
-    <button class="ghost" id="add">+ Adicionar remensuração</button>
-  </div>
-  <div id="rems"></div>
-  <div class="empty" id="remEmpty">Nenhuma remensuração cadastrada. O contrato será calculado com os termos originais do início ao fim.</div>
-</div>
-
-<div class="card" id="concCard" style="display:none">
-  <h2>Conciliação contábil <button type="button" id="concMax" class="maxbtn" title="Maximizar">⛶</button></h2>
-  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));align-items:end">
-    <div>
-      <label for="concIni">Contabilização a partir de</label>
-      <select id="concIni"></select>
+<div class="app-shell">
+  <nav class="sidebar" id="sidebar">
+    <div class="nav-group" data-group="cadastros"><i class="navdot"></i>Cadastros</div>
+    <div class="nav-sub">
+      <div class="nav-item active" data-screen="scr-contrato">Contrato</div>
+      <div class="nav-item" data-screen="scr-remensuracoes">Remensurações</div>
     </div>
-    <div>
-      <label for="concMes">Competência a validar</label>
-      <select id="concMes"></select>
+    <div class="nav-group" data-group="contabil"><i class="navdot"></i>Contábil</div>
+    <div class="nav-sub">
+      <div class="nav-item" data-screen="scr-conciliacao">Conciliação contábil</div>
+      <div class="nav-item" data-screen="scr-memoria">Memória de cálculo</div>
     </div>
-    <div>
-      <label for="concDepr">Tratamento da depreciação</label>
-      <select id="concDepr">
-        <option value="pros">Prospectivo — depreciar o saldo remanescente</option>
-        <option value="retro">Retrospectivo — ajustar a depreciação acumulada</option>
-      </select>
+    <div class="nav-group" data-group="relatorios"><i class="navdot"></i>Relatórios</div>
+    <div class="nav-sub">
+      <div class="nav-label-sm">Contábeis</div>
+      <div class="nav-item" data-screen="scr-relatorios">Gerar razão · Excel · PDF</div>
+      <div class="nav-item" data-screen="scr-relatorio-contrato">Relatório do contrato</div>
     </div>
-    <div><button class="ghost" id="concBtn">Apurar saldos</button></div>
-    <div><button class="ghost" id="concXls">Relatório Excel</button></div>
-    <div><button class="ghost" id="concPdf">Relatório PDF</button></div>
-    <div><button class="ghost" id="concRazao" title="Gera o razão contábil do contrato em Excel">📊 Gerar Razão Contábil</button></div>
+    <div class="nav-sep"></div>
+    <div class="nav-item help" data-screen="scr-instrucoes">📘 Instruções do sistema</div>
+  </nav>
+
+  <div class="content-area">
+
+    <div class="screen active" id="scr-contrato">
+      <div class="card">
+        <h2>Contrato</h2>
+        <div class="grid">
+          <div><label for="cliente">Cliente</label><input id="cliente" type="text" placeholder="Nome do cliente"></div>
+          <div><label for="contrato">Contrato</label><input id="contrato" type="text" placeholder="Nº do contrato"></div>
+          <div><label for="inicio">Competência inicial</label><input id="inicio" type="month"></div>
+          <div><label for="prazo">Prazo (meses)</label><input id="prazo" type="number" min="1" step="1" value="60"></div>
+          <div><label for="pgto">Parcela mensal (R$)</label><input id="pgto" type="number" step="0.01" value="578854"></div>
+          <div><label for="taxa">Taxa de desconto (% a.m.)</label><input id="taxa" type="number" step="0.000001" value="1"></div>
+          <div class="field-nova"><label for="ctrLink">Link do contrato</label><input id="ctrLink" type="url" placeholder="https://…"></div>
+          <div class="field-nova"><label for="ctrSei">Processo SEI</label><input id="ctrSei" type="text" placeholder="00000.000000/0000-00"></div>
+        </div>
+        <div class="field-nova" style="margin-top:14px">
+          <label for="ctrObs">Observações gerais</label>
+          <textarea id="ctrObs" rows="3" style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:4px;font:inherit;font-size:14px;resize:vertical" placeholder="Anotações livres sobre o contrato"></textarea>
+        </div>
+        <div class="actions" style="margin-top:14px">
+          <button class="ghost" id="gsSalvar">Salvar na base</button>
+          <button class="ghost" id="gsExcluir">Excluir da base</button>
+          <span class="hint" style="margin:0">Grava na planilha e registra o antes/depois na aba Histórico</span>
+        </div>
+        <div id="gsSaveMsg"></div>
+      </div>
+    </div>
+
+    <div class="screen" id="scr-remensuracoes">
+      <div class="card">
+        <div class="rem-head">
+          <h2>Remensurações</h2>
+          <button class="ghost" id="add">+ Adicionar remensuração</button>
+        </div>
+        <div id="rems"></div>
+        <div class="empty" id="remEmpty">Nenhuma remensuração cadastrada. O contrato será calculado com os termos originais do início ao fim.</div>
+      </div>
+    </div>
+
+    <div class="screen" id="scr-conciliacao">
+      <p class="hint" id="concHint">Calcule o contrato na tela "Contábil → Memória de cálculo" antes de apurar a conciliação.</p>
+      <div class="card" id="concCard" style="display:none">
+        <h2>Conciliação contábil <button type="button" id="concMax" class="maxbtn" title="Maximizar">⛶</button></h2>
+        <div class="actions"><button class="ghost" id="concBtn">Apurar saldos</button></div>
+        <div id="concOut"></div>
+      </div>
+    </div>
+
+    <div class="screen" id="scr-memoria">
+      <div class="actions" style="margin-bottom:16px">
+        <button id="calc">Calcular</button>
+        <button class="ghost" id="xlsx">Exportar para Excel</button>
+        <button class="ghost" id="print">Imprimir / PDF</button>
+      </div>
+      <div id="out"></div>
+    </div>
+
+    <div class="screen" id="scr-relatorios">
+      <div class="card">
+        <h2>Relatórios contábeis</h2>
+        <p class="hint">Usam o contrato e os parâmetros definidos no topo da página. Calcule e apure a conciliação antes de gerar.</p>
+        <div class="actions">
+          <button class="ghost" id="concRazao" title="Gera o razão contábil do contrato em Excel">📊 Gerar Razão Contábil</button>
+          <button class="ghost" id="concXls">Relatório Excel</button>
+          <button class="ghost" id="concPdf">Relatório PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen" id="scr-relatorio-contrato">
+      <div class="card">
+        <h2>Relatório do contrato</h2>
+        <p class="hint">Dossiê do contrato selecionado: dados cadastrais, link do contrato, processo SEI, observações e a linha do tempo de todas as remensurações (competência, valores antes/depois, termo aditivo e observações).</p>
+        <div class="actions">
+          <button class="ghost" id="relContratoBtn">📄 Gerar relatório do contrato</button>
+        </div>
+        <div id="relContratoOut"></div>
+      </div>
+    </div>
+
+    <div class="screen" id="scr-instrucoes">
+      <div class="card">
+        <h2>Instruções do sistema</h2>
+        <div id="instrucoesOut" class="memo on">
+
+          <h3>1. Passo a passo</h3>
+          <div class="step" data-n="1">
+            <h4>Cadastre o contrato</h4>
+            <p>Em <b>Cadastros → Contrato</b>, preencha cliente, número do contrato, competência inicial, prazo, parcela mensal e taxa de desconto. Os campos de link do contrato, processo SEI e observações são opcionais, mas ajudam a manter tudo rastreável.</p>
+          </div>
+          <div class="step" data-n="2">
+            <h4>Cadastre todas as remensurações</h4>
+            <p>Em <b>Cadastros → Remensurações</b>, adicione cada alteração de valor, taxa ou prazo, na ordem em que aconteceram, informando a partir de qual parcela cada uma passa a valer.</p>
+          </div>
+          <div class="step" data-n="3">
+            <h4>Defina os parâmetros de contabilização</h4>
+            <p>No topo da página, escolha <b>"Contabilização a partir de qual período"</b> (a partir de qual parcela o sistema começa a escriturar), a <b>"Competência a validar"</b> (a data de posição que você quer conferir) e o <b>tratamento da depreciação</b> — veja os conceitos logo abaixo antes de escolher.</p>
+          </div>
+
+          <h3>2. Tratamento da depreciação — Prospectivo x Retrospectivo</h3>
+          <p style="font-size:13px;color:var(--ink-soft);margin:0 0 12px">
+            Essa escolha só importa quando a contabilização começa numa competência intermediária do contrato
+            (por exemplo, você está assumindo a escrituração de um contrato que já estava em andamento, ou logo
+            após uma remensuração). Ela define como tratar a diferença entre o que já foi depreciado e o novo
+            valor do ativo.
+          </p>
+          <div class="lanc">
+            <div class="ltit">Prospectivo — depreciar o saldo remanescente</div>
+            <p style="margin:0 0 8px">O Direito de Uso passa a valer o saldo remanescente do passivo a partir
+              dali, como se o contrato começasse naquele momento. A nova quota de depreciação é esse saldo
+              dividido pelos meses que restam. <b>Não há ajuste retroativo</b> do que já foi depreciado.</p>
+            <p style="margin:0;font-size:12px;color:var(--ink-soft)"><b>Exemplo:</b> contrato de 60 meses,
+              ativo original de R$ 600.000,00 (quota de R$ 10.000,00/mês). Após 12 meses depreciados
+              (R$ 120.000,00 acumulados), há uma remensuração e o novo saldo do passivo em valor presente
+              passa a ser R$ 450.000,00. No prospectivo, o Direito de Uso passa a valer R$ 450.000,00 dali em
+              diante, e a nova quota = R$ 450.000,00 ÷ 47 meses restantes ≈ <b>R$ 9.574,47/mês</b>.</p>
+          </div>
+          <div class="lanc">
+            <div class="ltit">Retrospectivo — ajustar a depreciação acumulada</div>
+            <p style="margin:0 0 8px">O ativo é recalculado como se o novo valor já valesse <b>desde o início
+              do contrato</b>. Isso gera uma diferença entre a depreciação que já foi lançada (pelo valor
+              antigo) e a que deveria ter sido lançada (pelo valor novo) — essa diferença é ajustada de uma
+              vez só na Depreciação Acumulada, na competência da remensuração ("catch-up").</p>
+            <p style="margin:0;font-size:12px;color:var(--ink-soft)"><b>Exemplo:</b> no mesmo contrato, se o
+              novo valor do ativo, aplicado desde o início, resultasse numa quota de R$ 9.200,00/mês, os 12
+              meses já passados "deveriam" ter depreciado R$ 110.400,00 — mas foi lançado R$ 120.000,00. A
+              diferença (R$ 9.600,00) é ajustada de uma vez na Depreciação Acumulada nesta competência, e a
+              depreciação segue dali em diante pela nova quota.</p>
+          </div>
+
+          <h3>3. O que é o CPC 06 / IFRS 16</h3>
+          <p style="font-size:13px;line-height:1.7;margin:0 0 10px">
+            O CPC 06 (R2) é a norma contábil brasileira equivalente ao padrão internacional IFRS 16. Em vigor
+            desde janeiro de 2019, a regra unificou o registro de arrendamentos para as empresas arrendatárias.
+            Ela eliminou a antiga separação de contratos operacionais fora do balanço, exigindo o registro do
+            ativo e do passivo de locações.
+          </p>
+          <p style="font-size:13px;font-weight:700;margin:14px 0 6px">Principais mudanças</p>
+          <ul style="font-size:13px;color:var(--ink-soft);line-height:1.8;margin:0 0 4px;padding-left:20px">
+            <li><b>Fim do aluguel operacional:</b> a antiga despesa de aluguel no resultado foi substituída por
+              depreciação (do direito de uso) e juros (do passivo).</li>
+            <li><b>Ativo de Direito de Uso:</b> a empresa deve registrar um bem no ativo não circulante
+              correspondente ao direito de usar o item alugado.</li>
+            <li><b>Passivo de Arrendamento:</b> o valor presente das futuras parcelas de pagamento é lançado
+              como dívida no passivo.</li>
+            <li><b>Exceções:</b> contratos de curto prazo (até 12 meses) e de baixo valor podem continuar
+              sendo lançados direto como despesa.</li>
+          </ul>
+
+          <h3>4. Esquema de contabilização — exemplo simples</h3>
+          <div class="lanc">
+            <div class="ltit">Reconhecimento inicial do contrato (em duas etapas)</div>
+            <p style="margin:0 0 8px;font-size:12px;color:var(--ink-soft)">O Direito de Uso e o Passivo de
+              Arrendamento entram <b>pelo valor total (bruto)</b> das parcelas — não pelo valor presente
+              direto. Na sequência, um segundo lançamento credita o Direito de Uso pela diferença entre o
+              bruto e o valor presente, trazendo o ativo ao valor correto. É a mesma conta "( − ) Juros a
+              Transcorrer" que, mês a mês, também reduz o passivo (ver abaixo) — por isso o Direito de Uso e o
+              Arrendamento a Pagar sempre fecham no mesmo valor líquido.</p>
+            <table><tbody>
+              <tr><td style="width:280px">D&nbsp;&nbsp;Direito de Uso (Ativo Não Circulante)</td><td class="n"></td></tr>
+              <tr><td style="padding-left:20px">C&nbsp;&nbsp;Arrendamentos a Pagar (Passivo)</td><td class="n"></td></tr>
+            </tbody></table>
+            <p style="margin:6px 0 12px;font-size:12px;color:var(--ink-soft)">Pelo valor total (bruto) das parcelas do contrato.</p>
+            <table><tbody>
+              <tr><td style="width:280px">D&nbsp;&nbsp;( − ) Juros a Transcorrer (redutora do Direito de Uso)</td><td class="n"></td></tr>
+              <tr><td style="padding-left:20px">C&nbsp;&nbsp;Direito de Uso (Ativo Não Circulante)</td><td class="n"></td></tr>
+            </tbody></table>
+            <p style="margin:6px 0 0;font-size:12px;color:var(--ink-soft)">Pela diferença entre o valor bruto e o valor presente das parcelas — traz o ativo ao valor presente.</p>
+          </div>
+          <div class="lanc">
+            <div class="ltit">Todo mês — juros e depreciação</div>
+            <table><tbody>
+              <tr><td style="width:280px">D&nbsp;&nbsp;Despesa de Juros (DRE)</td><td class="n"></td></tr>
+              <tr><td style="padding-left:20px">C&nbsp;&nbsp;( − ) Juros a Transcorrer (redutora do passivo)</td><td class="n"></td></tr>
+            </tbody></table>
+            <table style="margin-top:8px"><tbody>
+              <tr><td style="width:280px">D&nbsp;&nbsp;Despesa de Depreciação (DRE)</td><td class="n"></td></tr>
+              <tr><td style="padding-left:20px">C&nbsp;&nbsp;Depreciação Acumulada (redutora do ativo)</td><td class="n"></td></tr>
+            </tbody></table>
+          </div>
+          <div class="lanc">
+            <div class="ltit">Pagamento da parcela</div>
+            <table><tbody>
+              <tr><td style="width:280px">D&nbsp;&nbsp;Arrendamentos a Pagar (Passivo)</td><td class="n"></td></tr>
+              <tr><td style="padding-left:20px">C&nbsp;&nbsp;Bancos (Ativo Circulante)</td><td class="n"></td></tr>
+            </tbody></table>
+            <p style="margin:6px 0 0;font-size:12px;color:var(--ink-soft)">Baixa do passivo pelo valor efetivamente pago.</p>
+          </div>
+          <p class="hint" style="margin-top:14px">Esse é o esquema simplificado. O razão contábil gerado pelo sistema (Relatórios → Gerar razão) já aplica isso automaticamente, inclusive a segregação entre curto e longo prazo.</p>
+        </div>
+      </div>
+    </div>
+
   </div>
-  <div id="concOut"></div>
 </div>
-
-<div class="actions">
-  <button id="calc">Calcular</button>
-  <button class="ghost" id="xlsx">Exportar para Excel</button>
-  <button class="ghost" id="print">Imprimir / PDF</button>
-</div>
-
-<div id="out"></div>
 </div>
 
 <script>
@@ -253,7 +448,7 @@
    Abas esperadas na planilha: "Contratos" e "Remensuracoes".
 =============================================================== */
 const TOKEN = "ifrs16";   /* mesma senha definida no Code.gs */
-const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbymb6_RPtufo7TuZEH_Vr-rsSwBXiLPFf8gIFmvOpXGGseaxyldMDJPBigH7uW4kms/exec";
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycby8iOp5k2ZRGrejh3NMGTc04jYxEsUJV1ve1BLz5bar__P8IuFV41LQejjJM3if1wsW/exec";
 
 /* Trava simples de senha para os botões "Salvar na base" e "Excluir da base",
    já que o link é compartilhado com várias pessoas. Usa a MESMA senha do
@@ -293,6 +488,7 @@ function dataDaParcela(abs){
 }
 
 let seq = 0;
+function escAttr(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
 function addRem(v){
   v = v || {};
   seq++;
@@ -305,6 +501,13 @@ function addRem(v){
       '<div><label>Nova parcela mensal (R$)</label><input class="r-pgto" type="number" step="0.01" value="'+(v.pgto||"")+'"></div>'+
       '<div><label>Nova taxa (% a.m.)</label><input class="r-taxa" type="number" step="0.000001" value="'+(v.taxa||"")+'"><div class="hint">Em branco = mantém a anterior</div></div>'+
       '<div><label>Prazo do novo regime (meses)</label><input class="r-prazo" type="number" min="1" step="1" value="'+(v.prazo||"")+'"><div class="hint">Meses a partir desta parcela</div></div>'+
+      '<div class="field-nova"><label>Competência</label><input class="r-comp" type="month" value="'+escAttr(v.competencia)+'"></div>'+
+      '<div class="field-nova"><label>Nº do termo aditivo</label><input class="r-termonum" type="text" value="'+escAttr(v.termoNum)+'" placeholder="Nº"></div>'+
+      '<div class="field-nova"><label>Link do termo aditivo</label><input class="r-termolink" type="url" value="'+escAttr(v.termoLink)+'" placeholder="https://…"></div>'+
+    '</div>'+
+    '<div class="field-nova" style="margin-top:10px">'+
+      '<label>Observações gerais</label>'+
+      '<textarea class="r-obs" rows="2" style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:4px;font:inherit;font-size:14px;resize:vertical" placeholder="Anotações sobre esta remensuração">'+escAttr(v.obs)+'</textarea>'+
     '</div>';
   d.querySelector(".link").onclick = function(){ d.remove(); toggleEmpty(); };
   el("rems").appendChild(d); toggleEmpty();
@@ -316,7 +519,11 @@ function lerRems(){
       parcela: parseInt(d.querySelector(".r-par").value)||0,
       pgto:  d.querySelector(".r-pgto").value===""?null:parseFloat(d.querySelector(".r-pgto").value),
       taxa:  d.querySelector(".r-taxa").value===""?null:parseFloat(d.querySelector(".r-taxa").value)/100,
-      prazo: d.querySelector(".r-prazo").value===""?null:parseInt(d.querySelector(".r-prazo").value)
+      prazo: d.querySelector(".r-prazo").value===""?null:parseInt(d.querySelector(".r-prazo").value),
+      competencia: d.querySelector(".r-comp").value||"",
+      termoNum:  d.querySelector(".r-termonum").value||"",
+      termoLink: d.querySelector(".r-termolink").value||"",
+      obs: d.querySelector(".r-obs").value||""
     };
   }).filter(function(r){return r.parcela>=2;}).sort(function(a,b){return a.parcela-b.parcela;});
 }
@@ -1217,7 +1424,10 @@ function carregarBase(){
           comp    : pcomp(x.competenciainicial||x.competencia||x.inicio||x.datainicio),
           prazo   : pnum(x.prazo),
           parcela : pnum(x.parcela!==undefined?x.parcela:x.valor),
-          taxa    : pnum(x.taxa!==undefined?x.taxa:x.taxaam)
+          taxa    : pnum(x.taxa!==undefined?x.taxa:x.taxaam),
+          link    : String(x.linkdocontrato||x.link||"").trim(),
+          sei     : String(x.processosei||x.sei||"").trim(),
+          obs     : String(x.observacoes||x.observacao||"").trim()
         };
       }).filter(function(x){return x.cliente&&x.contrato;});
 
@@ -1238,7 +1448,11 @@ function carregarBase(){
           parcela : pnum(x.parcela!==undefined?x.parcela:x.apartirdaparcela),
           pgto    : pnum(x.novovalor!==undefined?x.novovalor:x.valor),
           taxa    : pnum(x.novataxa!==undefined?x.novataxa:x.taxa),
-          prazo   : pnum(x.novoprazo!==undefined?x.novoprazo:x.prazo)
+          prazo   : pnum(x.novoprazo!==undefined?x.novoprazo:x.prazo),
+          competencia: String(x.competencia||"").trim(),
+          termoNum   : String(x.termoaditivo||x.termonum||"").trim(),
+          termoLink  : String(x.linktermoaditivo||x.termolink||"").trim(),
+          obs        : String(x.observacoes||x.observacao||"").trim()
         };
       }).filter(function(x){return x.contrato&&x.parcela;});
 
@@ -1296,11 +1510,15 @@ function aplicarContrato(){
   if(c.prazo)   el("prazo").value  = c.prazo;
   if(c.parcela) el("pgto").value   = c.parcela;
   if(c.taxa!==null&&c.taxa!==undefined) el("taxa").value = c.taxa;
+  el("ctrLink").value = c.link||"";
+  el("ctrSei").value  = c.sei||"";
+  el("ctrObs").value  = c.obs||"";
 
   el("rems").innerHTML=""; seq=0;
   const rr=BASE.rems.filter(function(r){return r.contrato===con;})
                     .sort(function(a,b){return a.parcela-b.parcela;});
-  rr.forEach(function(r){ addRem({parcela:r.parcela, pgto:r.pgto, taxa:r.taxa, prazo:r.prazo}); });
+  rr.forEach(function(r){ addRem({parcela:r.parcela, pgto:r.pgto, taxa:r.taxa, prazo:r.prazo,
+                                   competencia:r.competencia, termoNum:r.termoNum, termoLink:r.termoLink, obs:r.obs}); });
   toggleEmpty();
 
   CONC=null; ADOC=null; QUIT={};
@@ -1336,7 +1554,10 @@ function coletarPayload(){
       competencia: comp,
       prazo: parseInt(el("prazo").value)||0,
       parcela: parseFloat(el("pgto").value)||0,
-      taxa: Math.round((parseFloat(el("taxa").value)||0)*1e6)/1e6
+      taxa: Math.round((parseFloat(el("taxa").value)||0)*1e6)/1e6,
+      link: el("ctrLink").value.trim(),
+      sei: el("ctrSei").value.trim(),
+      observacoes: el("ctrObs").value.trim()
     },
     remensuracoes: lerRems().map(function(r,i){
       /* prazo em branco = "mantém o prazo atual": resolve pelo regime já calculado,
@@ -1353,7 +1574,9 @@ function coletarPayload(){
       }
       return { parcela:r.parcela, valor:r.pgto,
                taxa:(taxa===null||taxa===undefined?"":Math.round(taxa*100*1e6)/1e6),
-               prazo:(prazo===null?"":prazo) };
+               prazo:(prazo===null?"":prazo),
+               competencia:r.competencia||"", termoNum:r.termoNum||"",
+               termoLink:r.termoLink||"", obs:r.obs||"" };
     })
   };
 }
@@ -1417,17 +1640,17 @@ function excluirDaBase(){
 
 function baixarModelo(){
   const wb=XLSX.utils.book_new();
-  const c=[["Cliente","Contrato","Competencia Inicial","Prazo","Parcela","Taxa"],
-           ["Empresa Exemplo Ltda","001/2020","04/2020",60,578854,1],
-           ["Empresa Exemplo Ltda","002/2021","01/2021",36,25000,0.9]];
+  const c=[["Cliente","Contrato","Competencia Inicial","Prazo","Parcela","Taxa","Link do Contrato","Processo SEI","Observacoes"],
+           ["Empresa Exemplo Ltda","001/2020","04/2020",60,578854,1,"https://drive.google.com/…","00000.000000/0000-00","Contrato de locação de imóvel"],
+           ["Empresa Exemplo Ltda","002/2021","01/2021",36,25000,0.9,"",""," "]];
   const ws1=XLSX.utils.aoa_to_sheet(c);
-  ws1["!cols"]=[{wch:28},{wch:16},{wch:20},{wch:10},{wch:16},{wch:10}];
+  ws1["!cols"]=[{wch:28},{wch:16},{wch:20},{wch:10},{wch:16},{wch:10},{wch:30},{wch:22},{wch:30}];
   XLSX.utils.book_append_sheet(wb,ws1,"Contratos");
-  const r=[["Contrato","Parcela","Novo Valor","Nova Taxa","Novo Prazo"],
-           ["001/2020",13,694887.02,"",""],
-           ["001/2020",25,750000,"",""]];
+  const r=[["Contrato","Parcela","Novo Valor","Nova Taxa","Novo Prazo","Competencia","Termo Aditivo","Link Termo Aditivo","Observacoes"],
+           ["001/2020",13,694887.02,"","","2021-05","001/2021","https://drive.google.com/…","Reajuste contratual"],
+           ["001/2020",25,750000,"","","2022-05","","",""]];
   const ws2=XLSX.utils.aoa_to_sheet(r);
-  ws2["!cols"]=[{wch:16},{wch:12},{wch:16},{wch:12},{wch:12}];
+  ws2["!cols"]=[{wch:16},{wch:12},{wch:16},{wch:12},{wch:12},{wch:14},{wch:16},{wch:30},{wch:30}];
   XLSX.utils.book_append_sheet(wb,ws2,"Remensuracoes");
   XLSX.writeFile(wb,"Modelo_Base_IFRS16.xlsx");
 }
@@ -1543,6 +1766,96 @@ function relatorioConcPdf(){
 
   const w=window.open("","_blank");
   if(!w){ alert("Permita janelas pop-up para gerar o PDF."); return; }
+  w.document.write(doc);
+  w.document.close();
+  w.focus();
+  setTimeout(function(){ w.print(); },350);
+}
+
+/* ---------- relatório do contrato (dossiê: cadastro + remensurações) ---------- */
+function relatorioContrato(){
+  const cliente=el("cliente").value.trim(), contrato=el("contrato").value.trim();
+  if(!cliente||!contrato){ alert("Preencha ao menos Cliente e Contrato antes de gerar o relatório."); return; }
+  const link=el("ctrLink").value.trim(), sei=el("ctrSei").value.trim(), obs=el("ctrObs").value.trim();
+  const inicio=el("inicio").value?competencia(el("inicio").value,0):"—";
+  const prazo=el("prazo").value||"—", pgto=el("pgto").value?BRL(parseFloat(el("pgto").value)):"—";
+  const taxa=el("taxa").value?el("taxa").value+"% a.m.":"—";
+  const rems=lerRems();
+
+  const linhaMeta=function(rot,val){
+    return val?('<span><b>'+rot+':</b> '+val+'</span>'):'';
+  };
+  const linkHtml=function(u){
+    if(!u) return '—';
+    const esc=String(u).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+    return '<a href="'+esc+'">'+esc+'</a>';
+  };
+
+  let remsTabela;
+  if(!rems.length){
+    remsTabela='<p class="obs">Nenhuma remensuração cadastrada. O contrato foi calculado com os termos originais do início ao fim.</p>';
+  } else {
+    remsTabela='<table><thead><tr><th>#</th><th>Parcela</th><th>Competência</th>'+
+      '<th class="n">Novo valor</th><th class="n">Nova taxa</th><th class="n">Novo prazo</th>'+
+      '<th>Termo aditivo</th><th>Observações</th></tr></thead><tbody>';
+    rems.forEach(function(r,i){
+      remsTabela+='<tr>'+
+        '<td>'+(i+1)+'</td>'+
+        '<td>'+r.parcela+'</td>'+
+        '<td>'+(r.competencia?competencia(r.competencia,0):'—')+'</td>'+
+        '<td class="n">'+(r.pgto?BRL(r.pgto):'—')+'</td>'+
+        '<td class="n">'+(r.taxa!==null?(r.taxa*100).toFixed(6).replace(/\.?0+$/,'')+'%':'mantém')+'</td>'+
+        '<td class="n">'+(r.prazo||'mantém')+'</td>'+
+        '<td>'+(r.termoNum?('nº '+r.termoNum+(r.termoLink?' — '+linkHtml(r.termoLink):'')):'—')+'</td>'+
+        '<td>'+(r.obs||'—')+'</td>'+
+        '</tr>';
+    });
+    remsTabela+='</tbody></table>';
+  }
+
+  const doc='<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">'+
+    '<title>Relatório do contrato '+(contrato||"")+'</title><style>'+
+    '@page{size:A4 portrait;margin:16mm}'+
+    'body{font:12px/1.45 "Segoe UI",Arial,sans-serif;color:#12242e;margin:0}'+
+    'h1{font-size:17px;margin:0 0 2px;color:#256a94}'+
+    '.sub{font-size:11px;color:#5b6b76;margin:0 0 14px}'+
+    '.cab{border-bottom:2px solid #338fc0;padding-bottom:10px;margin-bottom:16px}'+
+    '.meta{display:flex;flex-wrap:wrap;gap:6px 26px;font-size:11px;margin-top:8px}'+
+    '.meta b{color:#256a94}'+
+    'h3{font-size:13px;margin:20px 0 8px;color:#256a94;border-bottom:1px solid #d4dde2;padding-bottom:4px}'+
+    'table{width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:6px}'+
+    'thead th{background:#256a94;color:#fff;padding:6px 8px;text-align:left;font-weight:600}'+
+    'th.n,td.n{text-align:right;font-variant-numeric:tabular-nums}'+
+    'td{padding:5px 8px;border-bottom:1px solid #e8eef1;vertical-align:top}'+
+    'a{color:#256a94;word-break:break-all}'+
+    '.obs{font-size:11px;color:#5b6b76}'+
+    '.box{background:#f7f9fa;border:1px solid #d4dde2;border-radius:4px;padding:10px 12px;font-size:11.5px;white-space:pre-wrap}'+
+    '.rod{margin-top:22px;padding-top:8px;border-top:1px solid #d4dde2;font-size:10px;color:#5b6b76}'+
+    'table{page-break-inside:avoid}'+
+    '</style></head><body>'+
+    '<div class="cab"><h1>Relatório do Contrato</h1>'+
+    '<p class="sub">Dossiê de cadastro e histórico de remensurações — IFRS 16 / CPC 06 (R2)</p>'+
+    '<div class="meta">'+
+      linhaMeta("Cliente",cliente)+
+      linhaMeta("Contrato",contrato)+
+      linhaMeta("Competência inicial",inicio)+
+      linhaMeta("Prazo",prazo+" meses")+
+      linhaMeta("Parcela mensal",pgto)+
+      linhaMeta("Taxa de desconto",taxa)+
+    '</div></div>'+
+    '<h3>Dados complementares</h3>'+
+    '<table><tbody>'+
+      '<tr><td style="width:160px"><b>Link do contrato</b></td><td>'+linkHtml(link)+'</td></tr>'+
+      '<tr><td><b>Processo SEI</b></td><td>'+(sei||'—')+'</td></tr>'+
+    '</tbody></table>'+
+    (obs?('<div class="box">'+obs.replace(/&/g,"&amp;").replace(/</g,"&lt;")+'</div>'):'<p class="obs">Sem observações gerais registradas.</p>')+
+    '<h3>Linha do tempo das remensurações ('+rems.length+')</h3>'+
+    remsTabela+
+    '<p class="rod">Emitido em '+new Date().toLocaleString("pt-BR")+'.</p>'+
+    '</body></html>';
+
+  const w=window.open("","_blank");
+  if(!w){ alert("Permita janelas pop-up para gerar o relatório."); return; }
   w.document.write(doc);
   w.document.close();
   w.focus();
@@ -2293,8 +2606,8 @@ function exportar(){
 }
 
 el("add").onclick=function(){addRem();};
-el("calc").onclick=render;
-el("concBtn").onclick=conciliar;
+el("calc").onclick=function(){ alert("Lembre-se de conciliar os pagamentos na aba \"Memória de cálculo\"."); render(); };
+el("concBtn").onclick=function(){ alert("Lembre-se de conciliar os pagamentos na aba \"Memória de cálculo\"."); conciliar(); };
 el("concMax").onclick=function(){
   const card=el("concCard");
   const on=card.classList.toggle("maxed");
@@ -2315,6 +2628,7 @@ el("concMes").onchange=function(){ render(); if(CONC) conciliar(); };
 el("concXls").onclick=relatorioConcXls;
 el("concRazao").onclick=gerarRazao;
 el("concPdf").onclick=relatorioConcPdf;
+el("relContratoBtn").onclick=relatorioContrato;
 el("concIni").onchange=function(){ preencherMeses(); render(); agendarGravacaoCfg(); };
 el("concDepr").onchange=function(){ const tinha=!!CONC; render(); if(tinha) conciliar(); agendarGravacaoCfg(); };
 el("gsLoad").onclick=carregarBase;
@@ -2329,6 +2643,19 @@ const _cfg0=carregarCfgLocal(); if(_cfg0){ aplicarCfg(_cfg0); preencherMeses(); 
 if(WEBAPP_URL) carregarBase();
 el("xlsx").onclick=exportar;
 el("print").onclick=function(){window.print();};
+
+/* ---------- navegação do menu lateral (todos os grupos ficam sempre abertos) ---------- */
+(function(){
+  const itens=document.querySelectorAll(".nav-item");
+  const telas=document.querySelectorAll(".screen");
+  function irPara(id){
+    telas.forEach(function(t){ t.classList.toggle("active", t.id===id); });
+    itens.forEach(function(i){ i.classList.toggle("active", i.dataset.screen===id); });
+  }
+  itens.forEach(function(i){
+    i.addEventListener("click", function(){ irPara(i.dataset.screen); });
+  });
+})();
 
 /* recalcula automaticamente quando qualquer parâmetro muda */
 document.addEventListener("change", function(ev){
