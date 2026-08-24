@@ -228,6 +228,7 @@
       <div class="nav-item active" data-screen="scr-contrato">Contrato</div>
       <div class="nav-item" data-screen="scr-remensuracoes">Remensurações</div>
       <div class="nav-item" data-screen="scr-avaliar">Avaliar arrendamento (CPC 06)</div>
+      <div class="nav-item" data-screen="scr-plano-contas">Plano de contas</div>
     </div>
     <div class="nav-group" data-group="contabil"><i class="navdot"></i>Contábil</div>
     <div class="nav-sub">
@@ -239,6 +240,7 @@
       <div class="nav-label-sm">Contábeis</div>
       <div class="nav-item" data-screen="scr-relatorios">Gerar razão · Excel · PDF</div>
       <div class="nav-item" data-screen="scr-relatorio-contrato">Relatório do contrato</div>
+      <div class="nav-item" data-screen="scr-importacao">Importação</div>
     </div>
     <div class="nav-sep"></div>
     <div class="nav-item help" data-screen="scr-instrucoes">📘 Instruções do sistema</div>
@@ -292,6 +294,24 @@
       </div>
     </div>
 
+    <div class="screen" id="scr-plano-contas">
+      <div class="card">
+        <h2>Plano de contas — de/para contábil</h2>
+        <p class="hint">Códigos usados na exportação de importação (TXT) <b>deste contrato</b> — cada contrato tem os seus próprios códigos. Setor padrão: 141.</p>
+        <div class="scroll fit">
+          <table>
+            <thead><tr><th>Conta do sistema</th><th style="width:160px">Código reduzido</th><th style="width:110px">Setor</th></tr></thead>
+            <tbody id="planoContasBody"></tbody>
+          </table>
+        </div>
+        <div class="actions" style="margin-top:14px">
+          <button class="ghost" id="pcSalvar">Salvar plano de contas</button>
+          <button class="ghost" id="pcCopiar">Copiar de outro contrato</button>
+        </div>
+        <div id="pcMsg"></div>
+      </div>
+    </div>
+
     <div class="screen" id="scr-conciliacao">
       <p class="hint" id="concHint">Calcule o contrato na tela "Contábil → Memória de cálculo" antes de apurar a conciliação.</p>
       <div class="card" id="concCard" style="display:none">
@@ -330,6 +350,25 @@
           <button class="ghost" id="relContratoBtn">📄 Gerar relatório do contrato</button>
         </div>
         <div id="relContratoOut"></div>
+      </div>
+    </div>
+
+    <div class="screen" id="scr-importacao">
+      <div class="card">
+        <h2>Importação contábil (TXT)</h2>
+        <p class="hint">Exporta exatamente os lançamentos já escriturados no Razão Contábil (mesma fonte de dados do Razão e do Balancete) do contrato selecionado, para o período informado. Os parâmetros de contabilização (a partir de / competência a validar / depreciação) são os já definidos no topo da página.</p>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));align-items:end">
+          <div><label for="impIni">Competência inicial</label><select id="impIni"></select></div>
+          <div><label for="impFim">Competência final</label><select id="impFim"></select></div>
+          <div><label for="impNum">Nº lançamento inicial</label><input id="impNum" type="number" min="1" step="1" value="1"></div>
+        </div>
+        <div class="actions" style="margin-top:14px">
+          <button class="ghost" id="impConsultar">Consultar</button>
+          <button class="ghost" id="impValidar">Validar</button>
+          <button id="impGerar" disabled>Gerar TXT</button>
+          <button class="ghost" id="impLimpar" style="margin-left:auto">Limpar filtros</button>
+        </div>
+        <div id="impOut"></div>
       </div>
     </div>
 
@@ -467,7 +506,7 @@
    Abas esperadas na planilha: "Contratos" e "Remensuracoes".
 =============================================================== */
 const TOKEN = "ifrs16";   /* mesma senha definida no Code.gs */
-const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwYdVHyL3IsB7O1IThLBBpI4iwEjwWWDbE-eorh0zSaM3HXKaiZ_5-f-J1VlAGT7fiO/exec";
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbz6rxWK9zj1wohdJSjFPiAqGt24_NfDCw3iSWvoTHNdQFIYxIcsnItDvbC0ECfL0Nqm/exec";
 
 /* Trava simples de senha para os botões "Salvar na base" e "Excluir da base",
    já que o link é compartilhado com várias pessoas. Usa a MESMA senha do
@@ -1223,6 +1262,29 @@ function preencherMeses(){
     sel.appendChild(o);
   });
   if(antes && parseInt(antes)>=de) sel.value=antes;
+  preencherMesesImp();
+}
+
+/* Competências disponíveis para a tela de Importação — sempre dentro da
+   janela já escriturada (Contabilização a partir de .. Competência a
+   validar), nunca fora dela. */
+function preencherMesesImp(){
+  if(!R || !el("impIni")) return;
+  const ini=el("inicio").value;
+  const de=parseInt(el("concIni").value)||1;
+  const ate=parseInt(el("concMes").value)||de;
+  [["impIni",de],["impFim",ate]].forEach(function(par){
+    const sel=el(par[0]);
+    const antes=sel.value;
+    sel.innerHTML="";
+    R.linhas.filter(function(l){return l.abs>=de && l.abs<=ate;}).forEach(function(l){
+      const o=document.createElement("option");
+      o.value=l.abs; o.textContent=competencia(ini,l.abs-1)+"  (parcela "+l.abs+")";
+      sel.appendChild(o);
+    });
+    if(antes && parseInt(antes)>=de && parseInt(antes)<=ate) sel.value=antes;
+    else sel.value=par[1];
+  });
 }
 
 function conciliar(){
@@ -1400,7 +1462,7 @@ function conciliar(){
    "Remensuracoes" : Contrato | Parcela | Novo Valor | Nova Taxa | Novo Prazo
    A planilha precisa estar compartilhada como "qualquer pessoa com o link".
 ================================================================= */
-let BASE={contratos:[], rems:[], quitacoes:[], config:[]};
+let BASE={contratos:[], rems:[], quitacoes:[], config:[], planoContas:[]};
 
 function gsMsg(txt,tipo){ el("gsMsg").innerHTML='<div class="msg '+(tipo||"info")+'">'+txt+'</div>'; }
 
@@ -1474,6 +1536,15 @@ function carregarBase(){
           obs        : String(x.observacoes||x.observacao||"").trim()
         };
       }).filter(function(x){return x.contrato&&x.parcela;});
+
+      BASE.planoContas=(d.planocontas||[]).map(function(x){
+        return {
+          contrato: String(x.contrato||"").trim(),
+          conta   : String(x.conta||"").trim(),
+          codigo  : String(x.codigoreduzido||x.codigo||"").trim(),
+          setor   : String(x.setor||"141").trim()
+        };
+      }).filter(function(x){return x.contrato&&x.conta;});
 
       const cli=[];
       BASE.contratos.forEach(function(c){ if(cli.indexOf(c.cliente)<0) cli.push(c.cliente); });
@@ -1582,6 +1653,9 @@ function novoContrato(){
   el("prazo").value=60; el("taxa").value=1;
   el("rems").innerHTML=""; seq=0; toggleEmpty();
   el("gsSaveMsg").innerHTML=""; el("gsMsg").innerHTML="";
+  renderPlanoContas(); el("pcMsg").innerHTML="";
+  IMP_EVENTOS=[]; IMP_VALIDADO=false;
+  el("impOut").innerHTML=""; el("impGerar").disabled=true;
   R=null; CONC=null; ADOC=null; DUMAP=null; QUIT={};
   el("out").innerHTML=""; el("concOut").innerHTML="";
   el("concCard").style.display="none";
@@ -1589,6 +1663,87 @@ function novoContrato(){
   grupos.forEach(function(i){ i.classList.toggle("active", i.dataset.screen==="scr-contrato"); });
   document.querySelectorAll(".screen").forEach(function(s){ s.classList.toggle("active", s.id==="scr-contrato"); });
   el("cliente").focus();
+}
+
+/* ---------- Plano de contas (de/para por contrato) ---------- */
+const PLANO_CONTAS_LISTA=[
+  {conta:"Direito de Uso (ANC)",               padrao:"6225"},
+  {conta:"Depreciação Acumulada",              padrao:"6227"},
+  {conta:"Arrendamentos a Pagar CP (bruto)",   padrao:"6229"},
+  {conta:"( - ) Juros a Transcorrer CP",       padrao:"6231"},
+  {conta:"Arrendamentos a Pagar PNC (bruto)",  padrao:"6233"},
+  {conta:"( - ) Juros a Transcorrer PNC",      padrao:"6235"},
+  {conta:"Despesa de Juros de Arrendamento",   padrao:"807"},
+  {conta:"Despesa de Depreciação",             padrao:"654"},
+  {conta:"Bancos",                             padrao:"680"},
+  {conta:"Ajustes de Exercícios Anteriores",   padrao:"379"}
+];
+function renderPlanoContas(mapa){
+  /* mapa: {nomeDaConta: {codigo, setor}} — se vazio, usa os códigos padrão
+     sugeridos (o usuário pode ajustar e salvar por contrato). */
+  mapa = mapa || {};
+  const body=el("planoContasBody");
+  body.innerHTML="";
+  PLANO_CONTAS_LISTA.forEach(function(item){
+    const v=mapa[item.conta] || {codigo:item.padrao, setor:"141"};
+    const tr=document.createElement("tr");
+    tr.innerHTML='<td>'+item.conta+'</td>'+
+      '<td><input class="pc-codigo" data-conta="'+escAttr(item.conta)+'" value="'+escAttr(v.codigo||"")+'"></td>'+
+      '<td><input class="pc-setor" data-conta="'+escAttr(item.conta)+'" value="'+escAttr(v.setor||"141")+'"></td>';
+    body.appendChild(tr);
+  });
+}
+function lerPlanoContas(){
+  return [].slice.call(document.querySelectorAll(".pc-codigo")).map(function(inp){
+    const setorInp=document.querySelector('.pc-setor[data-conta="'+CSS.escape(inp.dataset.conta)+'"]');
+    return { conta:inp.dataset.conta, codigo:inp.value.trim(), setor:(setorInp?setorInp.value.trim():"141")||"141" };
+  });
+}
+function mapaPlanoContasAtual(){
+  const m={};
+  lerPlanoContas().forEach(function(c){ m[c.conta]={codigo:c.codigo, setor:c.setor}; });
+  return m;
+}
+function planoContasParaMapa(lista){
+  const m={};
+  lista.forEach(function(c){ m[c.conta]={codigo:c.codigo, setor:c.setor}; });
+  return m;
+}
+function salvarPlanoContas(){
+  const contrato=el("contrato").value.trim();
+  if(!contrato){ el("pcMsg").innerHTML='<div class="msg err">Informe o contrato em Cadastros → Contrato antes de salvar.</div>'; return; }
+  if(!exigirSenhaEscrita()) return;
+  const contas=lerPlanoContas().filter(function(c){ return c.codigo; });
+  if(!WEBAPP_URL){ el("pcMsg").innerHTML='<div class="msg err">Base não configurada.</div>'; return; }
+  el("pcMsg").innerHTML='<div class="msg info">Enviando para a planilha...</div>';
+  fetch(WEBAPP_URL,{
+    method:"POST",
+    headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body:JSON.stringify({ token:TOKEN, acao:"salvarPlanoContas", contrato:contrato, contas:contas }),
+    redirect:"follow"
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if(!d){ throw new Error("resposta vazia"); }
+    if(d.ok===false){ el("pcMsg").innerHTML='<div class="msg err"><strong>Não gravado.</strong> '+(d.erro||"motivo não informado")+'</div>'; return; }
+    el("pcMsg").innerHTML='<div class="msg ok">'+(d.mensagem||"Plano de contas salvo.")+'</div>';
+    BASE.planoContas = (BASE.planoContas||[]).filter(function(x){return x.contrato!==contrato;})
+                        .concat(contas.map(function(c){ return {contrato:contrato, conta:c.conta, codigo:c.codigo, setor:c.setor}; }));
+  })
+  .catch(function(e){
+    el("pcMsg").innerHTML='<div class="msg err">Falha de comunicação com a planilha ('+e.message+').</div>';
+  });
+}
+function copiarPlanoContasDeOutroContrato(){
+  const disponiveis=Array.from(new Set((BASE.planoContas||[]).map(function(x){return x.contrato;})))
+                         .filter(function(c){ return c!==el("contrato").value.trim(); });
+  if(!disponiveis.length){ alert("Nenhum outro contrato tem plano de contas salvo ainda."); return; }
+  const origem=prompt("Copiar plano de contas de qual contrato?\n\nDisponíveis: "+disponiveis.join(", "));
+  if(!origem) return;
+  const lista=(BASE.planoContas||[]).filter(function(x){return x.contrato===origem.trim();});
+  if(!lista.length){ alert("Contrato \""+origem+"\" não tem plano de contas salvo."); return; }
+  renderPlanoContas(planoContasParaMapa(lista));
+  el("pcMsg").innerHTML='<div class="msg info">Copiado de '+origem+'. Confira e clique em "Salvar plano de contas" para gravar neste contrato.</div>';
 }
 
 function aplicarContrato(){
@@ -1622,6 +1777,10 @@ function aplicarContrato(){
   rr.forEach(function(r){ addRem({parcela:r.parcela, pgto:r.pgto, taxa:r.taxa, prazo:r.prazo,
                                    competencia:r.competencia, termoNum:r.termoNum, termoLink:r.termoLink, obs:r.obs}); });
   toggleEmpty();
+
+  const pc=(BASE.planoContas||[]).filter(function(x){return x.contrato===con;});
+  renderPlanoContas(planoContasParaMapa(pc));
+  el("pcMsg").innerHTML="";
 
   CONC=null; ADOC=null; QUIT={};
   if(!carregarQuitDaBase(con)) carregarQuitLocal();
@@ -1962,6 +2121,204 @@ function relatorioContrato(){
   w.document.close();
   w.focus();
   setTimeout(function(){ w.print(); },350);
+}
+
+/* =====================================================================
+   Importação contábil (TXT) — fonte única: montarRazao(). Nenhuma regra
+   contábil nova aqui; só filtra por período, traduz conta->código (plano
+   de contas do contrato) e formata em largura fixa.
+   ===================================================================== */
+let IMP_EVENTOS=[], IMP_VALIDADO=false;
+
+function padNum(v,w){
+  const s=String(v==null?"":v).replace(/\D/g,"");
+  return (s.length>=w ? s.slice(-w) : "0".repeat(w-s.length)+s);
+}
+function padTxt(v,w){
+  v=String(v==null?"":v);
+  return v.length>=w ? v.slice(0,w) : v+" ".repeat(w-v.length);
+}
+function dataContabilTXT(ab){
+  /* último dia do mês da competência — mesma convenção do exemplo fornecido */
+  const d=dataDaParcela(ab);
+  const ultimo=new Date(d.getFullYear(), d.getMonth()+1, 0);
+  return padNum(ultimo.getDate(),2)+padNum(ultimo.getMonth()+1,2)+String(ultimo.getFullYear());
+}
+function histResumoTXT(hist){
+  if(hist.indexOf("Reconhecimento inicial")===0 || hist.indexOf("Reconhecimento na adoção")===0)
+    return hist.indexOf("juros")>=0 ? "Reconhecimento inicial - juros" : "Reconhecimento inicial - ativo";
+  if(hist.indexOf("Ajuste de exercícios anteriores")===0)
+    return hist.indexOf("depreciação")>=0 ? "Ajuste retrospectivo - deprec." : "Ajuste retrospectivo - ativo";
+  if(hist.indexOf("Apropriação de juros")===0) return "Apropriação de juros";
+  if(hist.indexOf("Apropriação da depreciação")===0) return "Apropriação de depreciação";
+  if(hist.indexOf("Pagamento da parcela")===0) return "Pagamento de parcela";
+  if(hist.indexOf("Remensuração — diferença da parcela")===0){
+    const rot=hist.indexOf("(CP")>=0?"CP":(hist.indexOf("(PNC")>=0?"PNC":"");
+    return "Remensuração - parcela"+(rot?" ("+rot+")":"");
+  }
+  if(hist.indexOf("Remensuração — diferença dos juros")===0){
+    const rot=hist.indexOf("(CP")>=0?"CP":(hist.indexOf("(PNC")>=0?"PNC":"");
+    return "Remensuração - juros"+(rot?" ("+rot+")":"");
+  }
+  if(hist.indexOf("Segregação inicial de Longo Prazo")===0) return "Segregação LP - fechamento";
+  if(hist.indexOf("Segregação inicial de juros")===0) return "Segregação juros LP";
+  if(hist.indexOf("Reclassificação para Curto Prazo")===0){
+    const m=hist.match(/próximas (\d+) parcela/);
+    return "Reclassificação CP"+(m?(" - "+m[1]+" parcela(s)"):"");
+  }
+  if(hist.indexOf("Reclassificação de juros a transcorrer")===0) return "Reclassificação juros CP";
+  return hist.slice(0,40);
+}
+function montarLinhaTXT(numero, evento, mapa){
+  const codC=(mapa[evento.cC]||{}).codigo||"", codD=(mapa[evento.cD]||{}).codigo||"";
+  const setC=(mapa[evento.cC]||{}).setor||"141", setD=(mapa[evento.cD]||{}).setor||"141";
+  const centavos=Math.round(evento.d*100);
+  const valor=padNum(centavos,12);
+  const contrato=el("contrato").value.trim();
+  const desc=padTxt(contrato+" "+evento.comp+" - "+histResumoTXT(evento.hist),60);
+  return padNum(numero,8)+dataContabilTXT(evento.ab)+padNum(codC,10)+padNum(codD,10)+
+         valor+"0000"+padNum(setC,4)+padNum(setD,4)+valor+desc+padNum("1",4);
+}
+
+/* devolve {eventos, RZ, ini2, fim2, erro} — erro preenchido se faltar calcular/apurar antes */
+function importacaoEventosFiltrados(){
+  if(!R) return {eventos:[], erro:"Calcule o contrato em Contábil → Memória de cálculo antes de consultar."};
+  const deAbs=parseInt(el("concIni").value)||1;
+  const mFim=parseInt(el("concMes").value)||deAbs;
+  const modo=(el("concDepr")&&el("concDepr").value)||"pros";
+  const ini2=parseInt(el("impIni").value)||deAbs;
+  const fim2=parseInt(el("impFim").value)||mFim;
+  if(!el("impIni").options.length) return {eventos:[], erro:"Sem competências disponíveis — confira os parâmetros no topo da página."};
+  const RZ=montarRazao(deAbs, mFim, modo);
+  const eventos=RZ.eventos.filter(function(e){ return e.ab>=ini2 && e.ab<=fim2; })
+                          .sort(function(a,b){ return a.ab-b.ab; });
+  return {eventos:eventos, RZ:RZ, ini2:ini2, fim2:fim2, erro:null};
+}
+
+/* Balancete da janela selecionada: saldo anterior (tudo antes de impIni),
+   movimento do período (débito/crédito dentro de impIni..impFim) e saldo
+   final — mesma base (RZ.partidas) do Balancete oficial, só recortada pela
+   janela da Importação, para dar pra conferir visualmente antes de gerar. */
+function renderBalanceteImportacao(RZ, ini2, fim2){
+  if(!RZ || !RZ.contasUsadas.length) return "";
+  let h='<div class="card" style="margin-top:14px"><h3 style="margin:0 0 10px">Balancete da janela selecionada</h3>'+
+    '<div class="scroll fit"><table><thead><tr><th>Conta</th><th>Natureza</th>'+
+    '<th>Saldo anterior</th><th>Débito no período</th><th>Crédito no período</th><th>Saldo final</th></tr></thead><tbody>';
+  RZ.contasUsadas.forEach(function(cc){
+    const grupo=RZ.gruposPorConta[cc];
+    let saldoAnt=0, movD=0, movC=0;
+    grupo.forEach(function(p){
+      if(p.ab<ini2) saldoAnt += (p.d-p.c);
+      else if(p.ab<=fim2){ movD+=p.d; movC+=p.c; }
+    });
+    const dev=RZ.nat(cc)>0;
+    const saldoAntNat = dev?saldoAnt:-saldoAnt;
+    const saldoFinNat = dev ? (saldoAnt+movD-movC) : -(saldoAnt+movD-movC);
+    if(saldoAntNat===0 && movD===0 && movC===0) return;
+    h+='<tr><td>'+cc+'</td><td>'+(dev?"Devedora":"Credora")+'</td>'+
+       '<td>'+BRL(saldoAntNat)+'</td><td>'+BRL(movD)+'</td><td>'+BRL(movC)+'</td><td>'+BRL(saldoFinNat)+'</td></tr>';
+  });
+  h+='</tbody></table></div></div>';
+  return h;
+}
+
+function impConsultar(){
+  const r=importacaoEventosFiltrados();
+  const out=el("impOut");
+  if(r.erro){ out.innerHTML='<p class="hint" style="color:var(--neg)">'+r.erro+'</p>'; IMP_EVENTOS=[]; IMP_VALIDADO=false; el("impGerar").disabled=true; return; }
+  IMP_EVENTOS=r.eventos; IMP_VALIDADO=false; el("impGerar").disabled=true;
+  const totD=S(r.eventos,function(e){return e.d;}), totC=S(r.eventos,function(e){return e.c;});
+  let h='<div class="sum" style="margin-top:14px">'+
+    '<div>Lançamentos no período<br><strong>'+r.eventos.length+'</strong></div>'+
+    '<div>Total débitos<br><strong>'+BRL(totD)+'</strong></div>'+
+    '<div>Total créditos<br><strong>'+BRL(totC)+'</strong></div>'+
+    '</div>';
+  h+=renderBalanceteImportacao(r.RZ, r.ini2, r.fim2);
+  if(!r.eventos.length){
+    h+='<p class="hint">Nenhum lançamento do razão cai dentro da janela de competências selecionada.</p>';
+  } else {
+    h+='<div class="scroll fit"><table><thead><tr><th>Competência</th><th>Débito</th><th>Crédito</th><th>Valor</th><th>Descrição</th></tr></thead><tbody>';
+    r.eventos.forEach(function(e){
+      h+='<tr><td>'+e.comp+'</td><td>'+e.cD+'</td><td>'+e.cC+'</td><td>'+BRL(e.d)+'</td><td>'+e.hist+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  out.innerHTML=h;
+}
+
+function impValidar(){
+  impConsultar();
+  const out=el("impOut");
+  if(!IMP_EVENTOS.length){ return; }
+
+  const mapa=mapaPlanoContasAtual();
+  const contasUsadas=Array.from(new Set([].concat(IMP_EVENTOS.map(function(e){return e.cD;}), IMP_EVENTOS.map(function(e){return e.cC;}))));
+  const faltando=contasUsadas.filter(function(c){ return !(mapa[c]&&mapa[c].codigo); });
+
+  /* lado "Razão": direto dos eventos filtrados (fonte única), mas arredondado
+     por linha (centavo a centavo) — a MESMA regra que o TXT aplica, senão a
+     comparação vira ruído de ponto flutuante e nunca fecha em zero. */
+  const razD=S(IMP_EVENTOS,function(e){return Math.round(e.d*100)/100;});
+  const razC=S(IMP_EVENTOS,function(e){return Math.round(e.c*100)/100;});
+  const razN=IMP_EVENTOS.length;
+
+  /* lado "TXT": monta as linhas de verdade e relê os campos formatados —
+     valida a própria formatação, não só o valor de origem */
+  const numIni=parseInt(el("impNum").value)||1;
+  const linhas=faltando.length?[]:IMP_EVENTOS.map(function(e,i){ return montarLinhaTXT(numIni+i, e, mapa); });
+  let txtD=0, txtC=0;
+  linhas.forEach(function(l){ const v=parseInt(l.slice(36,48))/100; txtD+=v; txtC+=v; });
+  const txtN=linhas.length;
+
+  const okD=Math.abs(razD-txtD)<0.005, okC=Math.abs(razC-txtC)<0.005, okN=(razN===txtN) && !faltando.length;
+
+  let h='<div class="card" style="margin-top:14px"><h3 style="margin:0 0 10px">Validação contábil</h3>';
+  if(faltando.length){
+    h+='<p class="hint" style="color:var(--neg)">Faltam códigos no plano de contas deste contrato para: '+
+       faltando.join(", ")+'. Cadastre em Cadastros → Plano de contas antes de gerar.</p>';
+  }
+  h+='<table><thead><tr><th>Validação</th><th>Razão</th><th>TXT</th><th>Diferença</th><th>Status</th></tr></thead><tbody>'+
+    '<tr><td>Total débitos</td><td>'+BRL(razD)+'</td><td>'+BRL(txtD)+'</td><td>'+BRL(razD-txtD)+'</td><td>'+(okD?"OK":"DIVERGENTE")+'</td></tr>'+
+    '<tr><td>Total créditos</td><td>'+BRL(razC)+'</td><td>'+BRL(txtC)+'</td><td>'+BRL(razC-txtC)+'</td><td>'+(okC?"OK":"DIVERGENTE")+'</td></tr>'+
+    '<tr><td>Quantidade de lançamentos</td><td>'+razN+'</td><td>'+txtN+'</td><td>'+(razN-txtN)+'</td><td>'+(okN?"OK":"DIVERGENTE")+'</td></tr>'+
+    '</tbody></table></div>';
+  out.innerHTML=h+out.innerHTML;
+
+  IMP_VALIDADO = okD && okC && okN;
+  el("impGerar").disabled = !IMP_VALIDADO;
+  if(!IMP_VALIDADO && !faltando.length){
+    alert("Não foi possível validar o arquivo TXT. Foi identificada divergência entre os lançamentos que serão exportados e o Razão Contábil. Confira a tabela de validação.");
+  }
+}
+
+function impGerar(){
+  impValidar();
+  if(!IMP_VALIDADO){ alert("Corrija as divergências indicadas na validação antes de gerar o TXT."); return; }
+  const mapa=mapaPlanoContasAtual();
+  const numIni=parseInt(el("impNum").value)||1;
+  const linhas=IMP_EVENTOS.map(function(e,i){ return montarLinhaTXT(numIni+i, e, mapa); });
+  const conteudo=linhas.join("\r\n")+"\r\n";
+  const contrato=(el("contrato").value.trim()||"contrato").replace(/[^\w-]+/g,"_");
+  const compIni=el("impIni").selectedOptions[0]?el("impIni").selectedOptions[0].textContent.trim().split(" ")[0].replace("/","-"):"ini";
+  const compFim=el("impFim").selectedOptions[0]?el("impFim").selectedOptions[0].textContent.trim().split(" ")[0].replace("/","-"):"fim";
+  const nome="Importacao_"+contrato+"_"+compIni+"_a_"+compFim+".txt";
+  /* largura fixa é em BYTES: se salvar como UTF-8, acento vira 2 bytes e
+     quebra a posição dos campos seguintes. Codifica byte a byte em
+     Windows-1252/Latin-1 (mesma faixa de código dos acentos do português),
+     não usar TextEncoder (que só faz UTF-8). */
+  const bytes=new Uint8Array(conteudo.length);
+  for(let i=0;i<conteudo.length;i++){ bytes[i]=conteudo.charCodeAt(i)&0xFF; }
+  const blob=new Blob([bytes],{type:"text/plain;charset=windows-1252"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=nome;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function impLimpar(){
+  preencherMesesImp();
+  el("impNum").value=1;
+  el("impOut").innerHTML="";
+  IMP_EVENTOS=[]; IMP_VALIDADO=false; el("impGerar").disabled=true;
 }
 
 function relatorioConcXls(){
@@ -2726,11 +3083,18 @@ document.addEventListener("keydown",function(ev){
     }
   }
 });
-el("concMes").onchange=function(){ render(); if(CONC) conciliar(); };
+el("concMes").onchange=function(){ preencherMesesImp(); render(); if(CONC) conciliar(); };
 el("concXls").onclick=relatorioConcXls;
 el("concRazao").onclick=gerarRazao;
 el("concPdf").onclick=relatorioConcPdf;
 el("relContratoBtn").onclick=relatorioContrato;
+el("pcSalvar").onclick=salvarPlanoContas;
+el("pcCopiar").onclick=copiarPlanoContasDeOutroContrato;
+el("impConsultar").onclick=impConsultar;
+el("impValidar").onclick=impValidar;
+el("impGerar").onclick=impGerar;
+el("impLimpar").onclick=impLimpar;
+renderPlanoContas();
 el("concIni").onchange=function(){ preencherMeses(); render(); agendarGravacaoCfg(); };
 el("concDepr").onchange=function(){ const tinha=!!CONC; render(); if(tinha) conciliar(); agendarGravacaoCfg(); };
 el("gsLoad").onclick=carregarBase;
