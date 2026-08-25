@@ -182,6 +182,9 @@
   .screen{display:none}
   .screen.active{display:block}
   .field-nova label{color:var(--brand4)}
+  .cats-chk{width:16px;height:16px;vertical-align:middle}
+  #impCategoriasTbl th:last-child{text-align:left}
+  #impCategorias td:last-child{text-align:left}
   .pergunta{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:16px 18px}
   .ptxt{font-size:15px;font-weight:600;color:var(--ink)}
   .pref{font-size:12px;color:var(--ink-soft);margin-top:6px;font-style:italic}
@@ -361,6 +364,15 @@
           <div><label for="impIni">Competência inicial</label><select id="impIni"></select></div>
           <div><label for="impFim">Competência final</label><select id="impFim"></select></div>
           <div><label for="impNum">Nº lançamento inicial</label><input id="impNum" type="number" min="1" step="1" value="1"></div>
+        </div>
+        <div style="margin-top:14px">
+          <label style="display:block;margin-bottom:6px">Categorias de lançamento a incluir</label>
+          <div class="scroll fit">
+            <table id="impCategoriasTbl"><thead><tr><th style="width:70px">Incluir</th><th>Categoria de lançamento</th></tr></thead>
+              <tbody id="impCategorias"></tbody>
+            </table>
+          </div>
+          <div class="hint" style="margin-top:6px">Desmarque uma categoria se ela já for lançada por outro processo (ex.: o pagamento da parcela, se o financeiro já contabiliza isso separadamente). A validação continua conferindo o que foi exportado contra o razão — só que restrito às categorias marcadas.</div>
         </div>
         <div class="actions" style="margin-top:14px">
           <button class="ghost" id="impConsultar">Consultar</button>
@@ -1654,6 +1666,7 @@ function novoContrato(){
   el("rems").innerHTML=""; seq=0; toggleEmpty();
   el("gsSaveMsg").innerHTML=""; el("gsMsg").innerHTML="";
   renderPlanoContas(); el("pcMsg").innerHTML="";
+  renderCategoriasImportacao();
   IMP_EVENTOS=[]; IMP_VALIDADO=false;
   el("impOut").innerHTML=""; el("impGerar").disabled=true;
   R=null; CONC=null; ADOC=null; DUMAP=null; QUIT={};
@@ -2130,6 +2143,45 @@ function relatorioContrato(){
    ===================================================================== */
 let IMP_EVENTOS=[], IMP_VALIDADO=false;
 
+/* Categorias de lançamento — cada uma pode ser incluída ou não na
+   exportação (ex.: pagamento da parcela, se o financeiro já lança isso
+   por outro processo). O motivo aparece na tela quando desmarcada. */
+const CATEGORIAS_TXT=[
+  {id:"recon",   label:"Reconhecimento inicial e ajustes retrospectivos",
+   match:function(h){ return h.indexOf("Reconhecimento inicial")===0 || h.indexOf("Reconhecimento na adoção")===0 || h.indexOf("Ajuste de exercícios anteriores")===0; }},
+  {id:"juros",   label:"Apropriação de juros",
+   match:function(h){ return h.indexOf("Apropriação de juros")===0; }},
+  {id:"deprec",  label:"Apropriação de depreciação",
+   match:function(h){ return h.indexOf("Apropriação da depreciação")===0; }},
+  {id:"pagto",   label:"Pagamento da parcela (baixa do passivo)",
+   match:function(h){ return h.indexOf("Pagamento da parcela")===0; }},
+  {id:"remens",  label:"Remensuração",
+   match:function(h){ return h.indexOf("Remensuração —")===0; }},
+  {id:"reclass", label:"Reclassificação / segregação Curto × Longo Prazo",
+   match:function(h){ return h.indexOf("Segregação inicial")===0 || h.indexOf("Reclassificação")===0; }}
+];
+function categoriaDoEvento(hist){
+  const c=CATEGORIAS_TXT.filter(function(c){ return c.match(hist); })[0];
+  return c ? c.id : "recon";
+}
+function renderCategoriasImportacao(marcadas){
+  /* marcadas: Set de ids marcados; se omitido, marca todas (padrão) */
+  const body=el("impCategorias");
+  body.innerHTML="";
+  CATEGORIAS_TXT.forEach(function(c){
+    const on = !marcadas || marcadas.has(c.id);
+    const tr=document.createElement("tr");
+    tr.innerHTML='<td style="text-align:center"><input type="checkbox" class="imp-cat cats-chk" data-cat="'+c.id+'" '+(on?"checked":"")+'></td>'+
+                 '<td>'+c.label+'</td>';
+    body.appendChild(tr);
+  });
+}
+function categoriasAtivas(){
+  const s=new Set();
+  document.querySelectorAll(".imp-cat").forEach(function(chk){ if(chk.checked) s.add(chk.dataset.cat); });
+  return s;
+}
+
 function padNum(v,w){
   const s=String(v==null?"":v).replace(/\D/g,"");
   return (s.length>=w ? s.slice(-w) : "0".repeat(w-s.length)+s);
@@ -2180,19 +2232,25 @@ function montarLinhaTXT(numero, evento, mapa){
          valor+"0000"+padNum(setC,4)+padNum(setD,4)+valor+desc+padNum("1",4);
 }
 
-/* devolve {eventos, RZ, ini2, fim2, erro} — erro preenchido se faltar calcular/apurar antes */
+/* devolve {eventos, excluidos, RZ, ini2, fim2, erro}. "eventos" já é só o
+   que passou pelo filtro de competência E pelas categorias marcadas;
+   "excluidos" traz o que ficou de fora só por causa da categoria, com o
+   motivo, para nunca virar uma exclusão silenciosa. */
 function importacaoEventosFiltrados(){
-  if(!R) return {eventos:[], erro:"Calcule o contrato em Contábil → Memória de cálculo antes de consultar."};
+  if(!R) return {eventos:[], excluidos:[], erro:"Calcule o contrato em Contábil → Memória de cálculo antes de consultar."};
   const deAbs=parseInt(el("concIni").value)||1;
   const mFim=parseInt(el("concMes").value)||deAbs;
   const modo=(el("concDepr")&&el("concDepr").value)||"pros";
   const ini2=parseInt(el("impIni").value)||deAbs;
   const fim2=parseInt(el("impFim").value)||mFim;
-  if(!el("impIni").options.length) return {eventos:[], erro:"Sem competências disponíveis — confira os parâmetros no topo da página."};
+  if(!el("impIni").options.length) return {eventos:[], excluidos:[], erro:"Sem competências disponíveis — confira os parâmetros no topo da página."};
   const RZ=montarRazao(deAbs, mFim, modo);
-  const eventos=RZ.eventos.filter(function(e){ return e.ab>=ini2 && e.ab<=fim2; })
-                          .sort(function(a,b){ return a.ab-b.ab; });
-  return {eventos:eventos, RZ:RZ, ini2:ini2, fim2:fim2, erro:null};
+  const janela=RZ.eventos.filter(function(e){ return e.ab>=ini2 && e.ab<=fim2; })
+                         .sort(function(a,b){ return a.ab-b.ab; });
+  const ativas=categoriasAtivas();
+  const eventos=janela.filter(function(e){ return ativas.has(categoriaDoEvento(e.hist)); });
+  const excluidos=janela.filter(function(e){ return !ativas.has(categoriaDoEvento(e.hist)); });
+  return {eventos:eventos, excluidos:excluidos, RZ:RZ, ini2:ini2, fim2:fim2, erro:null};
 }
 
 /* Balancete da janela selecionada: saldo anterior (tudo antes de impIni),
@@ -2233,9 +2291,17 @@ function impConsultar(){
     '<div>Total débitos<br><strong>'+BRL(totD)+'</strong></div>'+
     '<div>Total créditos<br><strong>'+BRL(totC)+'</strong></div>'+
     '</div>';
+  if(r.excluidos.length){
+    const catsExcluidas=Array.from(new Set(r.excluidos.map(function(e){return categoriaDoEvento(e.hist);})))
+      .map(function(id){ return (CATEGORIAS_TXT.filter(function(c){return c.id===id;})[0]||{}).label||id; });
+    const totDExc=S(r.excluidos,function(e){return e.d;}), totCExc=S(r.excluidos,function(e){return e.c;});
+    h+='<p class="hint" style="color:var(--ta)"><strong>'+r.excluidos.length+' lançamento(s) do razão ('+
+       BRL(totDExc)+' débito / '+BRL(totCExc)+' crédito) não entram no TXT</strong> — categoria(s) desmarcada(s): '+
+       catsExcluidas.join(", ")+'.</p>';
+  }
   h+=renderBalanceteImportacao(r.RZ, r.ini2, r.fim2);
   if(!r.eventos.length){
-    h+='<p class="hint">Nenhum lançamento do razão cai dentro da janela de competências selecionada.</p>';
+    h+='<p class="hint">Nenhum lançamento do razão cai dentro da janela de competências (e categorias) selecionadas.</p>';
   } else {
     h+='<div class="scroll fit"><table><thead><tr><th>Competência</th><th>Débito</th><th>Crédito</th><th>Valor</th><th>Descrição</th></tr></thead><tbody>';
     r.eventos.forEach(function(e){
@@ -2317,6 +2383,7 @@ function impGerar(){
 function impLimpar(){
   preencherMesesImp();
   el("impNum").value=1;
+  renderCategoriasImportacao();
   el("impOut").innerHTML="";
   IMP_EVENTOS=[]; IMP_VALIDADO=false; el("impGerar").disabled=true;
 }
@@ -3095,6 +3162,7 @@ el("impValidar").onclick=impValidar;
 el("impGerar").onclick=impGerar;
 el("impLimpar").onclick=impLimpar;
 renderPlanoContas();
+renderCategoriasImportacao();
 el("concIni").onchange=function(){ preencherMeses(); render(); agendarGravacaoCfg(); };
 el("concDepr").onchange=function(){ const tinha=!!CONC; render(); if(tinha) conciliar(); agendarGravacaoCfg(); };
 el("gsLoad").onclick=carregarBase;
