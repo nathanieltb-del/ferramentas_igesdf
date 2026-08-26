@@ -151,6 +151,24 @@
   .lanc-subtable { padding: 0 14px 12px; }
   .lanc-subtable table { font-size: 12px; }
   .lanc-total-row td { font-weight: 700; border-top: 2px solid var(--border); background: #f4f6f7; color: var(--ink); }
+  .parcela-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 0 14px 12px; }
+  .metric-block { min-width: 0; }
+  .metric-label { font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+  .metric-label .icon-btn { padding: 0; }
+  .metric-value { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--ink); margin-top: 2px; }
+  .metric-sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+  .desconto-editor { margin: 0 14px 12px; padding: 10px 12px; background: #fbfcfc; border: 1px solid var(--border); border-radius: 8px; }
+  .desconto-editor-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+  .desconto-row { display: grid; grid-template-columns: 1fr 1fr 26px; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .desconto-row .input { padding: 5px 8px; font-size: 12.5px; }
+  .desconto-editor-total { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 700; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
+  .lanc-table input.mini, .lanc-table select.mini { width: 100%; padding: 4px 6px; font-size: 12px; border: 1px solid #d7dcde; border-radius: 4px; }
+  .lanc-table tr.editing-row td, .lanc-table tr.new-row td { background: #fbfcfc; vertical-align: top; }
+  .lanc-row-actions { display: flex; gap: 4px; opacity: 0; transition: opacity .1s; }
+  .lanc-table tbody tr:hover .lanc-row-actions { opacity: 1; }
+  .lanc-table tr.editing-row .lanc-row-actions, .lanc-table tr.new-row .lanc-row-actions { opacity: 1; }
+  .lanc-add-row td { padding: 6px 8px; color: var(--blue); font-weight: 600; font-size: 12px; cursor: pointer; }
+  .lanc-add-row td:hover { text-decoration: underline; }
   .lanc-empty { padding: 10px 14px; color: var(--muted); font-size: 12px; font-style: italic; }
   textarea.input { min-height: 64px; resize: vertical; }
 
@@ -392,7 +410,7 @@ function gerarParcelas(instrumento) {
     somaAlocada += valor;
     parcelas.push({
       id: uid("parc"), instrumentoId: instrumento.id, ano: ano, mes: mes,
-      valorPrevisto: valor, dataContrato: dateToISO(primeiroDiaUtil(ano, mes)), lancamentos: [],
+      valorPrevisto: valor, dataContrato: dateToISO(primeiroDiaUtil(ano, mes)), lancamentos: [], descontos: [],
     });
     mes++;
     if (mes > 12) { mes = 1; ano++; }
@@ -460,16 +478,19 @@ function descontoTipoLabel(d) {
   return d.tipo === "Outro" ? (d.tipoOutro || "Outro") : d.tipo;
 }
 
-/* ============================ TOTAIS / STATUS ============================ */
-function descontoTotalLancamento(l) { return (l.descontos || []).reduce((s, d) => s + (d.valor || 0), 0); }
+/* ============================ TOTAIS / STATUS ============================
+   Desconto agora é registrado por Parcela/Competência (não mais por Lançamento),
+   categorizado (Estatutário/Custeio/Adiantamento/Outro).
+   Valor Líquido a Receber = Repasse Previsto − Desconto.
+   Cada Lançamento já registra o Valor Recebido em valor LÍQUIDO.
+   Saldo = Valor Líquido a Receber − Σ(Valor Recebido). */
+function descontoTotalParcela(p) { return (p.descontos || []).reduce((s, d) => s + (d.valor || 0), 0); }
 function totaisParcela(p) {
   const lancs = p.lancamentos || [];
   const recebido = lancs.reduce((s, l) => s + (l.valorRecebido || 0), 0);
-  const desconto = lancs.reduce((s, l) => s + descontoTotalLancamento(l), 0);
-  const liquido = recebido - desconto;
-  // O Desconto é uma categorização de parte do Valor Recebido (Estatutário/Custeio/Adiantamento/Outro),
-  // não um valor adicional — por isso o saldo compara Previsto x Recebido (bruto), sem subtrair o desconto de novo.
-  const saldo = p.valorPrevisto - recebido;
+  const desconto = descontoTotalParcela(p);
+  const liquido = (p.valorPrevisto || 0) - desconto;
+  const saldo = liquido - recebido;
   let status = "pendente";
   if (lancs.length > 0) status = saldo > 0.005 ? "parcial" : "quitado";
   return { recebido, desconto, liquido, saldo, status };
@@ -477,17 +498,19 @@ function totaisParcela(p) {
 function statusTone(status) { return status === "quitado" ? "good" : status === "parcial" ? "info" : "warn"; }
 function statusLabel(status) { return status === "quitado" ? "Quitado" : status === "parcial" ? "Parcial" : "Pendente"; }
 function pctLancamento(lancamento, parcela) {
-  if (!parcela.valorPrevisto) return null;
-  return (lancamento.valorRecebido || 0) / parcela.valorPrevisto;
+  const liquido = (parcela.valorPrevisto || 0) - descontoTotalParcela(parcela);
+  if (!liquido) return null;
+  return (lancamento.valorRecebido || 0) / liquido;
 }
 function totaisMes(parcelasDoMes) {
   let previsto = 0, recebido = 0, desconto = 0;
   parcelasDoMes.forEach((p) => {
     previsto += p.valorPrevisto || 0;
-    (p.lancamentos || []).forEach((l) => { recebido += l.valorRecebido || 0; desconto += descontoTotalLancamento(l); });
+    desconto += descontoTotalParcela(p);
+    (p.lancamentos || []).forEach((l) => { recebido += l.valorRecebido || 0; });
   });
-  // Desconto é subconjunto do Recebido (não soma-se de novo ao calcular o saldo).
-  return { previsto, recebido, desconto, liquido: recebido - desconto, saldo: previsto - recebido };
+  const liquido = previsto - desconto;
+  return { previsto, recebido, desconto, liquido, saldo: liquido - recebido };
 }
 function totaisAno(ano) { return totaisMes(parcelasDoAno(ano)); }
 
@@ -502,9 +525,9 @@ function fonteBreakdown(parcelasList) {
 function descontoBreakdown(parcelasList) {
   const map = {};
   DESCONTO_TIPOS.forEach((t) => (map[t] = 0));
-  parcelasList.forEach((p) => (p.lancamentos || []).forEach((l) => (l.descontos || []).forEach((d) => {
+  parcelasList.forEach((p) => (p.descontos || []).forEach((d) => {
     map[d.tipo] = (map[d.tipo] || 0) + (d.valor || 0);
-  })));
+  }));
   return map;
 }
 const FONTE_COLOR_PALETTE = [COLORS.blue, COLORS.orange, COLORS.teal, COLORS.lime, COLORS.gray, COLORS.yellow];
@@ -764,14 +787,14 @@ function renderDashboardView(topbar, content) {
   const itensFilt = lancamentosFiltradosPainel(parcelasFilt);
   const previsto = parcelasFilt.reduce((s, p) => s + (p.valorPrevisto || 0), 0);
   const recebido = itensFilt.reduce((s, it) => s + (it.l.valorRecebido || 0), 0);
-  const desconto = itensFilt.reduce((s, it) => s + descontoTotalLancamento(it.l), 0);
-  // Desconto é subconjunto do Recebido — não subtrai de novo do previsto.
-  const saldo = previsto - recebido;
+  const desconto = parcelasFilt.reduce((s, p) => s + descontoTotalParcela(p), 0);
+  const liquido = previsto - desconto;
+  const saldo = liquido - recebido;
 
   const porMes = {};
   for (let m = f.mesIni; m <= f.mesFim; m++) porMes[m] = { previsto: 0, recebido: 0, desconto: 0 };
-  parcelasFilt.forEach((p) => { if (porMes[p.mes]) porMes[p.mes].previsto += p.valorPrevisto || 0; });
-  itensFilt.forEach(({ p, l }) => { if (porMes[p.mes]) { porMes[p.mes].recebido += l.valorRecebido || 0; porMes[p.mes].desconto += descontoTotalLancamento(l); } });
+  parcelasFilt.forEach((p) => { if (porMes[p.mes]) { porMes[p.mes].previsto += p.valorPrevisto || 0; porMes[p.mes].desconto += descontoTotalParcela(p); } });
+  itensFilt.forEach(({ p, l }) => { if (porMes[p.mes]) porMes[p.mes].recebido += l.valorRecebido || 0; });
   const chartData = Object.keys(porMes).map((m) => Object.assign({ mes: MONTH_SHORT[m - 1] }, porMes[m]));
 
   const fonteData = {};
@@ -800,8 +823,9 @@ function renderDashboardView(topbar, content) {
       "Nenhum repasse previsto foi cadastrado ainda. Comece em <b>Repasses Previstos</b>." + "</div>" : "") +
     '<div class="kpi-row">' +
     kpiCard("Repasse Previsto (filtro)", fmtCurrencyCompact(previsto), "", COLORS.blue, "sheet") +
-    kpiCard("Total Recebido", fmtCurrencyCompact(recebido), "", COLORS.teal, "bar") +
     kpiCard("Total de Descontos", fmtCurrencyCompact(desconto), "", COLORS.orange, "minus") +
+    kpiCard("Valor Líquido a Receber", fmtCurrencyCompact(liquido), "", COLORS.lime, "sheet") +
+    kpiCard("Total Recebido", fmtCurrencyCompact(recebido), "", COLORS.teal, "bar") +
     kpiCard("Saldo a Repassar", fmtCurrencyCompact(saldo), "", COLORS.gray, "alert") +
     "</div>" +
     '<div class="grid-2">' +
@@ -1000,7 +1024,7 @@ function openInstrumentoModal(existing) {
 function renderLancamentosView(topbar, content) {
   topbar.innerHTML = topbarHtml(
     "Lançamentos — " + state.anoAtual,
-    "Registre quantos recebimentos forem necessários por parcela — informe data, valor, fonte e descontos de cada um",
+    "Registre os recebimentos linha a linha (valor já líquido). O desconto é definido uma vez por competência, no card da parcela",
     '<div class="input-icon-wrap">' + icon("search", 14) +
       '<input class="input" id="lanc-search" style="width:240px;" placeholder="Buscar processo SEI, unidade..." value="' + esc(state.filters.lancQuery) + '"/></div>'
   );
@@ -1050,49 +1074,112 @@ function renderLancamentosView(topbar, content) {
   });
 }
 
+/* ============================ ESTADO DE UI (não persistido) ============================ */
+let uiDescontoOpenParcela = null;
+let uiDescontoDraft = [];
+let uiEditingLanc = null; // { parcelaId, lancId } | null
+
+function metricBlock(label, value, opts) {
+  opts = opts || {};
+  return '<div class="metric-block"><div class="metric-label">' + esc(label) +
+    (opts.editable ? '<button class="icon-btn btn-desconto-toggle" data-parcela="' + opts.parcelaId + '" type="button" title="Editar desconto">' + icon("pencil", 12) + "</button>" : "") +
+    "</div>" +
+    '<div class="metric-value">' + esc(value) + "</div>" +
+    (opts.sub ? '<div class="metric-sub">' + esc(opts.sub) + "</div>" : "") +
+    "</div>";
+}
+
+function descontoEditorHtml(p) {
+  const rows = uiDescontoDraft.map((d, idx) =>
+    '<div class="desconto-row">' +
+    '<select class="input mini desc-tipo" data-idx="' + idx + '">' + DESCONTO_TIPOS.map((t) => '<option' + (t === d.tipo ? " selected" : "") + ">" + t + "</option>").join("") + "</select>" +
+    '<input class="input mini desc-valor-wrap" data-idx="' + idx + '" placeholder="Valor"/>' +
+    '<button class="icon-btn danger btn-rm-desconto" data-idx="' + idx + '" type="button">' + icon("trash", 13) + "</button>" +
+    "</div>" +
+    (d.tipo === "Outro"
+      ? '<div class="desconto-row" style="grid-template-columns:1fr 26px;margin-top:-4px;"><input class="input mini desc-tipo-outro" data-idx="' + idx + '" placeholder="Qual o tipo?" value="' + esc(d.tipoOutro || "") + '"/><span></span></div>'
+      : "")
+  ).join("");
+  const total = uiDescontoDraft.reduce((s, d) => s + (d.valor || 0), 0);
+  return '<div class="desconto-editor" id="desconto-editor-' + p.id + '">' +
+    '<div class="desconto-editor-title">Descontos da competência (' + MONTH_NAMES[p.mes - 1] + "/" + p.ano + ")</div>" +
+    '<div id="desconto-rows-' + p.id + '">' + (rows || '<div class="lanc-empty" style="padding:4px 0;">Nenhum desconto adicionado.</div>') + "</div>" +
+    '<button class="btn btn-ghost btn-sm btn-add-desconto-tipo" data-parcela="' + p.id + '" type="button" style="margin-top:4px;">' + icon("plus", 12) + "Adicionar tipo</button>" +
+    '<div class="desconto-editor-total"><span>Total desconto</span><span class="mono" id="desconto-total-' + p.id + '">' + esc(fmtCurrency(total)) + "</span></div>" +
+    '<div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end;">' +
+    '<button class="btn btn-ghost btn-sm btn-cancel-desconto" data-parcela="' + p.id + '" type="button">Cancelar</button>' +
+    '<button class="btn btn-primary btn-sm btn-save-desconto" data-parcela="' + p.id + '" type="button">' + icon("check", 13) + "Salvar</button>" +
+    "</div></div>";
+}
+
+function fonteSelectHtml(cls, value, extraAttr) {
+  return '<select class="input mini ' + cls + '" ' + (extraAttr || "") + ">" +
+    FONTE_OPCOES.map((fo) => '<option' + (fo === value ? " selected" : "") + ">" + fo + "</option>").join("") + "</select>";
+}
+
 function parcelaCardHtml(p) {
   const inst = instrumentoDe(p) || {};
   const tp = totaisParcela(p);
   const lancs = (p.lancamentos || []).slice().sort((a, b) => (a.dataEfetivacao || "").localeCompare(b.dataEfetivacao || ""));
+  let acumulado = 0;
+  const lancsComSaldo = lancs.map((l) => { acumulado += l.valorRecebido || 0; return { l, saldoApos: tp.liquido - acumulado }; });
 
-  const subRows = lancs.length ? lancs.map((l) => {
-    const pct = pctLancamento(l, p);
-    const dias = diasEntre(p.dataContrato, l.dataEfetivacao);
-    const desc = descontoTotalLancamento(l);
-    const liquidoLanc = (l.valorRecebido || 0) - desc;
-    const descontosResumo = (l.descontos || []).map((d) => descontoTipoLabel(d) + ": " + fmtCurrencyCompact(d.valor)).join(" · ");
-    return "<tr><td>" + fmtDateBR(l.dataEfetivacao) + "</td><td>" + pill(fonteLabel(l), "info") + '</td><td class="mono" style="font-weight:600;">' +
-      esc(fmtCurrency(l.valorRecebido)) + '</td><td class="mono" title="' + esc(descontosResumo) + '">' + (desc ? esc(fmtCurrency(desc)) : "—") +
-      '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(liquidoLanc)) +
-      '</td><td class="mono">' + esc(fmtPercent(pct)) + "</td><td>" + esc(dias) + "</td><td>" +
+  const descontosResumo = (p.descontos || []).map((d) => descontoTipoLabel(d) + " " + fmtCurrencyCompact(d.valor)).join(" · ");
+  const descontoOpen = uiDescontoOpenParcela === p.id;
+
+  const bodyRows = lancsComSaldo.map(({ l, saldoApos }) => {
+    const editing = uiEditingLanc && uiEditingLanc.parcelaId === p.id && uiEditingLanc.lancId === l.id;
+    if (editing) {
+      return '<tr class="editing-row" data-lanc="' + l.id + '">' +
+        '<td><input class="mini" type="date" id="edit-data-' + l.id + '" value="' + esc(l.dataEfetivacao || "") + '"/></td>' +
+        '<td><input class="mini" type="text" inputmode="decimal" id="edit-valor-' + l.id + '"/></td>' +
+        '<td>' + fonteSelectHtml("edit-fonte-" + l.id, l.fonte, 'id="edit-fonte-' + l.id + '"') +
+        '<input class="mini" id="edit-fonte-outro-' + l.id + '" placeholder="Qual fonte?" style="margin-top:4px;display:' + (l.fonte === "Outro" ? "block" : "none") + ';" value="' + esc(l.fonteOutro || "") + '"/></td>' +
+        '<td class="mono">' + esc(fmtCurrency(saldoApos)) + "</td>" +
+        '<td><div class="lanc-row-actions">' +
+        '<button class="icon-btn btn-save-lanc" data-parcela="' + p.id + '" data-lanc="' + l.id + '" type="button" title="Salvar">' + icon("check", 14) + "</button>" +
+        '<button class="icon-btn btn-cancel-lanc" type="button" title="Cancelar">' + icon("x", 14) + "</button>" +
+        "</div></td></tr>";
+    }
+    return '<tr data-lanc="' + l.id + '">' +
+      "<td>" + fmtDateBR(l.dataEfetivacao) + "</td>" +
+      '<td class="mono" style="font-weight:600;">' + esc(fmtCurrency(l.valorRecebido)) + "</td>" +
+      "<td>" + pill(fonteLabel(l), "info") + "</td>" +
+      '<td class="mono">' + esc(fmtCurrency(saldoApos)) + "</td>" +
+      '<td><div class="lanc-row-actions">' +
       '<button class="icon-btn btn-editlanc" data-parcela="' + p.id + '" data-lanc="' + l.id + '" type="button" title="Editar">' + icon("pencil", 12) + "</button>" +
       '<button class="icon-btn danger btn-dellanc" data-parcela="' + p.id + '" data-lanc="' + l.id + '" type="button" title="Excluir">' + icon("trash", 12) + "</button>" +
-      "</td></tr>";
-  }).join("") : "";
+      "</div></td></tr>";
+  }).join("");
 
-  const totalRow = lancs.length
-    ? '<tr class="lanc-total-row"><td colspan="2">Total</td>' +
-      '<td class="mono">' + esc(fmtCurrency(tp.recebido)) + "</td>" +
-      '<td class="mono">' + esc(fmtCurrency(tp.desconto)) + "</td>" +
-      '<td class="mono">' + esc(fmtCurrency(tp.liquido)) + "</td>" +
-      "<td></td><td></td><td></td></tr>"
-    : "";
+  const newRow = '<tr class="new-row" data-novo-parcela="' + p.id + '">' +
+    '<td><input class="mini" type="date" id="novo-data-' + p.id + '" value="' + esc(dateToISO(new Date())) + '"/></td>' +
+    '<td><input class="mini" type="text" inputmode="decimal" id="novo-valor-' + p.id + '"/></td>' +
+    '<td>' + fonteSelectHtml("novo-fonte-" + p.id, FONTE_OPCOES[0], 'id="novo-fonte-' + p.id + '"') +
+    '<input class="mini" id="novo-fonte-outro-' + p.id + '" placeholder="Qual fonte?" style="margin-top:4px;display:none;"/></td>' +
+    '<td class="mono" style="color:var(--muted);">' + esc(fmtCurrency(tp.saldo)) + "</td>" +
+    '<td><button class="icon-btn btn-novo-lanc-add" data-parcela="' + p.id + '" type="button" title="Adicionar">' + icon("plus", 14) + "</button></td></tr>";
+
+  const totalRow = '<tr class="lanc-total-row"><td>Total</td>' +
+    '<td class="mono">' + esc(fmtCurrency(tp.recebido)) + "</td><td></td>" +
+    '<td class="mono">' + esc(fmtCurrency(tp.saldo)) + "</td><td></td></tr>";
 
   return (
     '<div class="parcela-card"><div class="parcela-card-header"><div>' +
     '<div class="parcela-card-title">' + esc(inst.descricao || "—") + "</div>" +
     '<div class="parcela-card-meta">Data contrato: ' + fmtDateBR(p.dataContrato) + " · Processo " + esc(inst.processoSei || "—") + "</div></div>" +
-    '<div class="parcela-card-right">' +
-    pill(statusLabel(tp.status), statusTone(tp.status)) +
-    '<span>Previsto <b class="mono">' + esc(fmtCurrency(p.valorPrevisto)) + "</b></span>" +
-    (tp.recebido > 0 ? '<span>Recebido <b class="mono">' + esc(fmtCurrency(tp.recebido)) + "</b></span>" : "") +
-    (tp.desconto > 0 ? '<span>Desconto <b class="mono">' + esc(fmtCurrency(tp.desconto)) + "</b></span>" : "") +
-    '<span>Saldo <b class="mono">' + esc(fmtCurrency(tp.saldo)) + "</b></span>" +
-    '<button class="btn btn-primary btn-sm btn-addlanc" data-parcela="' + p.id + '" type="button">' + icon("plus", 13) + "Lançamento</button>" +
-    "</div></div>" +
-    (lancs.length
-      ? '<div class="lanc-subtable"><table><thead><tr><th>Data Efetivação</th><th>Fonte</th><th>Valor Recebido</th><th>Desconto</th><th>Valor Líquido</th><th>%</th><th>Dias em Atraso</th><th></th></tr></thead><tbody>' + subRows + "</tbody><tfoot>" + totalRow + "</tfoot></table></div>"
-      : '<div class="lanc-empty">Nenhum lançamento registrado ainda para esta parcela.</div>') +
+    '<div class="parcela-card-right">' + pill(statusLabel(tp.status), statusTone(tp.status)) + "</div></div>" +
+    '<div class="parcela-metrics">' +
+    metricBlock("Repasse Previsto", fmtCurrency(p.valorPrevisto)) +
+    metricBlock("Desconto", fmtCurrency(tp.desconto), { editable: true, parcelaId: p.id, sub: descontosResumo }) +
+    metricBlock("Valor Líquido a Receber", fmtCurrency(tp.liquido)) +
+    metricBlock("Saldo", fmtCurrency(tp.saldo)) +
+    "</div>" +
+    (descontoOpen ? descontoEditorHtml(p) : "") +
+    '<div class="lanc-subtable"><table class="lanc-table"><thead><tr><th>Data Efetivação</th><th>Valor Recebido (líquido)</th><th>Fonte</th><th>Saldo</th><th></th></tr></thead>' +
+    "<tbody>" + bodyRows + newRow + "</tbody>" +
+    (lancs.length ? "<tfoot>" + totalRow + "</tfoot>" : "") +
+    "</table></div>" +
     "</div>"
   );
 }
@@ -1103,12 +1190,66 @@ function wireLancamentosEvents(content) {
     state.filters.lancMonthOpen = state.filters.lancMonthOpen === key ? null : key;
     renderAll();
   }));
-  content.querySelectorAll(".btn-addlanc").forEach((el) => el.addEventListener("click", (e) => { e.stopPropagation(); openLancamentoModal(state.parcelas.find((p) => p.id === el.dataset.parcela), null); }));
+
+  /* ---- Fonte "Outro" toggles (linha nova e linha em edição) ---- */
+  content.querySelectorAll("select[id^='novo-fonte-'], select[id^='edit-fonte-']").forEach((sel) => {
+    sel.addEventListener("change", (e) => {
+      const outroInput = document.getElementById(sel.id.replace("fonte-", "fonte-outro-"));
+      if (outroInput) outroInput.style.display = e.target.value === "Outro" ? "block" : "none";
+    });
+  });
+  /* ---- Máscara de moeda: linha nova ---- */
+  content.querySelectorAll("input[id^='novo-valor-']").forEach((inp) => attachCurrencyMask(inp, 0));
+  content.querySelectorAll("input[id^='edit-valor-']").forEach((inp) => {
+    const lancId = inp.id.replace("edit-valor-", "");
+    let val = 0;
+    state.parcelas.forEach((p) => (p.lancamentos || []).forEach((l) => { if (l.id === lancId) val = l.valorRecebido || 0; }));
+    attachCurrencyMask(inp, val);
+  });
+
+  /* ---- Adicionar lançamento (linha nova) ---- */
+  content.querySelectorAll(".btn-novo-lanc-add").forEach((el) => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const pid = el.dataset.parcela;
+    const p = state.parcelas.find((pp) => pp.id === pid);
+    const data = document.getElementById("novo-data-" + pid).value;
+    if (!data) { alert("Informe a data de efetivação."); return; }
+    const valorInput = document.getElementById("novo-valor-" + pid);
+    const valor = getCurrencyValue(valorInput);
+    if (!valor) { alert("Informe o valor recebido."); return; }
+    const fonteSel = document.getElementById("novo-fonte-" + pid).value;
+    const fonteOutro = fonteSel === "Outro" ? document.getElementById("novo-fonte-outro-" + pid).value : "";
+    if (!p.lancamentos) p.lancamentos = [];
+    p.lancamentos.push({ id: uid("lanc"), dataEfetivacao: data, valorRecebido: valor, fonte: fonteSel, fonteOutro });
+    persistir();
+    renderAll();
+  }));
+
+  /* ---- Editar lançamento (inline) ---- */
   content.querySelectorAll(".btn-editlanc").forEach((el) => el.addEventListener("click", (e) => {
     e.stopPropagation();
-    const p = state.parcelas.find((pp) => pp.id === el.dataset.parcela);
-    const l = (p.lancamentos || []).find((ll) => ll.id === el.dataset.lanc);
-    openLancamentoModal(p, l);
+    uiEditingLanc = { parcelaId: el.dataset.parcela, lancId: el.dataset.lanc };
+    renderAll();
+  }));
+  content.querySelectorAll(".btn-cancel-lanc").forEach((el) => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    uiEditingLanc = null;
+    renderAll();
+  }));
+  content.querySelectorAll(".btn-save-lanc").forEach((el) => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const pid = el.dataset.parcela, lid = el.dataset.lanc;
+    const p = state.parcelas.find((pp) => pp.id === pid);
+    const l = (p.lancamentos || []).find((ll) => ll.id === lid);
+    const data = document.getElementById("edit-data-" + lid).value;
+    if (!data) { alert("Informe a data de efetivação."); return; }
+    const valor = getCurrencyValue(document.getElementById("edit-valor-" + lid));
+    const fonteSel = document.getElementById("edit-fonte-" + lid).value;
+    const fonteOutro = fonteSel === "Outro" ? document.getElementById("edit-fonte-outro-" + lid).value : "";
+    l.dataEfetivacao = data; l.valorRecebido = valor; l.fonte = fonteSel; l.fonteOutro = fonteOutro;
+    uiEditingLanc = null;
+    persistir();
+    renderAll();
   }));
   content.querySelectorAll(".btn-dellanc").forEach((el) => el.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1117,109 +1258,68 @@ function wireLancamentosEvents(content) {
     p.lancamentos = (p.lancamentos || []).filter((ll) => ll.id !== el.dataset.lanc);
     persistir(); renderAll();
   }));
-}
 
-/* ============================ MODAL: ADICIONAR/EDITAR LANÇAMENTO ============================ */
-let modalDescontos = []; // estado local temporário do modal (lista de descontos em edição)
-
-function openLancamentoModal(parcela, existing) {
-  const inst = instrumentoDe(parcela) || {};
-  const hoje = dateToISO(new Date());
-  const form = existing ? Object.assign({}, existing) : { id: null, dataEfetivacao: hoje, valorRecebido: 0, fonte: FONTE_OPCOES[0], fonteOutro: "", observacoes: "" };
-  modalDescontos = existing ? (existing.descontos || []).map((d) => Object.assign({}, d)) : [];
-
-  const root = document.getElementById("modal-root");
-  root.innerHTML =
-    '<div class="modal-backdrop" id="modal-backdrop"><div class="modal" style="width:540px;">' +
-    '<div class="modal-header"><div class="modal-title">' + (existing ? "Editar lançamento" : "Novo lançamento") + '</div>' +
-    '<button class="icon-btn" id="modal-close" type="button">' + icon("x", 18) + "</button></div>" +
-    '<div style="padding:14px 20px 0;font-size:12.5px;color:#58585a;">' + esc(inst.descricao || "") + " — " + MONTH_NAMES[parcela.mes - 1] + "/" + parcela.ano +
-    '<br/>Valor previsto da parcela: <b class="mono">' + esc(fmtCurrency(parcela.valorPrevisto)) + '</b> · Data contrato (1º dia útil): <b>' + fmtDateBR(parcela.dataContrato) + "</b></div>" +
-    '<div class="modal-body">' +
-    field("Data de Efetivação (recebimento)", '<input class="input" type="date" id="f-dataefet" value="' + esc(form.dataEfetivacao || hoje) + '"/>') +
-    field("Valor Recebido (R$)", '<input class="input" type="text" inputmode="decimal" id="f-valorrec"/>') +
-    field("Fonte de Recurso", '<select class="input" id="f-fonte">' + FONTE_OPCOES.map((fo) => '<option' + (fo === form.fonte ? " selected" : "") + ">" + fo + "</option>").join("") + "</select>" +
-      '<input class="input" id="f-fonte-outro" placeholder="Digite a fonte" style="margin-top:6px;display:' + (form.fonte === "Outro" ? "block" : "none") + ';" value="' + esc(form.fonteOutro || "") + '"/>') +
-    '<div class="field full" id="f-calc-preview" style="font-size:12px;color:#8a9296;"></div>' +
-    '<div class="field full"><div class="field-label" style="display:flex;justify-content:space-between;align-items:center;">Descontos <button class="btn btn-ghost btn-sm" id="btn-add-desconto" type="button">' + icon("plus", 12) + "Adicionar desconto</button></div>" +
-    '<div id="descontos-list"></div></div>' +
-    field("Observações Gerais", '<textarea class="input" id="f-obs" placeholder="Notas sobre este recebimento...">' + esc(form.observacoes) + "</textarea>", { full: true }) +
-    "</div>" +
-    '<div class="modal-footer"><div></div><div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modal-cancel" type="button">Cancelar</button>' +
-    '<button class="btn btn-primary" id="modal-save" type="button">' + icon("check", 14) + "Salvar lançamento</button></div></div>" +
-    "</div></div>";
-
-  const valorInput = document.getElementById("f-valorrec");
-  attachCurrencyMask(valorInput, form.valorRecebido);
-
-  document.getElementById("f-fonte").addEventListener("change", (e) => {
-    document.getElementById("f-fonte-outro").style.display = e.target.value === "Outro" ? "block" : "none";
-  });
-
-  function renderDescontosList() {
-    const wrap = document.getElementById("descontos-list");
-    if (!modalDescontos.length) { wrap.innerHTML = '<div class="lanc-empty" style="padding:8px 0;">Nenhum desconto adicionado.</div>'; updateCalc(); return; }
-    wrap.innerHTML = modalDescontos.map((d, idx) =>
-      '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">' +
-      '<select class="input desc-tipo" data-idx="' + idx + '" style="flex:1;">' + DESCONTO_TIPOS.map((t) => '<option' + (t === d.tipo ? " selected" : "") + ">" + t + "</option>").join("") + "</select>" +
-      (d.tipo === "Outro" ? '<input class="input desc-tipo-outro" data-idx="' + idx + '" placeholder="Qual?" style="flex:1;" value="' + esc(d.tipoOutro || "") + '"/>' : "") +
-      '<input class="input desc-valor" type="text" inputmode="decimal" data-idx="' + idx + '" style="width:150px;"/>' +
-      '<button class="icon-btn danger btn-rm-desconto" data-idx="' + idx + '" type="button">' + icon("trash", 13) + "</button>" +
-      "</div>"
-    ).join("");
-    wrap.querySelectorAll(".desc-tipo").forEach((sel) => sel.addEventListener("change", (e) => { modalDescontos[Number(e.target.dataset.idx)].tipo = e.target.value; renderDescontosList(); }));
-    wrap.querySelectorAll(".desc-tipo-outro").forEach((inp) => inp.addEventListener("input", (e) => { modalDescontos[Number(e.target.dataset.idx)].tipoOutro = e.target.value; }));
-    wrap.querySelectorAll(".desc-valor").forEach((inp) => {
-      const idx = Number(inp.dataset.idx);
-      attachCurrencyMask(inp, modalDescontos[idx].valor || 0);
-      inp.addEventListener("input", () => { modalDescontos[idx].valor = getCurrencyValue(inp); updateCalc(); });
-    });
-    wrap.querySelectorAll(".btn-rm-desconto").forEach((btn) => btn.addEventListener("click", () => { modalDescontos.splice(Number(btn.dataset.idx), 1); renderDescontosList(); }));
-    updateCalc();
-  }
-  document.getElementById("btn-add-desconto").onclick = () => { modalDescontos.push({ id: uid("desc"), tipo: DESCONTO_TIPOS[0], tipoOutro: "", valor: 0 }); renderDescontosList(); };
-
-  function updateCalc() {
-    const dataEfet = document.getElementById("f-dataefet").value;
-    const valorRec = getCurrencyValue(valorInput);
-    const totalDesc = modalDescontos.reduce((s, d) => s + (d.valor || 0), 0);
-    const dias = diasEntre(parcela.dataContrato, dataEfet);
-    const pct = parcela.valorPrevisto > 0 ? valorRec / parcela.valorPrevisto : 0;
-    document.getElementById("f-calc-preview").innerHTML =
-      "Dias em atraso (calculado): <b>" + (dias === null ? "—" : dias) + "</b> &nbsp;·&nbsp; % do repasse (calculado): <b>" + fmtPercent(pct) + "</b>" +
-      (totalDesc > 0 ? " &nbsp;·&nbsp; Total de descontos: <b>" + fmtCurrency(totalDesc) + "</b>" : "");
-  }
-  document.getElementById("f-dataefet").addEventListener("input", updateCalc);
-  valorInput.addEventListener("input", updateCalc);
-  renderDescontosList();
-
-  document.getElementById("modal-close").onclick = closeModal;
-  document.getElementById("modal-cancel").onclick = closeModal;
-  document.getElementById("modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") closeModal(); });
-  document.getElementById("modal-save").onclick = () => {
-    const dataEfet = document.getElementById("f-dataefet").value;
-    if (!dataEfet) { alert("Informe a data de efetivação."); return; }
-    const fonteSel = document.getElementById("f-fonte").value;
-    const novoLanc = {
-      id: form.id || uid("lanc"),
-      dataEfetivacao: dataEfet,
-      valorRecebido: getCurrencyValue(valorInput),
-      fonte: fonteSel,
-      fonteOutro: fonteSel === "Outro" ? document.getElementById("f-fonte-outro").value : "",
-      observacoes: document.getElementById("f-obs").value,
-      descontos: modalDescontos.filter((d) => d.valor > 0),
-    };
-    if (!parcela.lancamentos) parcela.lancamentos = [];
-    if (form.id) {
-      parcela.lancamentos = parcela.lancamentos.map((l) => (l.id === form.id ? novoLanc : l));
-    } else {
-      parcela.lancamentos.push(novoLanc);
+  /* ---- Editor de desconto por parcela (inline, sem modal) ---- */
+  content.querySelectorAll(".btn-desconto-toggle").forEach((el) => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const pid = el.dataset.parcela;
+    if (uiDescontoOpenParcela === pid) { uiDescontoOpenParcela = null; }
+    else {
+      const p = state.parcelas.find((pp) => pp.id === pid);
+      uiDescontoDraft = (p.descontos || []).map((d) => Object.assign({}, d));
+      uiDescontoOpenParcela = pid;
     }
-    persistir();
-    closeModal();
     renderAll();
-  };
+  }));
+  wireDescontoEditorInputs(content);
+  content.querySelectorAll(".btn-add-desconto-tipo").forEach((el) => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    uiDescontoDraft.push({ id: uid("desc"), tipo: DESCONTO_TIPOS[0], tipoOutro: "", valor: 0 });
+    renderAll();
+  }));
+  content.querySelectorAll(".btn-rm-desconto").forEach((el) => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    uiDescontoDraft.splice(Number(el.dataset.idx), 1);
+    renderAll();
+  }));
+  content.querySelectorAll(".btn-cancel-desconto").forEach((el) => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    uiDescontoOpenParcela = null;
+    renderAll();
+  }));
+  content.querySelectorAll(".btn-save-desconto").forEach((el) => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const p = state.parcelas.find((pp) => pp.id === el.dataset.parcela);
+    p.descontos = uiDescontoDraft.filter((d) => d.valor > 0);
+    uiDescontoOpenParcela = null;
+    persistir();
+    renderAll();
+  }));
 }
+
+function wireDescontoEditorInputs(content) {
+  content.querySelectorAll(".desc-tipo").forEach((sel) => sel.addEventListener("change", (e) => {
+    e.stopPropagation();
+    uiDescontoDraft[Number(sel.dataset.idx)].tipo = e.target.value;
+    renderAll();
+  }));
+  content.querySelectorAll(".desc-tipo-outro").forEach((inp) => inp.addEventListener("input", (e) => {
+    e.stopPropagation();
+    uiDescontoDraft[Number(inp.dataset.idx)].tipoOutro = e.target.value;
+  }));
+  content.querySelectorAll(".desc-valor-wrap").forEach((inp) => {
+    const idx = Number(inp.dataset.idx);
+    attachCurrencyMask(inp, uiDescontoDraft[idx].valor || 0);
+    inp.addEventListener("input", () => {
+      uiDescontoDraft[idx].valor = getCurrencyValue(inp);
+      const total = uiDescontoDraft.reduce((s, d) => s + (d.valor || 0), 0);
+      const pid = uiDescontoOpenParcela;
+      const totalEl = document.getElementById("desconto-total-" + pid);
+      if (totalEl) totalEl.textContent = fmtCurrency(total);
+    });
+  });
+}
+
 
 /* ============================ VIEW: RELATÓRIO MENSAL ============================ */
 function renderMensalView(topbar, content) {
@@ -1238,19 +1338,22 @@ function renderMensalView(topbar, content) {
   const rows = [];
   m.parcelas.forEach((p) => {
     const inst = instrumentoDe(p) || {};
-    const lancs = p.lancamentos || [];
+    const tp = totaisParcela(p);
+    const lancs = (p.lancamentos || []).slice().sort((a, b) => (a.dataEfetivacao || "").localeCompare(b.dataEfetivacao || ""));
     if (!lancs.length) {
       rows.push("<tr><td>" + esc(inst.descricao || "—") + "</td>" + pill_td("Pendente", "warn") +
-        '<td class="mono">' + esc(fmtCurrency(p.valorPrevisto)) + "</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>" + esc(inst.processoSei || "—") + "</td></tr>");
+        '<td class="mono">' + esc(fmtCurrency(p.valorPrevisto)) + '</td><td class="mono">' + (tp.desconto ? esc(fmtCurrency(tp.desconto)) : "—") +
+        '</td><td class="mono">' + esc(fmtCurrency(tp.liquido)) + "</td><td>—</td><td>—</td><td>—</td><td>" + esc(fmtCurrency(tp.liquido)) + "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>");
     } else {
+      let acumulado = 0;
       lancs.forEach((l) => {
-        const pct = pctLancamento(l, p);
-        const dias = diasEntre(p.dataContrato, l.dataEfetivacao);
+        acumulado += l.valorRecebido || 0;
+        const saldoApos = tp.liquido - acumulado;
         rows.push("<tr><td>" + esc(inst.descricao || "—") + "</td>" + pill_td("recebido", "info") +
-          '<td class="mono">' + esc(fmtCurrency(p.valorPrevisto)) + "</td><td>" + pill(fonteLabel(l), "info") + "</td>" +
-          "<td>" + fmtDateBR(l.dataEfetivacao) + '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(l.valorRecebido)) +
-          '</td><td class="mono">' + (descontoTotalLancamento(l) ? esc(fmtCurrency(descontoTotalLancamento(l))) : "—") + '</td><td class="mono">' + esc(fmtPercent(pct)) +
-          "</td><td>" + esc(dias) + "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>");
+          '<td class="mono">' + esc(fmtCurrency(p.valorPrevisto)) + '</td><td class="mono">' + (tp.desconto ? esc(fmtCurrency(tp.desconto)) : "—") +
+          '</td><td class="mono">' + esc(fmtCurrency(tp.liquido)) + "</td><td>" + fmtDateBR(l.dataEfetivacao) + "</td><td>" + pill(fonteLabel(l), "info") +
+          '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(l.valorRecebido)) +
+          '</td><td class="mono">' + esc(fmtCurrency(saldoApos)) + "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>");
       });
     }
   });
@@ -1259,15 +1362,17 @@ function renderMensalView(topbar, content) {
     printHeader("Relatório Mensal — " + MONTH_NAMES[m.mes - 1] + "/" + state.anoAtual, "Instituto de Gestão Estratégica de Saúde do Distrito Federal") +
     '<div class="kpi-row">' +
     kpiCard("Repasse Previsto", fmtCurrencyCompact(t.previsto), "", COLORS.blue) +
-    kpiCard("Total Recebido", fmtCurrencyCompact(t.recebido), "", COLORS.teal) +
     kpiCard("Total de Descontos", fmtCurrencyCompact(t.desconto), "", COLORS.orange) +
+    kpiCard("Valor Líquido a Receber", fmtCurrencyCompact(t.liquido), "", COLORS.lime) +
+    kpiCard("Total Recebido", fmtCurrencyCompact(t.recebido), "", COLORS.teal) +
     kpiCard("Saldo a Repassar", fmtCurrencyCompact(t.saldo), "", COLORS.gray) +
     "</div>" +
     '<div class="panel"><div class="panel-header">Movimentações de ' + MONTH_NAMES[m.mes - 1] + "/" + state.anoAtual + "</div>" +
-    "<table><thead><tr><th>Repasse Previsto</th><th>Status</th><th>Valor Previsto</th><th>Fonte</th><th>Data Efetivação</th><th>Valor Recebido</th><th>Desconto</th><th>%</th><th>Dias em Atraso</th><th>Processo SEI</th></tr></thead>" +
+    "<table><thead><tr><th>Instrumento</th><th>Status</th><th>Repasse Previsto</th><th>Desconto</th><th>Valor Líquido a Receber</th><th>Data Efetivação</th><th>Fonte</th><th>Valor Recebido</th><th>Saldo</th><th>Processo SEI</th></tr></thead>" +
     "<tbody>" + rows.join("") + "</tbody>" +
-    '<tfoot><tr><td colspan="2">Total do mês</td><td class="mono">' + esc(fmtCurrency(t.previsto)) + '</td><td colspan="2"></td><td class="mono">' + esc(fmtCurrency(t.recebido)) +
-    '</td><td class="mono">' + esc(fmtCurrency(t.desconto)) + '</td><td colspan="3"></td></tr></tfoot></table></div>';
+    '<tfoot><tr><td colspan="2">Total do mês</td><td class="mono">' + esc(fmtCurrency(t.previsto)) + '</td><td class="mono">' + esc(fmtCurrency(t.desconto)) +
+    '</td><td class="mono">' + esc(fmtCurrency(t.liquido)) + '</td><td colspan="2"></td><td class="mono">' + esc(fmtCurrency(t.recebido)) +
+    '</td><td class="mono">' + esc(fmtCurrency(t.saldo)) + '</td><td></td></tr></tfoot></table></div>';
 
   document.getElementById("mensal-select").addEventListener("change", (e) => { state.filters.mensalMes = Number(e.target.value); renderAll(); });
   wirePrintButton();
@@ -1283,7 +1388,8 @@ function renderAnualView(topbar, content) {
   const trs = meses.map((m) => {
     const t = totaisMes(m.parcelas);
     return "<tr><td style='font-weight:600;'>" + MONTH_NAMES[m.mes - 1] + '</td><td class="mono">' + esc(fmtCurrency(t.previsto)) +
-      '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(t.recebido)) + '</td><td class="mono">' + esc(fmtCurrency(t.desconto)) +
+      '</td><td class="mono">' + esc(fmtCurrency(t.desconto)) + '</td><td class="mono">' + esc(fmtCurrency(t.liquido)) +
+      '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(t.recebido)) +
       '</td><td class="mono">' + esc(fmtCurrency(t.saldo)) + "</td></tr>";
   }).join("");
 
@@ -1291,14 +1397,16 @@ function renderAnualView(topbar, content) {
     printHeader("Relatório Anual Consolidado — " + state.anoAtual, "Instituto de Gestão Estratégica de Saúde do Distrito Federal") +
     '<div class="kpi-row">' +
     kpiCard("Total Previsto no Ano", fmtCurrencyCompact(grand.previsto), "", COLORS.blue) +
-    kpiCard("Total Recebido no Ano", fmtCurrencyCompact(grand.recebido), "", COLORS.teal) +
     kpiCard("Total de Descontos", fmtCurrencyCompact(grand.desconto), "", COLORS.orange) +
+    kpiCard("Valor Líquido a Receber", fmtCurrencyCompact(grand.liquido), "", COLORS.lime) +
+    kpiCard("Total Recebido no Ano", fmtCurrencyCompact(grand.recebido), "", COLORS.teal) +
     kpiCard("Saldo Pendente", fmtCurrencyCompact(grand.saldo), "", COLORS.gray) +
     "</div>" +
-    '<div class="panel"><table><thead><tr><th>Competência</th><th>Repasse Previsto</th><th>Recebido</th><th>Desconto</th><th>Saldo</th></tr></thead>' +
+    '<div class="panel"><table><thead><tr><th>Competência</th><th>Repasse Previsto</th><th>Desconto</th><th>Valor Líquido a Receber</th><th>Valor Recebido</th><th>Saldo</th></tr></thead>' +
     "<tbody>" + trs + "</tbody>" +
-    '<tfoot><tr><td>TOTAL</td><td class="mono">' + esc(fmtCurrency(grand.previsto)) + '</td><td class="mono">' + esc(fmtCurrency(grand.recebido)) +
-    '</td><td class="mono">' + esc(fmtCurrency(grand.desconto)) + '</td><td class="mono">' + esc(fmtCurrency(grand.saldo)) + "</td></tr></tfoot></table></div>";
+    '<tfoot><tr><td>TOTAL</td><td class="mono">' + esc(fmtCurrency(grand.previsto)) + '</td><td class="mono">' + esc(fmtCurrency(grand.desconto)) +
+    '</td><td class="mono">' + esc(fmtCurrency(grand.liquido)) + '</td><td class="mono">' + esc(fmtCurrency(grand.recebido)) +
+    '</td><td class="mono">' + esc(fmtCurrency(grand.saldo)) + "</td></tr></tfoot></table></div>";
 
   wirePrintButton();
 }
@@ -1320,7 +1428,6 @@ function renderFonteView(topbar, content) {
     return { mes: m.mes, itens: lancsDoMes };
   }).filter((m) => m.itens.length > 0);
   const grandTotal = meses.reduce((s, m) => s + m.itens.reduce((s2, it) => s2 + it.l.valorRecebido, 0), 0);
-  const grandDesconto = meses.reduce((s, m) => s + m.itens.reduce((s2, it) => s2 + descontoTotalLancamento(it.l), 0), 0);
 
   const blocks = meses.length ? meses.map((m) => {
     const total = m.itens.reduce((s, it) => s + it.l.valorRecebido, 0);
@@ -1329,14 +1436,13 @@ function renderFonteView(topbar, content) {
       "<table><tbody>" + m.itens.map(({ p, l }) => {
         const inst = instrumentoDe(p) || {};
         return "<tr><td>" + esc(inst.descricao || "—") + "</td><td>" + fmtDateBR(l.dataEfetivacao) + '</td><td class="mono">' + esc(fmtCurrency(l.valorRecebido)) +
-          '</td><td class="mono">' + (descontoTotalLancamento(l) ? esc(fmtCurrency(descontoTotalLancamento(l))) : "—") + "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>";
+          "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>";
       }).join("") + "</tbody></table></div>";
   }).join("") : '<div class="panel"><div class="empty-state">Nenhum recebimento registrado para esta fonte em ' + state.anoAtual + ".</div></div>";
 
   content.innerHTML = printHeader("Relatório por Fonte de Recurso — " + fonte + " — " + state.anoAtual, "Instituto de Gestão Estratégica de Saúde do Distrito Federal") +
     '<div class="kpi-row">' +
-    kpiCard("Total recebido — " + fonte, fmtCurrency(grandTotal), "", COLORS.blue) +
-    kpiCard("Descontos — " + fonte, fmtCurrency(grandDesconto), "", COLORS.orange) +
+    kpiCard("Total recebido (líquido) — " + fonte, fmtCurrency(grandTotal), "", COLORS.blue) +
     "</div>" + blocks;
 
   document.getElementById("fonte-select").addEventListener("change", (e) => { state.filters.fonteAtual = e.target.value; renderAll(); });
