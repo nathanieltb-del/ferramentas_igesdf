@@ -267,6 +267,7 @@ const ICONS = {
   undo: '<path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/>',
   minus: '<path d="M5 12h14"/>',
   filter: '<path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>',
+  upload: '<path d="M12 21V9m0 0-4 4m4-4 4 4M4 21h16"/>',
 };
 function icon(name, size) {
   size = size || 16;
@@ -672,6 +673,7 @@ const NAV_ITEMS = [
   { id: "anual", label: "Relatório Anual", icon: "bar" },
   { id: "demonstrativo", label: "Demonstrativo Anual", icon: "sheet" },
   { id: "fonte", label: "Por Fonte de Recurso", icon: "layers" },
+  { id: "importar", label: "Importação", icon: "upload" },
 ];
 
 function renderSidebar() {
@@ -731,6 +733,8 @@ function renderAll() {
     renderDemonstrativoView(topbar, content);
   } else if (state.view === "fonte") {
     renderFonteView(topbar, content);
+  } else if (state.view === "importar") {
+    renderImportarView(topbar, content);
   }
 }
 function closeModal() { document.getElementById("modal-root").innerHTML = ""; }
@@ -1514,6 +1518,323 @@ function renderDemonstrativoView(topbar, content) {
     "</table></div>";
 
   wirePrintButton();
+}
+
+/* ============================================================
+   VIEW: IMPORTAÇÃO (Excel)
+   ------------------------------------------------------------
+   Carrega a biblioteca SheetJS via CDN sob demanda (só quando o
+   usuário entra nesta tela) para não deixar o resto do sistema
+   dependente de rede. Lê 3 abas (Repasses Previstos, Descontos,
+   Lançamentos), valida linha a linha e só grava as válidas.
+   ============================================================ */
+let uiImportLibState = "idle"; // idle | loading | ready | erro
+let uiImportData = null; // { previstos:[], descontos:[], lancamentos:[] } (linhas já validadas)
+let uiImportResultado = null; // resumo pós-confirmação
+
+function loadSheetJS(callback) {
+  if (window.XLSX) { uiImportLibState = "ready"; callback(); return; }
+  if (uiImportLibState === "loading") return;
+  uiImportLibState = "loading";
+  renderAll();
+  const s = document.createElement("script");
+  s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+  s.onload = () => { uiImportLibState = "ready"; callback(); };
+  s.onerror = () => { uiImportLibState = "erro"; renderAll(); };
+  document.head.appendChild(s);
+}
+
+function normStr(v) { return String(v === null || v === undefined ? "" : v).trim(); }
+function normKey(v) { return normStr(v).toLowerCase(); }
+function toNumber(v) {
+  if (typeof v === "number") return v;
+  if (!v) return NaN;
+  let s = String(v).trim().replace(/[R$\s]/g, "");
+  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  return Number(s);
+}
+function parseCompetencia(v) {
+  if (v instanceof Date) return { mes: v.getMonth() + 1, ano: v.getFullYear() };
+  const s = normStr(v);
+  const m = s.match(/^(\d{1,2})[\/\-](\d{4})$/);
+  if (!m) return null;
+  const mes = Number(m[1]), ano = Number(m[2]);
+  if (mes < 1 || mes > 12) return null;
+  return { mes, ano };
+}
+function parseDataCell(v) {
+  if (v instanceof Date) return dateToISO(v);
+  const s = normStr(v);
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (!m) return null;
+  const d = Number(m[1]), mo = Number(m[2]), y = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return y + "-" + String(mo).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+}
+function mesesRollover(mesInicio, anoInicio, numParcelas) {
+  const out = [];
+  let ano = anoInicio, mes = mesInicio;
+  for (let i = 0; i < numParcelas; i++) {
+    out.push({ mes, ano });
+    mes++; if (mes > 12) { mes = 1; ano++; }
+  }
+  return out;
+}
+
+function gerarModeloXLSX() {
+  loadSheetJS(() => {
+    const wb = XLSX.utils.book_new();
+    const wsPrevistos = XLSX.utils.aoa_to_sheet([
+      ["Tipo", "Descrição", "Valor Total", "Nº de Parcelas", "Mês Inicial", "Ano Inicial", "Unidade/Contrato", "Processo SEI", "Observações"],
+      ["Contrato de Gestão (Original)", "Contrato de Gestão nº 001/2025 - HB", 1694889834.36, 12, 1, 2025, "CONTRATO 001 - HB", "00060-00007134/2025-02", "Repasse mensal"],
+    ]);
+    const wsDescontos = XLSX.utils.aoa_to_sheet([
+      ["Unidade/Contrato", "Competência (MM/AAAA)", "Tipo de Desconto", "Valor"],
+      ["CONTRATO 001 - HB", "01/2025", "Estatutário", 6000000],
+      ["CONTRATO 001 - HB", "01/2025", "Custeio", 4000000],
+    ]);
+    const wsLancamentos = XLSX.utils.aoa_to_sheet([
+      ["Unidade/Contrato", "Competência (MM/AAAA)", "Data de Efetivação", "Valor Recebido (líquido)", "Fonte"],
+      ["CONTRATO 001 - HB", "01/2025", "05/01/2025", 44673696.25, "FONTE 100"],
+    ]);
+    XLSX.utils.book_append_sheet(wb, wsPrevistos, "Repasses Previstos");
+    XLSX.utils.book_append_sheet(wb, wsDescontos, "Descontos");
+    XLSX.utils.book_append_sheet(wb, wsLancamentos, "Lançamentos");
+    XLSX.writeFile(wb, "modelo_importacao_igesdf.xlsx");
+  });
+}
+
+function tiposParcelasVirtuais(previstosValidos) {
+  // parcelas "virtuais" (ainda não gravadas) para permitir validar Descontos/Lançamentos no mesmo arquivo
+  const out = [];
+  previstosValidos.forEach((row, idx) => {
+    mesesRollover(row.mesInicial, row.anoInicial, row.numParcelas).forEach(({ mes, ano }) => {
+      out.push({ unidadeKey: normKey(row.unidade || row.descricao), mes, ano, origemIdx: idx });
+    });
+  });
+  return out;
+}
+function encontrarParcelaReal(unidadeKey, mes, ano) {
+  const inst = state.instrumentos.find((i) => normKey(i.unidade || i.descricao) === unidadeKey);
+  if (!inst) return null;
+  return state.parcelas.find((p) => p.instrumentoId === inst.id && p.mes === mes && p.ano === ano) || null;
+}
+
+function parseArquivoImportacao(wb) {
+  const previstos = [];
+  const descontos = [];
+  const lancamentos = [];
+
+  const shPrevistos = wb.Sheets["Repasses Previstos"];
+  if (shPrevistos) {
+    XLSX.utils.sheet_to_json(shPrevistos, { defval: "" }).forEach((r, i) => {
+      const linha = i + 2;
+      const descricao = normStr(r["Descrição"]);
+      const valorTotal = toNumber(r["Valor Total"]);
+      const numParcelas = Math.round(toNumber(r["Nº de Parcelas"]));
+      const mesInicial = Math.round(toNumber(r["Mês Inicial"]));
+      const anoInicial = Math.round(toNumber(r["Ano Inicial"]));
+      const unidade = normStr(r["Unidade/Contrato"]);
+      const tipo = normStr(r["Tipo"]) || TIPOS_INSTRUMENTO_BASE[0];
+      const processoSei = normStr(r["Processo SEI"]);
+      const observacoes = normStr(r["Observações"]);
+      const erros = [];
+      if (!descricao) erros.push("Descrição vazia");
+      if (!(valorTotal > 0)) erros.push("Valor Total inválido");
+      if (!(numParcelas >= 1)) erros.push("Nº de Parcelas inválido");
+      if (!(mesInicial >= 1 && mesInicial <= 12)) erros.push("Mês Inicial inválido (use 1–12)");
+      if (!(anoInicial >= 2000 && anoInicial <= 2100)) erros.push("Ano Inicial inválido");
+      if (!unidade) erros.push("Unidade/Contrato vazia (necessária para casar Descontos/Lançamentos)");
+      previstos.push({ linha, tipo, descricao, valorTotal, numParcelas, mesInicial, anoInicial, unidade, processoSei, observacoes, valid: erros.length === 0, erros });
+    });
+  }
+
+  const previstosValidos = previstos.filter((p) => p.valid);
+  const virtuais = tiposParcelasVirtuais(previstosValidos);
+
+  function existeParcela(unidadeKey, mes, ano) {
+    if (encontrarParcelaReal(unidadeKey, mes, ano)) return true;
+    return virtuais.some((v) => v.unidadeKey === unidadeKey && v.mes === mes && v.ano === ano);
+  }
+
+  const shDescontos = wb.Sheets["Descontos"];
+  if (shDescontos) {
+    XLSX.utils.sheet_to_json(shDescontos, { defval: "" }).forEach((r, i) => {
+      const linha = i + 2;
+      const unidade = normStr(r["Unidade/Contrato"]);
+      const comp = parseCompetencia(r["Competência (MM/AAAA)"]);
+      const tipoRaw = normStr(r["Tipo de Desconto"]);
+      const valor = toNumber(r["Valor"]);
+      const tipoMatch = DESCONTO_TIPOS.find((t) => normKey(t) === normKey(tipoRaw));
+      const tipo = tipoMatch || "Outro";
+      const tipoOutro = tipoMatch ? "" : tipoRaw;
+      const erros = [];
+      if (!unidade) erros.push("Unidade/Contrato vazia");
+      if (!comp) erros.push("Competência inválida (use MM/AAAA)");
+      if (!(valor > 0)) erros.push("Valor inválido");
+      if (!tipoRaw) erros.push("Tipo de Desconto vazio");
+      if (unidade && comp && !existeParcela(normKey(unidade), comp.mes, comp.ano)) erros.push("Nenhuma parcela encontrada para essa Unidade/Contrato + Competência");
+      descontos.push({ linha, unidade, competencia: comp, tipo, tipoOutro, valor, valid: erros.length === 0, erros });
+    });
+  }
+
+  const shLancamentos = wb.Sheets["Lançamentos"];
+  if (shLancamentos) {
+    XLSX.utils.sheet_to_json(shLancamentos, { defval: "" }).forEach((r, i) => {
+      const linha = i + 2;
+      const unidade = normStr(r["Unidade/Contrato"]);
+      const comp = parseCompetencia(r["Competência (MM/AAAA)"]);
+      const dataEfetivacao = parseDataCell(r["Data de Efetivação"]);
+      const valorRecebido = toNumber(r["Valor Recebido (líquido)"]);
+      const fonteRaw = normStr(r["Fonte"]);
+      const fonteMatch = FONTE_OPCOES.find((f) => normKey(f) === normKey(fonteRaw));
+      const fonte = fonteMatch || "Outro";
+      const fonteOutro = fonteMatch ? "" : fonteRaw;
+      const erros = [];
+      if (!unidade) erros.push("Unidade/Contrato vazia");
+      if (!comp) erros.push("Competência inválida (use MM/AAAA)");
+      if (!dataEfetivacao) erros.push("Data de Efetivação inválida (use DD/MM/AAAA)");
+      if (!(valorRecebido > 0)) erros.push("Valor Recebido inválido");
+      if (!fonteRaw) erros.push("Fonte vazia");
+      if (unidade && comp && !existeParcela(normKey(unidade), comp.mes, comp.ano)) erros.push("Nenhuma parcela encontrada para essa Unidade/Contrato + Competência");
+      lancamentos.push({ linha, unidade, competencia: comp, dataEfetivacao, valorRecebido, fonte, fonteOutro, valid: erros.length === 0, erros });
+    });
+  }
+
+  return { previstos, descontos, lancamentos };
+}
+
+function confirmarImportacao() {
+  if (!uiImportData) return;
+  const previstosValidos = uiImportData.previstos.filter((p) => p.valid);
+  const descontosValidos = uiImportData.descontos.filter((d) => d.valid);
+  const lancamentosValidos = uiImportData.lancamentos.filter((l) => l.valid);
+
+  previstosValidos.forEach((row) => {
+    if (!tiposDisponiveis().includes(row.tipo)) registrarTipoCustom(row.tipo);
+    const inst = {
+      id: uid("inst"), tipo: row.tipo, descricao: row.descricao, valorTotal: row.valorTotal,
+      numParcelas: row.numParcelas, mesInicio: row.mesInicial, anoInicio: row.anoInicial,
+      unidade: row.unidade, processoSei: row.processoSei, observacoes: row.observacoes,
+    };
+    state.instrumentos.push(inst);
+    state.parcelas = state.parcelas.concat(gerarParcelas(inst));
+  });
+
+  let descOk = 0, lancOk = 0;
+  descontosValidos.forEach((row) => {
+    const p = encontrarParcelaReal(normKey(row.unidade), row.competencia.mes, row.competencia.ano);
+    if (!p) return;
+    if (!p.descontos) p.descontos = [];
+    p.descontos.push({ id: uid("desc"), tipo: row.tipo, tipoOutro: row.tipoOutro, valor: row.valor });
+    descOk++;
+  });
+  lancamentosValidos.forEach((row) => {
+    const p = encontrarParcelaReal(normKey(row.unidade), row.competencia.mes, row.competencia.ano);
+    if (!p) return;
+    if (!p.lancamentos) p.lancamentos = [];
+    p.lancamentos.push({ id: uid("lanc"), dataEfetivacao: row.dataEfetivacao, valorRecebido: row.valorRecebido, fonte: row.fonte, fonteOutro: row.fonteOutro });
+    lancOk++;
+  });
+
+  persistir();
+  uiImportResultado = { previstos: previstosValidos.length, descontos: descOk, lancamentos: lancOk };
+  uiImportData = null;
+  if (previstosValidos.length) state.anoAtual = previstosValidos[0].anoInicial;
+  renderAll();
+}
+
+function tabelaImportHtml(titulo, linhas, colunas) {
+  if (!linhas.length) return "";
+  const validas = linhas.filter((l) => l.valid).length;
+  const rows = linhas.map((l) =>
+    "<tr>" + '<td>' + pill(l.valid ? "OK" : "Erro", l.valid ? "good" : "bad") + "</td>" +
+    "<td>" + l.linha + "</td>" +
+    colunas.map((c) => "<td>" + esc(c.get(l)) + "</td>").join("") +
+    '<td style="color:#c0432a;font-size:11.5px;">' + esc(l.erros.join("; ")) + "</td></tr>"
+  ).join("");
+  return '<div class="panel" style="margin-bottom:14px;"><div class="panel-header" style="display:flex;justify-content:space-between;">' +
+    "<span>" + esc(titulo) + "</span><span>" + pill(validas + " de " + linhas.length + " válidas", validas === linhas.length ? "good" : "warn") + "</span></div>" +
+    '<div style="overflow-x:auto;"><table><thead><tr><th>Status</th><th>Linha</th>' + colunas.map((c) => "<th>" + esc(c.label) + "</th>").join("") + "<th>Motivo</th></tr></thead>" +
+    "<tbody>" + rows + "</tbody></table></div></div>";
+}
+
+function renderImportarView(topbar, content) {
+  topbar.innerHTML = topbarHtml("Importação", "Suba os Repasses Previstos, Descontos e Lançamentos a partir de uma planilha Excel", "");
+
+  if (uiImportLibState === "erro") {
+    content.innerHTML = '<div class="panel" style="padding:16px 18px;background:#fde7dc;border-color:#f0c7ba;">' +
+      "Não foi possível carregar a biblioteca de leitura de Excel (falha ao acessar o CDN). Verifique sua conexão e tente novamente." +
+      '<div style="margin-top:10px;"><button class="btn btn-dark" id="btn-retry-lib" type="button">Tentar novamente</button></div></div>';
+    document.getElementById("btn-retry-lib").onclick = () => { uiImportLibState = "idle"; renderAll(); };
+    return;
+  }
+
+  let html = '<div class="panel" style="padding:16px 18px;margin-bottom:16px;">' +
+    '<div class="panel-header" style="padding:0 0 8px;border:none;">1. Baixe o modelo</div>' +
+    '<div style="font-size:12.5px;color:#58585a;margin-bottom:10px;">Arquivo .xlsx com 3 abas: Repasses Previstos, Descontos e Lançamentos, já com um exemplo preenchido.</div>' +
+    '<button class="btn btn-ghost" id="btn-baixar-modelo" type="button">' + icon("download", 14) + "Baixar modelo (.xlsx)</button>" +
+    "</div>";
+
+  html += '<div class="panel" style="padding:16px 18px;margin-bottom:16px;">' +
+    '<div class="panel-header" style="padding:0 0 8px;border:none;">2. Envie o arquivo preenchido</div>' +
+    '<input class="input" type="file" id="input-importar" accept=".xlsx,.xls" style="max-width:360px;"' + (uiImportLibState === "loading" ? " disabled" : "") + "/>" +
+    (uiImportLibState === "loading" ? '<div class="field-hint" style="margin-top:6px;">Carregando leitor de Excel...</div>' : "") +
+    "</div>";
+
+  if (uiImportResultado) {
+    html += '<div class="panel" style="padding:16px 18px;margin-bottom:16px;background:#eef7de;border-color:#d7e7b8;">' +
+      "Importação concluída: " + uiImportResultado.previstos + " repasse(s) previsto(s), " + uiImportResultado.descontos + " desconto(s) e " + uiImportResultado.lancamentos + " lançamento(s) gravados." +
+      "</div>";
+  }
+
+  if (uiImportData) {
+    const totalValidas = uiImportData.previstos.filter((r) => r.valid).length + uiImportData.descontos.filter((r) => r.valid).length + uiImportData.lancamentos.filter((r) => r.valid).length;
+    html += tabelaImportHtml("Repasses Previstos", uiImportData.previstos, [
+      { label: "Tipo", get: (r) => r.tipo }, { label: "Descrição", get: (r) => r.descricao },
+      { label: "Valor Total", get: (r) => fmtCurrency(r.valorTotal) }, { label: "Parcelas", get: (r) => r.numParcelas },
+      { label: "Início", get: (r) => (r.mesInicial ? MONTH_SHORT[r.mesInicial - 1] : "—") + "/" + (r.anoInicial || "—") },
+      { label: "Unidade/Contrato", get: (r) => r.unidade },
+    ]);
+    html += tabelaImportHtml("Descontos", uiImportData.descontos, [
+      { label: "Unidade/Contrato", get: (r) => r.unidade }, { label: "Competência", get: (r) => (r.competencia ? String(r.competencia.mes).padStart(2, "0") + "/" + r.competencia.ano : "—") },
+      { label: "Tipo", get: (r) => (r.tipo === "Outro" && r.tipoOutro ? r.tipoOutro : r.tipo) }, { label: "Valor", get: (r) => fmtCurrency(r.valor) },
+    ]);
+    html += tabelaImportHtml("Lançamentos", uiImportData.lancamentos, [
+      { label: "Unidade/Contrato", get: (r) => r.unidade }, { label: "Competência", get: (r) => (r.competencia ? String(r.competencia.mes).padStart(2, "0") + "/" + r.competencia.ano : "—") },
+      { label: "Data Efetivação", get: (r) => fmtDateBR(r.dataEfetivacao) }, { label: "Valor Recebido", get: (r) => fmtCurrency(r.valorRecebido) }, { label: "Fonte", get: (r) => (r.fonte === "Outro" && r.fonteOutro ? r.fonteOutro : r.fonte) },
+    ]);
+    html += '<div style="display:flex;gap:8px;">' +
+      '<button class="btn btn-ghost" id="btn-cancelar-import" type="button">Cancelar</button>' +
+      '<button class="btn btn-primary" id="btn-confirmar-import" type="button"' + (totalValidas === 0 ? " disabled" : "") + ">" + icon("check", 14) + "Confirmar importação (" + totalValidas + " linha" + (totalValidas === 1 ? "" : "s") + ")</button>" +
+      "</div>";
+  }
+
+  content.innerHTML = html;
+
+  const btnModelo = document.getElementById("btn-baixar-modelo");
+  if (btnModelo) btnModelo.onclick = gerarModeloXLSX;
+
+  const inputImportar = document.getElementById("input-importar");
+  if (inputImportar) inputImportar.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    loadSheetJS(() => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: "array", cellDates: true });
+        uiImportResultado = null;
+        uiImportData = parseArquivoImportacao(wb);
+        renderAll();
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  });
+
+  const btnCancelar = document.getElementById("btn-cancelar-import");
+  if (btnCancelar) btnCancelar.onclick = () => { uiImportData = null; renderAll(); };
+  const btnConfirmar = document.getElementById("btn-confirmar-import");
+  if (btnConfirmar) btnConfirmar.onclick = confirmarImportacao;
 }
 
 /* ============================ DADOS INICIAIS (apenas na primeira vez) ============================ */
