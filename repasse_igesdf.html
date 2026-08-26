@@ -150,6 +150,7 @@
   .parcela-card-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px; }
   .lanc-subtable { padding: 0 14px 12px; }
   .lanc-subtable table { font-size: 12px; }
+  .lanc-total-row td { font-weight: 700; border-top: 2px solid var(--border); background: #f4f6f7; color: var(--ink); }
   .lanc-empty { padding: 10px 14px; color: var(--muted); font-size: 12px; font-style: italic; }
   textarea.input { min-height: 64px; resize: vertical; }
 
@@ -465,10 +466,13 @@ function totaisParcela(p) {
   const lancs = p.lancamentos || [];
   const recebido = lancs.reduce((s, l) => s + (l.valorRecebido || 0), 0);
   const desconto = lancs.reduce((s, l) => s + descontoTotalLancamento(l), 0);
-  const saldo = p.valorPrevisto - (recebido + desconto);
+  const liquido = recebido - desconto;
+  // O Desconto é uma categorização de parte do Valor Recebido (Estatutário/Custeio/Adiantamento/Outro),
+  // não um valor adicional — por isso o saldo compara Previsto x Recebido (bruto), sem subtrair o desconto de novo.
+  const saldo = p.valorPrevisto - recebido;
   let status = "pendente";
   if (lancs.length > 0) status = saldo > 0.005 ? "parcial" : "quitado";
-  return { recebido, desconto, saldo, status };
+  return { recebido, desconto, liquido, saldo, status };
 }
 function statusTone(status) { return status === "quitado" ? "good" : status === "parcial" ? "info" : "warn"; }
 function statusLabel(status) { return status === "quitado" ? "Quitado" : status === "parcial" ? "Parcial" : "Pendente"; }
@@ -482,7 +486,8 @@ function totaisMes(parcelasDoMes) {
     previsto += p.valorPrevisto || 0;
     (p.lancamentos || []).forEach((l) => { recebido += l.valorRecebido || 0; desconto += descontoTotalLancamento(l); });
   });
-  return { previsto, recebido, desconto, saldo: previsto - (recebido + desconto) };
+  // Desconto é subconjunto do Recebido (não soma-se de novo ao calcular o saldo).
+  return { previsto, recebido, desconto, liquido: recebido - desconto, saldo: previsto - recebido };
 }
 function totaisAno(ano) { return totaisMes(parcelasDoAno(ano)); }
 
@@ -760,7 +765,8 @@ function renderDashboardView(topbar, content) {
   const previsto = parcelasFilt.reduce((s, p) => s + (p.valorPrevisto || 0), 0);
   const recebido = itensFilt.reduce((s, it) => s + (it.l.valorRecebido || 0), 0);
   const desconto = itensFilt.reduce((s, it) => s + descontoTotalLancamento(it.l), 0);
-  const saldo = previsto - (recebido + desconto);
+  // Desconto é subconjunto do Recebido — não subtrai de novo do previsto.
+  const saldo = previsto - recebido;
 
   const porMes = {};
   for (let m = f.mesIni; m <= f.mesFim; m++) porMes[m] = { previsto: 0, recebido: 0, desconto: 0 };
@@ -1052,14 +1058,25 @@ function parcelaCardHtml(p) {
   const subRows = lancs.length ? lancs.map((l) => {
     const pct = pctLancamento(l, p);
     const dias = diasEntre(p.dataContrato, l.dataEfetivacao);
+    const desc = descontoTotalLancamento(l);
+    const liquidoLanc = (l.valorRecebido || 0) - desc;
     const descontosResumo = (l.descontos || []).map((d) => descontoTipoLabel(d) + ": " + fmtCurrencyCompact(d.valor)).join(" · ");
     return "<tr><td>" + fmtDateBR(l.dataEfetivacao) + "</td><td>" + pill(fonteLabel(l), "info") + '</td><td class="mono" style="font-weight:600;">' +
-      esc(fmtCurrency(l.valorRecebido)) + '</td><td class="mono" title="' + esc(descontosResumo) + '">' + (descontoTotalLancamento(l) ? esc(fmtCurrency(descontoTotalLancamento(l))) : "—") +
+      esc(fmtCurrency(l.valorRecebido)) + '</td><td class="mono" title="' + esc(descontosResumo) + '">' + (desc ? esc(fmtCurrency(desc)) : "—") +
+      '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(liquidoLanc)) +
       '</td><td class="mono">' + esc(fmtPercent(pct)) + "</td><td>" + esc(dias) + "</td><td>" +
       '<button class="icon-btn btn-editlanc" data-parcela="' + p.id + '" data-lanc="' + l.id + '" type="button" title="Editar">' + icon("pencil", 12) + "</button>" +
       '<button class="icon-btn danger btn-dellanc" data-parcela="' + p.id + '" data-lanc="' + l.id + '" type="button" title="Excluir">' + icon("trash", 12) + "</button>" +
       "</td></tr>";
   }).join("") : "";
+
+  const totalRow = lancs.length
+    ? '<tr class="lanc-total-row"><td colspan="2">Total</td>' +
+      '<td class="mono">' + esc(fmtCurrency(tp.recebido)) + "</td>" +
+      '<td class="mono">' + esc(fmtCurrency(tp.desconto)) + "</td>" +
+      '<td class="mono">' + esc(fmtCurrency(tp.liquido)) + "</td>" +
+      "<td></td><td></td><td></td></tr>"
+    : "";
 
   return (
     '<div class="parcela-card"><div class="parcela-card-header"><div>' +
@@ -1074,7 +1091,7 @@ function parcelaCardHtml(p) {
     '<button class="btn btn-primary btn-sm btn-addlanc" data-parcela="' + p.id + '" type="button">' + icon("plus", 13) + "Lançamento</button>" +
     "</div></div>" +
     (lancs.length
-      ? '<div class="lanc-subtable"><table><thead><tr><th>Data Efetivação</th><th>Fonte</th><th>Valor Recebido</th><th>Desconto</th><th>%</th><th>Dias em Atraso</th><th></th></tr></thead><tbody>' + subRows + "</tbody></table></div>"
+      ? '<div class="lanc-subtable"><table><thead><tr><th>Data Efetivação</th><th>Fonte</th><th>Valor Recebido</th><th>Desconto</th><th>Valor Líquido</th><th>%</th><th>Dias em Atraso</th><th></th></tr></thead><tbody>' + subRows + "</tbody><tfoot>" + totalRow + "</tfoot></table></div>"
       : '<div class="lanc-empty">Nenhum lançamento registrado ainda para esta parcela.</div>') +
     "</div>"
   );
@@ -1342,13 +1359,14 @@ function renderDemonstrativoView(topbar, content) {
     const bruto = m.parcelas.reduce((s, p) => s + (p.valorPrevisto || 0), 0);
     const descPorTipo = descontoBreakdown(m.parcelas);
     const totalDesc = DESCONTO_TIPOS.reduce((s, t) => s + descPorTipo[t], 0);
-    const liquido = bruto - totalDesc;
     const recPorFonte = {};
     fontesAno.forEach((f) => (recPorFonte[f] = 0));
     m.parcelas.forEach((p) => (p.lancamentos || []).forEach((l) => { recPorFonte[fonteLabel(l)] = (recPorFonte[fonteLabel(l)] || 0) + (l.valorRecebido || 0); }));
     const totalRecebido = Object.values(recPorFonte).reduce((s, v) => s + v, 0);
-    const saldo = liquido - totalRecebido;
-    return { mes: m.mes, bruto, descPorTipo, liquido, recPorFonte, saldo };
+    // Desconto é uma categorização de parte do Valor Recebido (não é deduzido do Previsto).
+    const liquidoRecebido = totalRecebido - totalDesc;
+    const saldo = bruto - totalRecebido;
+    return { mes: m.mes, bruto, descPorTipo, totalDesc, totalRecebido, liquidoRecebido, recPorFonte, saldo };
   });
 
   function linha(label, getter, opts) {
@@ -1358,21 +1376,22 @@ function renderDemonstrativoView(topbar, content) {
   }
 
   let rows = "";
-  rows += linha("A receber (Bruto):", (d) => d.bruto, { cls: "demo-row-bold" });
+  rows += linha("Previsto (Repasse):", (d) => d.bruto, { cls: "demo-row-bold" });
+  fontesAno.forEach((f) => { rows += linha("Valores Recebidos " + f, (d) => d.recPorFonte[f] || 0); });
+  rows += linha("Recebido (Total):", (d) => d.totalRecebido, { cls: "demo-row-bold" });
   DESCONTO_TIPOS.forEach((tipo) => {
     const algum = porMes.some((d) => d.descPorTipo[tipo] > 0);
-    if (algum) rows += linha("(-) Dedução " + tipo, (d) => -d.descPorTipo[tipo], { cls: "demo-row-neg" });
+    if (algum) rows += linha("  dos quais, Dedução " + tipo, (d) => -d.descPorTipo[tipo], { cls: "demo-row-neg" });
   });
-  rows += linha("A receber (Líquido):", (d) => d.liquido, { cls: "demo-row-bold" });
-  fontesAno.forEach((f) => { rows += linha("Valores Recebidos " + f, (d) => d.recPorFonte[f] || 0); });
-  rows += linha("Saldo:", (d) => d.saldo, { cls: "demo-row-total" });
+  rows += linha("Valor Líquido Recebido:", (d) => d.liquidoRecebido, { cls: "demo-row-bold" });
+  rows += linha("Saldo (Previsto − Recebido):", (d) => d.saldo, { cls: "demo-row-total" });
 
   const header = '<tr><th>Competência:</th>' + porMes.map((d) => "<th>" + MONTH_SHORT_DOT[d.mes - 1] + "/" + ano + "</th>").join("") + "</tr>";
 
   // Resumo
   const grand = totaisAno(ano);
   const pendentesAnoAnterior = state.parcelas.some((p) => p.ano === ano - 1) ? totaisAno(ano - 1).saldo : 0;
-  const saldoAtual = pendentesAnoAnterior + (grand.previsto - grand.desconto) - grand.recebido;
+  const saldoAtual = pendentesAnoAnterior + (grand.previsto - grand.recebido);
 
   content.innerHTML =
     printHeader(state.anoAtual + " - Valor Mensal do Repasse Previsto", "Instituto de Gestão Estratégica de Saúde do Distrito Federal") +
@@ -1382,9 +1401,9 @@ function renderDemonstrativoView(topbar, content) {
     '<div class="demo-resumo panel" style="padding:14px 16px;"><div class="panel-header" style="padding:0 0 10px;border:none;">Resumo — ' + ano + '</div><table>' +
     "<tr><td>Valores Pendentes " + (ano - 1) + " (automático)</td><td>" + esc(fmtCurrency(pendentesAnoAnterior)) + "</td></tr>" +
     "<tr><td>Valor Previsto (Anual)</td><td>" + esc(fmtCurrency(grand.previsto)) + "</td></tr>" +
-    "<tr><td>Descontos</td><td>" + esc(fmtCurrency(grand.desconto)) + "</td></tr>" +
-    "<tr><td>Valor Líquido Previsto</td><td>" + esc(fmtCurrency(grand.previsto - grand.desconto)) + "</td></tr>" +
     "<tr><td>Valor Recebido</td><td>" + esc(fmtCurrency(grand.recebido)) + "</td></tr>" +
+    "<tr><td>&nbsp;&nbsp;dos quais, Descontos (Estatutário/Custeio/Adiantamento/Outro)</td><td>" + esc(fmtCurrency(grand.desconto)) + "</td></tr>" +
+    "<tr><td>Valor Líquido Recebido</td><td>" + esc(fmtCurrency(grand.liquido)) + "</td></tr>" +
     '<tr class="destaque"><td>Saldo em ' + ano + "</td><td>" + esc(fmtCurrency(saldoAtual)) + "</td></tr>" +
     "</table></div>";
 
