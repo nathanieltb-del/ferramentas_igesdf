@@ -151,6 +151,7 @@
   .msg.err{background:#fdeaec;border:1px solid #e0a0aa;color:#a8323f}
   .msg.info{background:var(--accent-soft);border:1px solid #b9c8e0;color:var(--accent)}
   .okline{margin-top:10px;font-size:12px;padding:8px 12px;border-radius:4px;background:#eaf5ee;border:1px solid #a9d4b8;color:#1a6b3c}
+  .warnline{margin-top:8px;font-size:12px;padding:8px 12px;border-radius:4px;background:var(--ta-soft);border:1px solid var(--ta);color:var(--ta)}
   .warn{background:#fdeaec;border:1px solid #e0a0aa;border-radius:4px;padding:11px 14px;font-size:13px;margin-bottom:16px}
   .formula{font-size:12px;color:var(--ink-soft);margin-top:10px;line-height:1.7}
   @media print{body{background:#fff}.card:has(button),.actions,.memo{display:none}.scroll{border:none}}
@@ -1357,6 +1358,16 @@ function conciliar(){
 
   const dif=Math.abs(liquido-saldoPassivo);
 
+  /* Esta tabela amarra contra o saldo TEÓRICO da memória de cálculo (por
+     isso olha só a partir de m+1, sem depender da flag "Pago?") — é uma
+     conferência independente do Razão. Parcelas já vencidas (até m) e ainda
+     não pagas ficam de fora dela por isso, mas JÁ entram no Curto Prazo do
+     Razão Contábil, do Balancete e do TXT de importação (que são
+     payment-aware). Sinaliza aqui pra não parecer divergência. */
+  const naoPagas=ate.filter(function(x){ return !QUIT[x.abs]; });
+  const vNaoPagas=S(naoPagas,function(x){return x.pgto;});
+  const jurNaoPagas=S(naoPagas,function(x){return x.juros;});
+
   let h='<table class="ctab">'+
     '<thead><tr><th>Conta</th><th>Saldo em '+competencia(ini,m-1)+
       '</th><th>Natureza</th></tr></thead><tbody>'+
@@ -1376,6 +1387,14 @@ function conciliar(){
   h+='<div class="okline">Amarração: passivo líquido '+BRL(liquido)+
      ' = saldo do passivo na memória de cálculo '+BRL(saldoPassivo)+
      (dif<0.01?' &nbsp;✓ confere':' &nbsp;⚠ diferença de '+BRL(dif))+'</div>';
+
+  if(naoPagas.length){
+    h+='<div class="warnline">⚠ '+naoPagas.length+' parcela(s) vencida(s) até '+competencia(ini,m-1)+
+       ' ainda não marcada(s) como paga(s): '+BRL(vNaoPagas)+' bruto ('+BRL(vNaoPagas-jurNaoPagas)+' líquido de juros). '+
+       'Esta tabela não soma esse valor ao Curto Prazo (amarra contra o saldo teórico da memória de cálculo) — '+
+       'mas o Razão Contábil, o Balancete e o TXT de importação já incluem essas parcelas no Curto Prazo, '+
+       'porque continuam em aberto de verdade.</div>';
+  }
 
   if(adocao){
     /* Usa a MESMA projeção da tabela de saldos: condições vigentes na data de adoção.
