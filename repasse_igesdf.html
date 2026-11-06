@@ -372,6 +372,7 @@ const LOGO_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfQAAACyCAY
 const DB_KEY_INSTRUMENTOS = "igesdf_instrumentos_v3";
 const DB_KEY_PARCELAS = "igesdf_parcelas_v3";
 const DB_KEY_TIPOS_CUSTOM = "igesdf_tipos_custom_v3";
+const DB_KEY_ADIANTAMENTOS = "igesdf_adiantamentos_v3";
 
 /**
  * ==================== CONEXÃO COM GOOGLE SHEETS ====================
@@ -385,13 +386,15 @@ const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 const db = {
   load() {
-    let instrumentos = [], parcelas = [], tiposCustom = [];
+    let instrumentos = [], parcelas = [], tiposCustom = [], adiantamentos = [];
     try { instrumentos = JSON.parse(localStorage.getItem(DB_KEY_INSTRUMENTOS)) || []; } catch (e) {}
     try { parcelas = JSON.parse(localStorage.getItem(DB_KEY_PARCELAS)) || []; } catch (e) {}
     try { tiposCustom = JSON.parse(localStorage.getItem(DB_KEY_TIPOS_CUSTOM)) || []; } catch (e) {}
-    return { instrumentos, parcelas, tiposCustom };
+    try { adiantamentos = JSON.parse(localStorage.getItem(DB_KEY_ADIANTAMENTOS)) || []; } catch (e) {}
+    return { instrumentos, parcelas, tiposCustom, adiantamentos };
   },
-  save(instrumentos, parcelas, tiposCustom) {
+  save(instrumentos, parcelas, tiposCustom, adiantamentos) {
+    localStorage.setItem(DB_KEY_ADIANTAMENTOS, JSON.stringify(adiantamentos || []));
     localStorage.setItem(DB_KEY_INSTRUMENTOS, JSON.stringify(instrumentos));
     localStorage.setItem(DB_KEY_PARCELAS, JSON.stringify(parcelas));
     localStorage.setItem(DB_KEY_TIPOS_CUSTOM, JSON.stringify(tiposCustom));
@@ -427,6 +430,7 @@ const state = {
   instrumentos: [],
   parcelas: [],
   tiposCustom: [],
+  adiantamentos: [],
   anoAtual: null,
   filters: { lancMonthOpen: null, lancQuery: "", mensalMes: null, fonteAtual: null },
   painelFiltros: { instrumentoId: "", fonte: "", mesIni: 1, mesFim: 12, status: "" },
@@ -438,10 +442,13 @@ function carregarEstado() {
   state.instrumentos = d.instrumentos;
   state.parcelas = d.parcelas;
   state.tiposCustom = d.tiposCustom;
+  state.adiantamentos = d.adiantamentos;
+  reaplicarAdiantamentos();
   state.anoAtual = anoComDadosMaisRecente();
 }
 function persistir() {
-  db.save(state.instrumentos, state.parcelas, state.tiposCustom);
+  reaplicarAdiantamentos();
+  db.save(state.instrumentos, state.parcelas, state.tiposCustom, state.adiantamentos);
   agendarSync();
 }
 function tiposDisponiveis() { return TIPOS_INSTRUMENTO_BASE.concat(state.tiposCustom); }
@@ -558,7 +565,7 @@ function buildSyncPayload() {
     id: p.id, instrumentoId: p.instrumentoId, ano: p.ano, mes: p.mes, valorPrevisto: p.valorPrevisto, dataContrato: p.dataContrato,
     descontos: p.descontos || [],
   }));
-  return { instrumentos: state.instrumentos, parcelas: parcelasFlat, lancamentos: lancamentosFlat, tiposCustom: state.tiposCustom };
+  return { instrumentos: state.instrumentos, parcelas: parcelasFlat, lancamentos: lancamentosFlat, tiposCustom: state.tiposCustom, adiantamentos: state.adiantamentos };
 }
 function setSyncStatus(kind, msg) {
   const el = document.getElementById("sync-status");
@@ -607,7 +614,9 @@ async function carregarDeSheets() {
     state.instrumentos = data.instrumentos;
     state.parcelas = parcelasComLancs;
     state.tiposCustom = data.tiposCustom || [];
-    db.save(state.instrumentos, state.parcelas, state.tiposCustom);
+    state.adiantamentos = Array.isArray(data.adiantamentos) ? data.adiantamentos : state.adiantamentos;
+    reaplicarAdiantamentos();
+    db.save(state.instrumentos, state.parcelas, state.tiposCustom, state.adiantamentos);
     setSyncStatus("ok", "Carregado da planilha");
     return true;
   } catch (err) {
@@ -683,6 +692,7 @@ const NAV_ITEMS = [
   { id: "dashboard", label: "Painel Geral", icon: "dashboard" },
   { id: "previstos", label: "Repasses Previstos", icon: "filetext" },
   { id: "lancamentos", label: "Recebimentos", icon: "table" },
+  { id: "adiantamentos", label: "Adiantamentos", icon: "download" },
   { id: "mensal", label: "Relatório Mensal", icon: "calendar" },
   { id: "anual", label: "Relatório Anual", icon: "bar" },
   { id: "demonstrativo", label: "Demonstrativo Anual", icon: "sheet" },
@@ -739,6 +749,8 @@ function renderAll() {
     renderPrevistosView(topbar, content);
   } else if (state.view === "lancamentos") {
     renderLancamentosView(topbar, content);
+  } else if (state.view === "adiantamentos") {
+    renderAdiantamentosView(topbar, content);
   } else if (state.view === "mensal") {
     renderMensalView(topbar, content);
   } else if (state.view === "anual") {
@@ -845,6 +857,7 @@ function renderDashboardView(topbar, content) {
     kpiCard("Valor Líquido a Receber", fmtCurrency(liquido), "", COLORS.lime, "sheet") +
     kpiCard("Total Recebido", fmtCurrency(recebido), "", COLORS.teal, "bar") +
     kpiCard("Saldo a Repassar", fmtCurrency(saldo), "", COLORS.gray, "alert") +
+    kpiCard("Adiantamentos a compensar", fmtCurrency(adiantResumo().saldo), "de " + fmtCurrency(adiantResumo().valor) + " adiantados", COLORS.yellow, "download") +
     "</div>" +
     '<div class="grid-2">' +
     '<div class="panel" style="padding:18px;"><div class="panel-header" style="padding:0 0 12px;border:none;">Previsto x Recebido x Desconto por competência</div>' + svgBarChart(chartData, series) + "</div>" +
@@ -927,6 +940,7 @@ function renderPrevistosView(topbar, content) {
     const aviso = comLancamentos > 0 ? "\n\nATENÇÃO: " + comLancamentos + " parcela(s) já têm recebimentos registrados — esses recebimentos também serão apagados." : "";
     if (!confirm('Excluir "' + inst.descricao + '" e todas as suas ' + parcelas.length + " parcela(s)?" + aviso)) return;
     state.instrumentos = state.instrumentos.filter((i) => i.id !== inst.id);
+    state.adiantamentos = state.adiantamentos.filter((a) => a.instrumentoId !== inst.id);
     state.parcelas = state.parcelas.filter((p) => p.instrumentoId !== inst.id);
     persistir();
     renderAll();
@@ -1284,7 +1298,7 @@ function wireLancamentosEvents(content) {
     if (uiDescontoOpenParcela === pid) { uiDescontoOpenParcela = null; }
     else {
       const p = state.parcelas.find((pp) => pp.id === pid);
-      uiDescontoDraft = (p.descontos || []).map((d) => Object.assign({}, d));
+      uiDescontoDraft = (p.descontos || []).filter((d) => !d.adiantamentoId).map((d) => Object.assign({}, d));
       uiDescontoOpenParcela = pid;
     }
     renderAll();
@@ -1308,7 +1322,7 @@ function wireLancamentosEvents(content) {
   content.querySelectorAll(".btn-save-desconto").forEach((el) => el.addEventListener("click", (e) => {
     e.stopPropagation();
     const p = state.parcelas.find((pp) => pp.id === el.dataset.parcela);
-    p.descontos = uiDescontoDraft.filter((d) => d.valor > 0);
+    p.descontos = (p.descontos || []).filter((d) => d.adiantamentoId).concat(uiDescontoDraft.filter((d) => d.valor > 0));
     uiDescontoOpenParcela = null;
     persistir();
     renderAll();
@@ -1338,6 +1352,189 @@ function wireDescontoEditorInputs(content) {
   });
 }
 
+
+/* ============================================================
+   ADIANTAMENTOS
+   ------------------------------------------------------------
+   Repasse recebido adiantado, que será descontado em competências
+   futuras. O valor NÃO entra em "Recebimentos": fica só aqui.
+   Cada compensação cria sozinha um desconto do tipo "Adiantamento"
+   na competência escolhida (e reduz o valor líquido a receber dela).
+   Saldo a compensar = Valor adiantado − Σ compensações.
+   ============================================================ */
+function adiantTotais(a) {
+  const comps = a.compensacoes || [];
+  const compensado = comps.reduce((s, c) => s + (c.valor || 0), 0);
+  return { valor: a.valor || 0, compensado, saldo: (a.valor || 0) - compensado };
+}
+function adiantResumo() {
+  const r = { valor: 0, compensado: 0, saldo: 0 };
+  state.adiantamentos.forEach((a) => { const t = adiantTotais(a); r.valor += t.valor; r.compensado += t.compensado; r.saldo += t.saldo; });
+  return r;
+}
+/** Recria, nas parcelas, os descontos "Adiantamento" a partir dos registros de adiantamento. */
+function reaplicarAdiantamentos() {
+  state.parcelas.forEach((p) => { if (p.descontos) p.descontos = p.descontos.filter((d) => !d.adiantamentoId); });
+  state.adiantamentos.forEach((a) => (a.compensacoes || []).forEach((c) => {
+    const p = state.parcelas.find((x) => x.instrumentoId === a.instrumentoId && x.ano === c.ano && x.mes === c.mes);
+    if (!p || !(c.valor > 0)) return;
+    if (!p.descontos) p.descontos = [];
+    p.descontos.push({ id: "adi_" + a.id + "_" + c.ano + "_" + c.mes, tipo: "Adiantamento", tipoOutro: "", valor: c.valor, adiantamentoId: a.id });
+  }));
+}
+function compKey(c) { return c.ano + "-" + String(c.mes).padStart(2, "0"); }
+
+let uiAdiDraft = null; // { id, instrumentoId, data, fonte, fonteOutro, valor, observacao, compensacoes:[{ano,mes,valor}] }
+
+function renderAdiantamentosView(topbar, content) {
+  topbar.innerHTML = topbarHtml("Adiantamentos", "Repasses recebidos adiantados, que serão descontados em competências futuras",
+    '<button class="btn btn-primary" id="btn-novo-adi" type="button">' + icon("plus", 14) + "Novo adiantamento</button>");
+  const r = adiantResumo();
+  const lista = state.adiantamentos.slice().sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+  const rows = lista.map((a) => {
+    const t = adiantTotais(a);
+    const inst = state.instrumentos.find((i) => i.id === a.instrumentoId) || {};
+    const chips = (a.compensacoes || []).slice().sort((x, y) => compKey(x).localeCompare(compKey(y))).map((c) => {
+      const existe = state.parcelas.some((p) => p.instrumentoId === a.instrumentoId && p.ano === c.ano && p.mes === c.mes);
+      return '<span class="parcela-chip"' + (existe ? "" : ' style="border-color:#f0c7ba;color:#b8480f;" title="Não há parcela nesta competência"') + ">" + MONTH_SHORT[c.mes - 1] + "/" + c.ano + " · " + esc(fmtCurrency(c.valor)) + "</span>";
+    }).join("");
+    return "<tr><td>" + fmtDateBR(a.data) + "</td><td>" + esc(inst.descricao || "—") + "</td><td>" + pill(a.fonte === "Outro" ? (a.fonteOutro || "Outro") : a.fonte, "info") +
+      '</td><td class="mono">' + esc(fmtCurrency(t.valor)) + '</td><td class="mono">' + esc(fmtCurrency(t.compensado)) +
+      '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(t.saldo)) + "</td><td>" + (t.saldo <= 0.005 ? pill("Compensado", "good") : pill("A compensar", "warn")) +
+      '</td><td><div class="parcela-preview">' + (chips || "—") + "</div></td><td>" + esc(a.observacao || "") + "</td>" +
+      '<td class="no-print" style="white-space:nowrap;"><button class="icon-btn btn-edit-adi" data-id="' + a.id + '" type="button">' + icon("pencil", 14) +
+      '</button><button class="icon-btn danger btn-del-adi" data-id="' + a.id + '" type="button">' + icon("trash", 14) + "</button></td></tr>";
+  }).join("");
+
+  content.innerHTML =
+    printHeader("Adiantamentos de Repasse", REL_ENTIDADE) +
+    '<div class="kpi-row">' +
+    kpiCard("Total adiantado", fmtCurrency(r.valor), "", COLORS.blue, "download") +
+    kpiCard("Já compensado (descontado)", fmtCurrency(r.compensado), "", COLORS.teal, "check") +
+    kpiCard("Saldo a compensar", fmtCurrency(r.saldo), "", COLORS.orange, "alert") +
+    "</div>" +
+    '<div class="rel-filtros">Cada compensação cria sozinha um desconto do tipo <b>Adiantamento</b> na competência escolhida, e reduz o valor líquido a receber dela. ' +
+    "O valor adiantado não aparece em Recebimentos.</div>" +
+    '<div class="panel" style="overflow-x:auto;"><table><thead><tr><th>Data</th><th>Repasse</th><th>Fonte</th><th>Valor adiantado</th><th>Compensado</th><th>Saldo a compensar</th><th>Situação</th><th>Competências descontadas</th><th>Observação</th><th class="no-print"></th></tr></thead><tbody>' +
+    (rows || '<tr><td colspan="10" class="empty-state">Nenhum adiantamento registrado. Use "Novo adiantamento".</td></tr>') + "</tbody>" +
+    (lista.length ? '<tfoot><tr><td colspan="3">Total</td><td class="mono">' + esc(fmtCurrency(r.valor)) + '</td><td class="mono">' + esc(fmtCurrency(r.compensado)) + '</td><td class="mono">' + esc(fmtCurrency(r.saldo)) + '</td><td colspan="4"></td></tr></tfoot>' : "") +
+    "</table></div>";
+
+  document.getElementById("btn-novo-adi").onclick = () => abrirAdiantamentoModal(null);
+  content.querySelectorAll(".btn-edit-adi").forEach((b) => b.onclick = () => abrirAdiantamentoModal(state.adiantamentos.find((a) => a.id === b.dataset.id)));
+  content.querySelectorAll(".btn-del-adi").forEach((b) => b.onclick = () => {
+    const a = state.adiantamentos.find((x) => x.id === b.dataset.id); if (!a) return;
+    if (!confirm("Excluir este adiantamento de " + fmtCurrency(a.valor) + "? Os descontos criados por ele nas competências também serão removidos.")) return;
+    state.adiantamentos = state.adiantamentos.filter((x) => x.id !== a.id);
+    persistir(); renderAll();
+  });
+}
+
+function parcelasDoInstrumento(instId) {
+  return state.parcelas.filter((p) => p.instrumentoId === instId).sort((a, b) => (a.ano - b.ano) || (a.mes - b.mes));
+}
+
+function abrirAdiantamentoModal(existing) {
+  const instPadrao = state.instrumentos.length ? state.instrumentos[0].id : "";
+  uiAdiDraft = existing ? JSON.parse(JSON.stringify(existing)) : {
+    id: null, instrumentoId: instPadrao, data: hojeISO(), fonte: FONTE_OPCOES[0], fonteOutro: "", valor: 0, observacao: "", compensacoes: [],
+  };
+  const d = uiAdiDraft;
+  const root = document.getElementById("modal-root");
+  root.innerHTML =
+    '<div class="modal-backdrop" id="modal-backdrop"><div class="modal">' +
+    '<div class="modal-header"><div class="modal-title">' + (existing ? "Editar adiantamento" : "Novo adiantamento") + '</div>' +
+    '<button class="icon-btn" id="modal-close" type="button">' + icon("x", 18) + "</button></div>" +
+    '<div class="modal-body">' +
+    field("Repasse (contrato / termo aditivo)", '<select class="input" id="a-inst">' +
+      state.instrumentos.map((i) => '<option value="' + i.id + '"' + (i.id === d.instrumentoId ? " selected" : "") + ">" + esc(i.descricao) + "</option>").join("") + "</select>", { full: true }) +
+    field("Data do recebimento", '<input class="input" type="date" id="a-data" value="' + esc(d.data) + '"/>') +
+    field("Fonte de Recurso", '<select class="input" id="a-fonte">' + FONTE_OPCOES.map((fo) => "<option" + (fo === d.fonte ? " selected" : "") + ">" + fo + "</option>").join("") + "</select>" +
+      '<input class="input" id="a-fonte-outro" placeholder="Qual fonte?" style="margin-top:6px;display:' + (d.fonte === "Outro" ? "block" : "none") + ';" value="' + esc(d.fonteOutro || "") + '"/>') +
+    field("Valor adiantado (R$)", '<input class="input" type="text" inputmode="decimal" id="a-valor"/>') +
+    field("Observações", '<input class="input" id="a-obs" placeholder="Ex.: adiantamento referente ao processo SEI..." value="' + esc(d.observacao || "") + '"/>') +
+    '<div class="field full"><div class="field-label">Competências em que será descontado</div><div id="a-comps"></div>' +
+    '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;"><button class="btn btn-ghost btn-sm" id="a-add" type="button">' + icon("plus", 12) + "Adicionar competência</button>" +
+    '<button class="btn btn-ghost btn-sm" id="a-dividir" type="button">Dividir o saldo igualmente nas competências</button></div>' +
+    '<div class="field-hint" id="a-resumo" style="margin-top:8px;"></div></div>' +
+    "</div>" +
+    '<div class="modal-footer"><div></div><div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modal-cancel" type="button">Cancelar</button>' +
+    '<button class="btn btn-primary" id="modal-save" type="button">' + icon("check", 14) + "Salvar</button></div></div></div></div>";
+
+  const valorInput = document.getElementById("a-valor");
+  attachCurrencyMask(valorInput, d.valor);
+
+  function opcoesCompetencia(sel) {
+    return parcelasDoInstrumento(d.instrumentoId).map((p) => {
+      const k = p.ano + "-" + String(p.mes).padStart(2, "0");
+      return '<option value="' + k + '"' + (k === sel ? " selected" : "") + ">" + MONTH_NAMES[p.mes - 1] + "/" + p.ano + "</option>";
+    }).join("");
+  }
+  function atualizaResumo() {
+    const comp = d.compensacoes.reduce((s, c) => s + (c.valor || 0), 0);
+    const saldo = (d.valor || 0) - comp;
+    document.getElementById("a-resumo").innerHTML = "Compensado: <b>" + esc(fmtCurrency(comp)) + "</b> · Saldo a compensar: <b" + (saldo < -0.005 ? ' style="color:#c0432a;"' : "") + ">" + esc(fmtCurrency(saldo)) + "</b>" +
+      (saldo < -0.005 ? " — as compensações passam do valor adiantado." : "");
+  }
+  function desenhaComps() {
+    const box = document.getElementById("a-comps");
+    box.innerHTML = d.compensacoes.length ? d.compensacoes.map((c, i) =>
+      '<div class="desconto-row" style="grid-template-columns:1fr 1fr 26px;margin-bottom:6px;"><select class="input mini a-comp-sel" data-i="' + i + '">' + opcoesCompetencia(compKey(c)) + "</select>" +
+      '<input class="input mini a-comp-val" data-i="' + i + '" placeholder="Valor"/>' +
+      '<button class="icon-btn danger a-comp-rm" data-i="' + i + '" type="button">' + icon("trash", 13) + "</button></div>").join("")
+      : '<div class="lanc-empty" style="padding:4px 0;">Nenhuma competência escolhida ainda.</div>';
+    box.querySelectorAll(".a-comp-sel").forEach((s) => s.addEventListener("change", () => {
+      const [ano, mes] = s.value.split("-").map(Number); const c = d.compensacoes[Number(s.dataset.i)]; c.ano = ano; c.mes = mes;
+    }));
+    box.querySelectorAll(".a-comp-val").forEach((inp) => {
+      const c = d.compensacoes[Number(inp.dataset.i)];
+      attachCurrencyMask(inp, c.valor || 0);
+      inp.addEventListener("input", () => { c.valor = getCurrencyValue(inp); atualizaResumo(); });
+    });
+    box.querySelectorAll(".a-comp-rm").forEach((b) => b.onclick = () => { d.compensacoes.splice(Number(b.dataset.i), 1); desenhaComps(); atualizaResumo(); });
+    atualizaResumo();
+  }
+  desenhaComps();
+  valorInput.addEventListener("input", () => { d.valor = getCurrencyValue(valorInput); atualizaResumo(); });
+  document.getElementById("a-fonte").addEventListener("change", (e) => { d.fonte = e.target.value; document.getElementById("a-fonte-outro").style.display = d.fonte === "Outro" ? "block" : "none"; });
+  document.getElementById("a-inst").addEventListener("change", (e) => { d.instrumentoId = e.target.value; d.compensacoes = []; desenhaComps(); });
+  document.getElementById("a-add").onclick = () => {
+    const ps = parcelasDoInstrumento(d.instrumentoId);
+    if (!ps.length) { alert("Este repasse não tem parcelas."); return; }
+    const usadas = new Set(d.compensacoes.map(compKey));
+    const base = ps.find((p) => !usadas.has(p.ano + "-" + String(p.mes).padStart(2, "0"))) || ps[0];
+    d.compensacoes.push({ ano: base.ano, mes: base.mes, valor: 0 });
+    desenhaComps();
+  };
+  document.getElementById("a-dividir").onclick = () => {
+    const n = d.compensacoes.length;
+    if (!n) { alert("Adicione as competências primeiro."); return; }
+    const cents = Math.round((d.valor || 0) * 100), base = Math.floor(cents / n);
+    d.compensacoes.forEach((c, i) => { c.valor = (i === n - 1 ? cents - base * (n - 1) : base) / 100; });
+    desenhaComps();
+  };
+  document.getElementById("modal-close").onclick = closeModal;
+  document.getElementById("modal-cancel").onclick = closeModal;
+  document.getElementById("modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") closeModal(); });
+  document.getElementById("modal-save").onclick = () => {
+    d.data = document.getElementById("a-data").value;
+    d.fonteOutro = document.getElementById("a-fonte-outro").value.trim();
+    d.observacao = document.getElementById("a-obs").value.trim();
+    d.valor = getCurrencyValue(valorInput);
+    if (!d.instrumentoId) { alert("Cadastre um repasse previsto antes."); return; }
+    if (!d.data) { alert("Informe a data do recebimento."); return; }
+    if (!(d.valor > 0)) { alert("Informe o valor adiantado."); return; }
+    if (d.fonte === "Outro" && !d.fonteOutro) { alert("Informe qual é a fonte."); return; }
+    const comps = d.compensacoes.filter((c) => c.valor > 0);
+    const chaves = comps.map(compKey);
+    if (new Set(chaves).size !== chaves.length) { alert("Há competência repetida. Junte os valores em uma só linha."); return; }
+    const soma = comps.reduce((s, c) => s + c.valor, 0);
+    if (soma - d.valor > 0.005) { alert("As compensações (" + fmtCurrency(soma) + ") passam do valor adiantado (" + fmtCurrency(d.valor) + ")."); return; }
+    const novo = { id: d.id || uid("adi"), instrumentoId: d.instrumentoId, data: d.data, fonte: d.fonte, fonteOutro: d.fonte === "Outro" ? d.fonteOutro : "", valor: d.valor, observacao: d.observacao, compensacoes: comps };
+    if (d.id) state.adiantamentos = state.adiantamentos.map((a) => (a.id === d.id ? novo : a)); else state.adiantamentos.push(novo);
+    persistir(); closeModal(); renderAll();
+  };
+}
 
 /* ============================================================
    POSIÇÃO CONTÁBIL (DATA DE CORTE) — usada nos relatórios
@@ -1737,10 +1934,14 @@ function montarAbas(dados) {
   const wsRecebimentos = XLSX.utils.aoa_to_sheet([
     [COL_DESC_REPASSE, "Unidade/Contrato", "Competência (MM/AAAA)", "Data de Efetivação", "Valor Recebido (líquido)", "Fonte"]
   ].concat(dados.recebimentos));
+  const wsAdiant = XLSX.utils.aoa_to_sheet([
+    [COL_DESC_REPASSE, "Data do recebimento", "Fonte", "Valor adiantado", "Compensações (MM/AAAA:valor; ...)", "Observações"]
+  ].concat(dados.adiantamentos || []));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsPrevistos, "Repasses Previstos");
   XLSX.utils.book_append_sheet(wb, wsDescontos, "Descontos");
   XLSX.utils.book_append_sheet(wb, wsRecebimentos, "Recebimentos");
+  XLSX.utils.book_append_sheet(wb, wsAdiant, "Adiantamentos");
   return wb;
 }
 
@@ -1753,6 +1954,7 @@ function gerarModeloXLSX() {
         ["Contrato de Gestão nº 001/2025 - HB", "CONTRATO 001 - HB", "01/2025", "Custeio", 4000000],
       ],
       recebimentos: [["Contrato de Gestão nº 001/2025 - HB", "CONTRATO 001 - HB", "01/2025", "05/01/2025", 44673696.25, "FONTE 100"]],
+      adiantamentos: [["Contrato de Gestão nº 001/2025 - HB", "20/01/2025", "FONTE 100", 3000000, "02/2025:1500000.00; 03/2025:1500000.00", "Exemplo"]],
     });
     XLSX.writeFile(wb, "modelo_importacao_igesdf.xlsx");
   });
@@ -1769,12 +1971,17 @@ function gerarBackupXLSX() {
     ordenadas.forEach((p) => {
       const inst = instrumentoDe(p) || {};
       const comp = fmtCompetenciaTxt(p.mes, p.ano);
-      (p.descontos || []).forEach((d) => descontos.push([inst.descricao || "", inst.unidade || inst.descricao || "", comp, d.tipo === "Outro" ? (d.tipoOutro || "Outro") : d.tipo, d.valor]));
+      (p.descontos || []).filter((d) => !d.adiantamentoId).forEach((d) => descontos.push([inst.descricao || "", inst.unidade || inst.descricao || "", comp, d.tipo === "Outro" ? (d.tipoOutro || "Outro") : d.tipo, d.valor]));
       (p.lancamentos || []).slice().sort((a, b) => (a.dataEfetivacao || "").localeCompare(b.dataEfetivacao || "")).forEach((l) =>
         recebimentos.push([inst.descricao || "", inst.unidade || inst.descricao || "", comp, fmtDataTxt(l.dataEfetivacao), l.valorRecebido, l.fonte === "Outro" ? (l.fonteOutro || "Outro") : l.fonte]));
     });
-    XLSX.writeFile(montarAbas({ previstos, descontos, recebimentos }), nomeArquivoBackup());
-    uiBackupInfo = "Backup gerado: " + nomeArquivoBackup() + " — " + previstos.length + " repasse(s), " + descontos.length + " desconto(s) e " + recebimentos.length + " recebimento(s).";
+    const adiantamentos = state.adiantamentos.slice().sort((a, b) => (a.data || "").localeCompare(b.data || "")).map((a) => {
+      const inst = state.instrumentos.find((i) => i.id === a.instrumentoId) || {};
+      const comps = (a.compensacoes || []).slice().sort((x, y) => compKey(x).localeCompare(compKey(y))).map((c) => fmtCompetenciaTxt(c.mes, c.ano) + ":" + Number(c.valor).toFixed(2)).join("; ");
+      return [inst.descricao || "", fmtDataTxt(a.data), a.fonte === "Outro" ? (a.fonteOutro || "Outro") : a.fonte, a.valor, comps, a.observacao || ""];
+    });
+    XLSX.writeFile(montarAbas({ previstos, descontos, recebimentos, adiantamentos }), nomeArquivoBackup());
+    uiBackupInfo = "Backup gerado: " + nomeArquivoBackup() + " — " + previstos.length + " repasse(s), " + descontos.length + " desconto(s), " + recebimentos.length + " recebimento(s) e " + adiantamentos.length + " adiantamento(s).";
     renderAll();
   });
 }
@@ -1902,7 +2109,53 @@ function parseArquivoImportacao(wb) {
       lancamentos.push(Object.assign(row, { alvo, dup, avisos, valid: erros.length === 0 && !dup, erros }));
     });
   }
-  return { previstos, descontos, lancamentos };
+  const adiantamentos = [];
+  const shAdi = wb.Sheets["Adiantamentos"];
+  if (shAdi) {
+    XLSX.utils.sheet_to_json(shAdi, { defval: "" }).forEach((r, i) => {
+      const linha = i + 2;
+      const descRepasse = normStr(r[COL_DESC_REPASSE]);
+      const data = parseDataCell(r["Data do recebimento"]);
+      const fonteRaw = normStr(r["Fonte"]);
+      const fonteMatch = FONTE_OPCOES.find((f) => normKey(f) === normKey(fonteRaw));
+      const fonte = fonteMatch || "Outro", fonteOutro = fonteMatch ? "" : fonteRaw;
+      const valor = toNumber(r["Valor adiantado"]);
+      const observacao = normStr(r["Observações"]);
+      const erros = [], avisos = [];
+      if (!descRepasse) erros.push("Descrição do repasse vazia");
+      if (!data) erros.push("Data do recebimento inválida (use DD/MM/AAAA)");
+      if (!(valor > 0)) erros.push("Valor adiantado inválido");
+      if (!fonteRaw) erros.push("Fonte vazia");
+      let alvo = null; const compensacoes = [];
+      if (descRepasse) {
+        const cands = instCandidatos(normKey(descRepasse), "", virtuais);
+        if (!cands.length) erros.push("Repasse não encontrado: " + descRepasse);
+        else if (cands.length > 1) erros.push("Mais de um repasse com este nome: " + descRepasse);
+        else alvo = cands[0];
+      }
+      normStr(r["Compensações (MM/AAAA:valor; ...)"]).split(";").map((x) => x.trim()).filter(Boolean).forEach((trecho) => {
+        const [c, v] = trecho.split(":").map((x) => x.trim());
+        const comp = parseCompetencia(c), val = toNumber(v);
+        if (!comp || !(val > 0)) { erros.push("Compensação inválida: \"" + trecho + "\" (use MM/AAAA:valor)"); return; }
+        if (alvo) {
+          const existe = alvo.tipo === "real"
+            ? state.parcelas.some((p) => p.instrumentoId === alvo.inst.id && p.mes === comp.mes && p.ano === comp.ano)
+            : mesesRollover(alvo.v.row.mesInicial, alvo.v.row.anoInicial, alvo.v.row.numParcelas).some((m) => m.mes === comp.mes && m.ano === comp.ano);
+          if (!existe) { erros.push("O repasse não tem parcela em " + fmtCompetenciaTxt(comp.mes, comp.ano)); return; }
+        }
+        compensacoes.push({ ano: comp.ano, mes: comp.mes, valor: val });
+      });
+      if (new Set(compensacoes.map(compKey)).size !== compensacoes.length) erros.push("Competência repetida nas compensações");
+      if (compensacoes.reduce((s, c) => s + c.valor, 0) - (valor || 0) > 0.005) erros.push("As compensações passam do valor adiantado");
+      let dup = false;
+      if (alvo && alvo.tipo === "real" && !erros.length) {
+        const ja = state.adiantamentos.filter((a) => a.instrumentoId === alvo.inst.id && a.data === data && Math.abs(a.valor - valor) < 0.005 && normKey(a.fonte === "Outro" ? a.fonteOutro : a.fonte) === normKey(fonteOutro || fonte)).length;
+        if (ehDuplicado("A|" + alvo.inst.id + "|" + data + "|" + valor.toFixed(2) + "|" + normKey(fonteOutro || fonte), ja)) { dup = true; avisos.push("Adiantamento idêntico já cadastrado — será ignorado"); }
+      }
+      adiantamentos.push({ linha, descRepasse, data, fonte, fonteOutro, valor, observacao, compensacoes, alvo, dup, avisos, valid: erros.length === 0 && !dup, erros });
+    });
+  }
+  return { previstos, descontos, lancamentos, adiantamentos };
 }
 
 function confirmarImportacao() {
@@ -1910,6 +2163,7 @@ function confirmarImportacao() {
   const previstosValidos = uiImportData.previstos.filter((p) => p.valid);
   const descontosValidos = uiImportData.descontos.filter((d) => d.valid);
   const lancamentosValidos = uiImportData.lancamentos.filter((l) => l.valid);
+  const adiantamentosValidos = (uiImportData.adiantamentos || []).filter((a) => a.valid);
   const instPorLinha = new Map();
 
   previstosValidos.forEach((row) => {
@@ -1943,9 +2197,16 @@ function confirmarImportacao() {
     lancOk++;
   });
 
+  let adiOk = 0;
+  adiantamentosValidos.forEach((row) => {
+    const instId = row.alvo.tipo === "real" ? row.alvo.inst.id : (instPorLinha.get(row.alvo.v.row) || {}).id;
+    if (!instId) return;
+    state.adiantamentos.push({ id: uid("adi"), instrumentoId: instId, data: row.data, fonte: row.fonte, fonteOutro: row.fonteOutro, valor: row.valor, observacao: row.observacao, compensacoes: row.compensacoes });
+    adiOk++;
+  });
   persistir();
-  const ign = uiImportData.previstos.concat(uiImportData.descontos, uiImportData.lancamentos).filter((r) => r.dup).length;
-  uiImportResultado = { previstos: previstosValidos.length, descontos: descOk, lancamentos: lancOk, ignorados: ign };
+  const ign = uiImportData.previstos.concat(uiImportData.descontos, uiImportData.lancamentos, uiImportData.adiantamentos || []).filter((r) => r.dup).length;
+  uiImportResultado = { previstos: previstosValidos.length, descontos: descOk, lancamentos: lancOk, adiantamentos: adiOk, ignorados: ign };
   uiImportData = null;
   if (previstosValidos.length) state.anoAtual = previstosValidos[0].anoInicial;
   renderAll();
@@ -1981,7 +2242,7 @@ function renderImportarView(topbar, content) {
 
   let html = '<div class="panel" style="padding:16px 18px;margin-bottom:16px;">' +
     '<div class="panel-header" style="padding:0 0 8px;border:none;">Backup dos dados</div>' +
-    '<div style="font-size:12.5px;color:#58585a;margin-bottom:10px;">Gera um arquivo .xlsx com todos os anos, nas 3 abas do modelo (Repasses Previstos, Descontos e Recebimentos). ' +
+    '<div style="font-size:12.5px;color:#58585a;margin-bottom:10px;">Gera um arquivo .xlsx com todos os anos, nas abas do modelo (Repasses Previstos, Descontos, Recebimentos e Adiantamentos). ' +
     "O mesmo arquivo pode ser enviado de volta na etapa 2. Itens que já existem são identificados como duplicados e ignorados.</div>" +
     '<button class="btn btn-dark" id="btn-backup" type="button"' + (uiImportLibState === "loading" ? " disabled" : "") + ">" + icon("download", 14) + "Baixar backup (.xlsx)</button>" +
     (uiBackupInfo ? '<div class="field-hint" style="margin-top:8px;">' + esc(uiBackupInfo) + "</div>" : "") +
@@ -1989,7 +2250,7 @@ function renderImportarView(topbar, content) {
 
   html += '<div class="panel" style="padding:16px 18px;margin-bottom:16px;">' +
     '<div class="panel-header" style="padding:0 0 8px;border:none;">1. Baixe o modelo</div>' +
-    '<div style="font-size:12.5px;color:#58585a;margin-bottom:10px;">Arquivo .xlsx com 3 abas: Repasses Previstos, Descontos e Recebimentos, já com um exemplo preenchido. ' +
+    '<div style="font-size:12.5px;color:#58585a;margin-bottom:10px;">Arquivo .xlsx com 4 abas: Repasses Previstos, Descontos, Recebimentos e Adiantamentos, já com um exemplo preenchido. ' +
     "Nas abas Descontos e Recebimentos, a coluna <b>" + COL_DESC_REPASSE + "</b> identifica o repasse (contrato ou termo aditivo).</div>" +
     '<button class="btn btn-ghost" id="btn-baixar-modelo" type="button">' + icon("download", 14) + "Baixar modelo (.xlsx)</button>" +
     "</div>";
@@ -2003,12 +2264,13 @@ function renderImportarView(topbar, content) {
   if (uiImportResultado) {
     html += '<div class="panel" style="padding:16px 18px;margin-bottom:16px;background:#eef7de;border-color:#d7e7b8;">' +
       "Importação concluída: " + uiImportResultado.previstos + " repasse(s) previsto(s), " + uiImportResultado.descontos + " desconto(s) e " + uiImportResultado.lancamentos + " recebimento(s) gravados." +
+      (uiImportResultado.adiantamentos ? " " + uiImportResultado.adiantamentos + " adiantamento(s) também." : "") +
       (uiImportResultado.ignorados ? " " + uiImportResultado.ignorados + " linha(s) duplicada(s) foram ignoradas." : "") +
       "</div>";
   }
 
   if (uiImportData) {
-    const todas = uiImportData.previstos.concat(uiImportData.descontos, uiImportData.lancamentos);
+    const todas = uiImportData.previstos.concat(uiImportData.descontos, uiImportData.lancamentos, uiImportData.adiantamentos || []);
     const totalValidas = todas.filter((r) => r.valid).length;
     const totalDups = todas.filter((r) => r.dup).length;
     if (totalDups) html += '<div class="panel" style="padding:12px 16px;margin-bottom:14px;background:#fff4e5;border-color:#f3d6a8;">Atenção: <b>' + totalDups +
@@ -2027,6 +2289,11 @@ function renderImportarView(topbar, content) {
     html += tabelaImportHtml("Recebimentos", uiImportData.lancamentos, [
       { label: COL_DESC_REPASSE, get: (r) => r.descRepasse || r.unidade }, { label: "Competência", get: compTxt },
       { label: "Data Efetivação", get: (r) => fmtDateBR(r.dataEfetivacao) }, { label: "Valor Recebido", get: (r) => fmtCurrency(r.valorRecebido) }, { label: "Fonte", get: (r) => (r.fonte === "Outro" && r.fonteOutro ? r.fonteOutro : r.fonte) },
+    ]);
+    html += tabelaImportHtml("Adiantamentos", uiImportData.adiantamentos || [], [
+      { label: COL_DESC_REPASSE, get: (r) => r.descRepasse }, { label: "Data", get: (r) => fmtDateBR(r.data) }, { label: "Valor", get: (r) => fmtCurrency(r.valor) },
+      { label: "Fonte", get: (r) => (r.fonte === "Outro" && r.fonteOutro ? r.fonteOutro : r.fonte) },
+      { label: "Compensações", get: (r) => r.compensacoes.map((c) => fmtCompetenciaTxt(c.mes, c.ano)).join(", ") },
     ]);
     html += '<div style="display:flex;gap:8px;">' +
       '<button class="btn btn-ghost" id="btn-cancelar-import" type="button">Cancelar</button>' +
