@@ -63,7 +63,7 @@
   .kpi-card::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--accent, var(--blue)); }
   .kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--gray); text-transform: uppercase;
     display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-  .kpi-value { font-family: var(--mono); font-size: 22px; font-weight: 600; color: var(--ink); line-height: 1.1; }
+  .kpi-value { font-family: var(--mono); font-size: 17px; letter-spacing: -.01em; overflow-wrap: anywhere; font-weight: 600; color: var(--ink); line-height: 1.1; }
   .kpi-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .kpi-cross { display: flex; align-items: center; gap: 14px; }
   .status-cross { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; }
@@ -181,6 +181,8 @@
   .filter-field label { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
 
   /* Cabeçalho de impressão (só aparece no PDF) */
+  .rel-filtros { font-size: 12.5px; color: var(--gray); margin: 0 0 14px; padding: 9px 12px; background: #fff; border: 1px solid var(--border); border-left: 3px solid var(--blue); border-radius: 6px; line-height: 1.5; }
+  .rel-filtros .rel-regra { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
   .print-header { display: none; }
   @media print {
     .print-header { display: flex !important; align-items: center; gap: 14px; padding-bottom: 14px; margin-bottom: 14px; border-bottom: 2px solid #1b94c2; }
@@ -377,7 +379,7 @@ const DB_KEY_TIPOS_CUSTOM = "igesdf_tipos_custom_v3";
  * Web. Enquanto estiver vazia, o sistema funciona 100% local
  * (localStorage) e a sincronização fica automaticamente desativada.
  */
-const SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbwags3D3Yp9XI47_X-akHFDgyrT4LwKnalbnDInR9oftr3F54joOAEL-AdHYaapW65uNQ/exec";
+const SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbxq1no_dW8o3VCEIIdGVO8m97RcqenlL8-RilU-EazpKsIZv5CY1Bc3r1JUUUWcrCcBOQ/exec";
 const SYNC_DEBOUNCE_MS = 2000;
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -428,6 +430,7 @@ const state = {
   anoAtual: null,
   filters: { lancMonthOpen: null, lancQuery: "", mensalMes: null, fonteAtual: null },
   painelFiltros: { instrumentoId: "", fonte: "", mesIni: 1, mesFim: 12, status: "" },
+  relFiltros: { corte: hojeISO(), instrumentoId: "", fonte: "", status: "", mesIni: 1, mesFim: 12 },
 };
 
 function carregarEstado() {
@@ -553,6 +556,7 @@ function buildSyncPayload() {
   }));
   const parcelasFlat = state.parcelas.map((p) => ({
     id: p.id, instrumentoId: p.instrumentoId, ano: p.ano, mes: p.mes, valorPrevisto: p.valorPrevisto, dataContrato: p.dataContrato,
+    descontos: p.descontos || [],
   }));
   return { instrumentos: state.instrumentos, parcelas: parcelasFlat, lancamentos: lancamentosFlat, tiposCustom: state.tiposCustom };
 }
@@ -587,9 +591,19 @@ async function carregarDeSheets() {
     if (json.error) throw new Error(json.error);
     const data = json.data;
     if (!data || !data.instrumentos || !data.instrumentos.length) return false; // planilha vazia: mantém local/seed
-    const parcelasComLancs = data.parcelas.map((p) => ({
-      ...p, lancamentos: data.lancamentos.filter((l) => l.parcelaId === p.id).map((l) => { const c = Object.assign({}, l); delete c.parcelaId; return c; }),
-    }));
+    // Descontos vêm da planilha (coluna DescontosJSON). Se a planilha ainda não os tem (versão antiga do Code.gs),
+    // preserva os descontos que já existem neste navegador, para não perdê-los.
+    const locaisPorId = {};
+    state.parcelas.forEach((p) => { locaisPorId[p.id] = p; });
+    const parcelasComLancs = data.parcelas.map((p) => {
+      const remotos = Array.isArray(p.descontos) ? p.descontos : [];
+      const local = locaisPorId[p.id];
+      const descontos = remotos.length ? remotos : (local && local.descontos ? local.descontos : []);
+      return {
+        ...p, descontos: descontos,
+        lancamentos: data.lancamentos.filter((l) => l.parcelaId === p.id).map((l) => { const c = Object.assign({}, l); delete c.parcelaId; return c; }),
+      };
+    });
     state.instrumentos = data.instrumentos;
     state.parcelas = parcelasComLancs;
     state.tiposCustom = data.tiposCustom || [];
@@ -668,12 +682,12 @@ function svgDonutChart(data, size) {
 const NAV_ITEMS = [
   { id: "dashboard", label: "Painel Geral", icon: "dashboard" },
   { id: "previstos", label: "Repasses Previstos", icon: "filetext" },
-  { id: "lancamentos", label: "Lançamentos", icon: "table" },
+  { id: "lancamentos", label: "Recebimentos", icon: "table" },
   { id: "mensal", label: "Relatório Mensal", icon: "calendar" },
   { id: "anual", label: "Relatório Anual", icon: "bar" },
   { id: "demonstrativo", label: "Demonstrativo Anual", icon: "sheet" },
   { id: "fonte", label: "Por Fonte de Recurso", icon: "layers" },
-  { id: "importar", label: "Importação", icon: "upload" },
+  { id: "importar", label: "Importação e Backup", icon: "upload" },
 ];
 
 function renderSidebar() {
@@ -810,7 +824,7 @@ function renderDashboardView(topbar, content) {
     '<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;">' +
     '<span style="width:10px;height:10px;border-radius:3px;background:' + corDaFonte(x.fonte, listaFontes) + ';"></span>' +
     '<span style="color:#8a9296;flex:1;">' + esc(x.fonte) + '</span>' +
-    '<span class="mono" style="font-weight:600;">' + esc(fmtCurrencyCompact(x.total)) + "</span></div>"
+    '<span class="mono" style="font-weight:600;">' + esc(fmtCurrency(x.total)) + "</span></div>"
   ).join("") : '<div class="field-hint">Nenhum recebimento no período/filtro selecionado.</div>';
 
   const semInstrumentos = state.instrumentos.length === 0;
@@ -826,11 +840,11 @@ function renderDashboardView(topbar, content) {
     (semInstrumentos ? '<div class="panel" style="padding:16px 18px;margin-bottom:18px;background:#e3f4f8;border-color:#bfe3ec;">' +
       "Nenhum repasse previsto foi cadastrado ainda. Comece em <b>Repasses Previstos</b>." + "</div>" : "") +
     '<div class="kpi-row">' +
-    kpiCard("Repasse Previsto (filtro)", fmtCurrencyCompact(previsto), "", COLORS.blue, "sheet") +
-    kpiCard("Total de Descontos", fmtCurrencyCompact(desconto), "", COLORS.orange, "minus") +
-    kpiCard("Valor Líquido a Receber", fmtCurrencyCompact(liquido), "", COLORS.lime, "sheet") +
-    kpiCard("Total Recebido", fmtCurrencyCompact(recebido), "", COLORS.teal, "bar") +
-    kpiCard("Saldo a Repassar", fmtCurrencyCompact(saldo), "", COLORS.gray, "alert") +
+    kpiCard("Repasse Previsto (filtro)", fmtCurrency(previsto), "", COLORS.blue, "sheet") +
+    kpiCard("Total de Descontos", fmtCurrency(desconto), "", COLORS.orange, "minus") +
+    kpiCard("Valor Líquido a Receber", fmtCurrency(liquido), "", COLORS.lime, "sheet") +
+    kpiCard("Total Recebido", fmtCurrency(recebido), "", COLORS.teal, "bar") +
+    kpiCard("Saldo a Repassar", fmtCurrency(saldo), "", COLORS.gray, "alert") +
     "</div>" +
     '<div class="grid-2">' +
     '<div class="panel" style="padding:18px;"><div class="panel-header" style="padding:0 0 12px;border:none;">Previsto x Recebido x Desconto por competência</div>' + svgBarChart(chartData, series) + "</div>" +
@@ -881,7 +895,7 @@ function renderPrevistosView(topbar, content) {
       const chips = parcelas.map((p) => {
         const tp = totaisParcela(p);
         if (tp.status === "quitado") quitadas++;
-        return '<span class="parcela-chip' + (tp.status === "quitado" ? " recebido" : "") + '">' + MONTH_SHORT[p.mes - 1] + "/" + p.ano + " · " + fmtCurrencyCompact(p.valorPrevisto) +
+        return '<span class="parcela-chip' + (tp.status === "quitado" ? " recebido" : "") + '">' + MONTH_SHORT[p.mes - 1] + "/" + p.ano + " · " + fmtCurrency(p.valorPrevisto) +
           (tp.status === "quitado" ? " ✓" : tp.status === "parcial" ? " ◐" : "") + "</span>";
       }).join("");
       const inicio = MONTH_SHORT[inst.mesInicio - 1] + "/" + inst.anoInicio;
@@ -910,7 +924,7 @@ function renderPrevistosView(topbar, content) {
     const inst = state.instrumentos.find((i) => i.id === el.dataset.id);
     const parcelas = state.parcelas.filter((p) => p.instrumentoId === inst.id);
     const comLancamentos = parcelas.filter((p) => (p.lancamentos || []).length > 0).length;
-    const aviso = comLancamentos > 0 ? "\n\nATENÇÃO: " + comLancamentos + " parcela(s) já têm lançamentos registrados — esses lançamentos também serão apagados." : "";
+    const aviso = comLancamentos > 0 ? "\n\nATENÇÃO: " + comLancamentos + " parcela(s) já têm recebimentos registrados — esses recebimentos também serão apagados." : "";
     if (!confirm('Excluir "' + inst.descricao + '" e todas as suas ' + parcelas.length + " parcela(s)?" + aviso)) return;
     state.instrumentos = state.instrumentos.filter((i) => i.id !== inst.id);
     state.parcelas = state.parcelas.filter((p) => p.instrumentoId !== inst.id);
@@ -951,7 +965,7 @@ function openInstrumentoModal(existing) {
     field("Observações Gerais", '<textarea class="input" id="f-obs" placeholder="Notas, contexto, condições do instrumento...">' + esc(form.observacoes) + "</textarea>", { full: true }) +
     '<div class="field full" id="f-preview-wrap"></div>' +
     "</div>" +
-    (temLancamentos ? '<div class="modal-note" style="padding:0 20px 12px;color:#b8480f;">Este item já tem parcelas com lançamentos registrados. Alterar valor, nº de parcelas, mês ou ano inicial vai <b>recriar todas as parcelas</b> e apagar os lançamentos já feitos.</div>' : "") +
+    (temLancamentos ? '<div class="modal-note" style="padding:0 20px 12px;color:#b8480f;">Este item já tem parcelas com recebimentos registrados. Alterar valor, nº de parcelas, mês ou ano inicial vai <b>recriar todas as parcelas</b> e apagar os recebimentos já feitos.</div>' : "") +
     '<div class="modal-footer"><div></div>' +
     '<div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modal-cancel" type="button">Cancelar</button>' +
     '<button class="btn btn-primary" id="modal-save" type="button">' + icon("check", 14) + "Salvar</button></div></div>" +
@@ -973,7 +987,7 @@ function openInstrumentoModal(existing) {
     let html = '<div class="field-label" style="margin-bottom:6px;">Prévia das parcelas (distribuição igual)</div><div class="parcela-preview">';
     let ano = anoIni, mes = mesIni;
     for (let i = 0; i < Math.min(n, 36); i++) {
-      html += '<span class="parcela-chip">' + MONTH_SHORT[mes - 1] + "/" + ano + " · " + fmtCurrencyCompact(porParcela) + "</span>";
+      html += '<span class="parcela-chip">' + MONTH_SHORT[mes - 1] + "/" + ano + " · " + fmtCurrency(porParcela) + "</span>";
       mes++; if (mes > 12) { mes = 1; ano++; }
     }
     if (n > 36) html += '<span class="parcela-chip">+' + (n - 36) + " parcelas…</span>";
@@ -1027,7 +1041,7 @@ function openInstrumentoModal(existing) {
 /* ============================ VIEW: LANÇAMENTOS ============================ */
 function renderLancamentosView(topbar, content) {
   topbar.innerHTML = topbarHtml(
-    "Lançamentos — " + state.anoAtual,
+    "Recebimentos — " + state.anoAtual,
     "Registre os recebimentos linha a linha (valor já líquido). O desconto é definido uma vez por competência, no card da parcela",
     '<div class="input-icon-wrap">' + icon("search", 14) +
       '<input class="input" id="lanc-search" style="width:240px;" placeholder="Buscar processo SEI, unidade..." value="' + esc(state.filters.lancQuery) + '"/></div>'
@@ -1060,9 +1074,9 @@ function renderLancamentosView(topbar, content) {
       '<div class="month-left"><span class="month-name">' + MONTH_NAMES[m.mes - 1] + "</span>" +
       pill(m.parcelas.length + " parcela" + (m.parcelas.length === 1 ? "" : "s"), "neutral") +
       (pendentes > 0 ? pill(pendentes + " pendente" + (pendentes === 1 ? "" : "s"), "warn") : pill("tudo lançado", "good")) + "</div>" +
-      '<div class="month-right"><span style="font-size:12.5px;color:#8a9296;">Previsto <b class="mono" style="color:#1f2d33;">' + esc(fmtCurrencyCompact(t.previsto)) + "</b></span>" +
-      '<span style="font-size:12.5px;color:#8a9296;">Recebido <b class="mono" style="color:#1f2d33;">' + esc(fmtCurrencyCompact(t.recebido)) + "</b></span>" +
-      (t.desconto > 0 ? '<span style="font-size:12.5px;color:#8a9296;">Desconto <b class="mono" style="color:#1f2d33;">' + esc(fmtCurrencyCompact(t.desconto)) + "</b></span>" : "") +
+      '<div class="month-right"><span style="font-size:12.5px;color:#8a9296;">Previsto <b class="mono" style="color:#1f2d33;">' + esc(fmtCurrency(t.previsto)) + "</b></span>" +
+      '<span style="font-size:12.5px;color:#8a9296;">Recebido <b class="mono" style="color:#1f2d33;">' + esc(fmtCurrency(t.recebido)) + "</b></span>" +
+      (t.desconto > 0 ? '<span style="font-size:12.5px;color:#8a9296;">Desconto <b class="mono" style="color:#1f2d33;">' + esc(fmtCurrency(t.desconto)) + "</b></span>" : "") +
       "</div></div>" +
       (open ? '<div style="padding:6px 0 12px;">' + cards + "</div>" : "") +
       "</div>"
@@ -1128,7 +1142,7 @@ function parcelaCardHtml(p) {
   let acumulado = 0;
   const lancsComSaldo = lancs.map((l) => { acumulado += l.valorRecebido || 0; return { l, saldoApos: tp.liquido - acumulado }; });
 
-  const descontosResumo = (p.descontos || []).map((d) => descontoTipoLabel(d) + " " + fmtCurrencyCompact(d.valor)).join(" · ");
+  const descontosResumo = (p.descontos || []).map((d) => descontoTipoLabel(d) + " " + fmtCurrency(d.valor)).join(" · ");
   const descontoOpen = uiDescontoOpenParcela === p.id;
 
   const bodyRows = lancsComSaldo.map(({ l, saldoApos }) => {
@@ -1257,7 +1271,7 @@ function wireLancamentosEvents(content) {
   }));
   content.querySelectorAll(".btn-dellanc").forEach((el) => el.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (!confirm("Excluir este lançamento?")) return;
+    if (!confirm("Excluir este recebimento?")) return;
     const p = state.parcelas.find((pp) => pp.id === el.dataset.parcela);
     p.lancamentos = (p.lancamentos || []).filter((ll) => ll.id !== el.dataset.lanc);
     persistir(); renderAll();
@@ -1325,198 +1339,312 @@ function wireDescontoEditorInputs(content) {
 }
 
 
+/* ============================================================
+   POSIÇÃO CONTÁBIL (DATA DE CORTE) — usada nos relatórios
+   ------------------------------------------------------------
+   Regra: a contabilidade é estática. Para a posição em uma data:
+   • Previsto e Descontos entram por inteiro na sua competência.
+   • Só entram como "Recebido" os recebimentos com data de
+     efetivação ATÉ a data de corte.
+   • Recebimentos feitos DEPOIS da data de corte aparecem à parte.
+   • Saldo na data de corte = Previsto − Descontos − Recebido até o corte.
+   ============================================================ */
+function hojeISO() { return dateToISO(new Date()); }
+
+function posParcela(p, f) {
+  const lancs = (p.lancamentos || []).filter((l) => !f.fonte || fonteLabel(l) === f.fonte);
+  let ate = 0, depois = 0, qtdAte = 0;
+  lancs.forEach((l) => {
+    const v = l.valorRecebido || 0;
+    if (!l.dataEfetivacao || l.dataEfetivacao <= f.corte) { ate += v; qtdAte++; } else { depois += v; }
+  });
+  const previsto = p.valorPrevisto || 0;
+  const desconto = descontoTotalParcela(p);
+  const liquido = previsto - desconto;
+  const saldo = liquido - ate;
+  const status = qtdAte === 0 ? "pendente" : saldo > 0.005 ? "parcial" : "quitado";
+  return { previsto, desconto, liquido, ate, depois, saldo, status };
+}
+function posSoma(parcelas, f) {
+  const t = { previsto: 0, desconto: 0, liquido: 0, ate: 0, depois: 0, saldo: 0 };
+  parcelas.forEach((p) => {
+    const x = posParcela(p, f);
+    t.previsto += x.previsto; t.desconto += x.desconto; t.liquido += x.liquido; t.ate += x.ate; t.depois += x.depois; t.saldo += x.saldo;
+  });
+  return t;
+}
+function parcelasRel(ano, f, mesUnico) {
+  return parcelasDoAno(ano).filter((p) => {
+    if (mesUnico) { if (p.mes !== mesUnico) return false; } else if (p.mes < f.mesIni || p.mes > f.mesFim) return false;
+    if (f.instrumentoId && p.instrumentoId !== f.instrumentoId) return false;
+    if (f.status && posParcela(p, f).status !== f.status) return false;
+    return true;
+  });
+}
+
+function relFilterBar(opts) {
+  const f = state.relFiltros;
+  const ano = state.anoAtual;
+  const fontes = Array.from(new Set(parcelasDoAno(ano).flatMap((p) => (p.lancamentos || []).map((l) => fonteLabel(l)))));
+  let h = '<div class="filter-bar no-print">' +
+    '<div class="filter-field"><label>Data de corte (posição em)</label><input class="input" type="date" id="rf-corte" value="' + esc(f.corte) + '"/></div>' +
+    '<div class="filter-field"><label>Instrumento / Contrato</label><select class="input" id="rf-instrumento"><option value="">Todos</option>' +
+    instrumentosDoAno(ano).map((i) => '<option value="' + i.id + '"' + (i.id === f.instrumentoId ? " selected" : "") + ">" + esc(i.descricao) + "</option>").join("") + "</select></div>";
+  if (opts.fonte) {
+    h += '<div class="filter-field"><label>Fonte de Recurso</label><select class="input" id="rf-fonte"><option value="">Todas</option>' +
+      fontes.map((fo) => '<option value="' + esc(fo) + '"' + (fo === f.fonte ? " selected" : "") + ">" + esc(fo) + "</option>").join("") + "</select></div>";
+  }
+  if (opts.faixa) {
+    h += '<div class="filter-field"><label>Competência de</label><select class="input" id="rf-mesini">' +
+      MONTH_NAMES.map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === f.mesIni ? " selected" : "") + ">" + n + "</option>").join("") + "</select></div>" +
+      '<div class="filter-field"><label>até</label><select class="input" id="rf-mesfim">' +
+      MONTH_NAMES.map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === f.mesFim ? " selected" : "") + ">" + n + "</option>").join("") + "</select></div>";
+  }
+  h += '<div class="filter-field"><label>Status na data de corte</label><select class="input" id="rf-status"><option value="">Todos</option>' +
+    STATUS_OPCOES.map((s) => '<option value="' + s.v + '"' + (s.v === f.status ? " selected" : "") + ">" + s.l + "</option>").join("") + "</select></div>" +
+    '<button class="btn btn-ghost btn-sm" id="rf-fim-ano" type="button">Fim do exercício</button>' +
+    '<button class="btn btn-ghost btn-sm" id="rf-limpar" type="button">' + icon("x", 13) + "Limpar filtros</button></div>";
+  return h;
+}
+function wireRelFilters() {
+  const f = state.relFiltros;
+  const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("change", (e) => { fn(e.target.value); renderAll(); }); };
+  bind("rf-corte", (v) => { f.corte = v || hojeISO(); });
+  bind("rf-instrumento", (v) => { f.instrumentoId = v; });
+  bind("rf-fonte", (v) => { f.fonte = v; });
+  bind("rf-status", (v) => { f.status = v; });
+  bind("rf-mesini", (v) => { f.mesIni = Number(v); if (f.mesFim < f.mesIni) f.mesFim = f.mesIni; });
+  bind("rf-mesfim", (v) => { f.mesFim = Number(v); if (f.mesIni > f.mesFim) f.mesIni = f.mesFim; });
+  const fim = document.getElementById("rf-fim-ano"); if (fim) fim.onclick = () => { f.corte = state.anoAtual + "-12-31"; renderAll(); };
+  const lim = document.getElementById("rf-limpar"); if (lim) lim.onclick = () => { state.relFiltros = { corte: hojeISO(), instrumentoId: "", fonte: "", status: "", mesIni: 1, mesFim: 12 }; renderAll(); };
+}
+/** Texto que descreve os filtros — aparece na tela e no PDF. */
+function relFiltrosTexto(opts) {
+  const f = state.relFiltros;
+  const inst = f.instrumentoId ? (state.instrumentos.find((i) => i.id === f.instrumentoId) || {}).descricao : "Todos";
+  const partes = ["<b>Posição em " + fmtDateBR(f.corte) + "</b>", "Instrumento: " + esc(inst || "Todos")];
+  if (opts.fonte) partes.push("Fonte: " + esc(f.fonte || "Todas"));
+  if (opts.faixa) partes.push("Competência: " + MONTH_NAMES[f.mesIni - 1] + " a " + MONTH_NAMES[f.mesFim - 1]);
+  partes.push("Status: " + esc(f.status ? statusLabel(f.status) : "Todos"));
+  let h = '<div class="rel-filtros">' + partes.join(" · ") +
+    '<div class="rel-regra">Saldo = Previsto − Descontos − Recebido até a data de corte. Recebimentos feitos depois da data de corte aparecem à parte.' +
+    (f.fonte ? " Com filtro de fonte, o saldo considera só os recebimentos dessa fonte." : "") + "</div></div>";
+  return h;
+}
+function relKpis(t) {
+  return '<div class="kpi-row">' +
+    kpiCard("Repasse Previsto", fmtCurrency(t.previsto), "", COLORS.blue) +
+    kpiCard("Total de Descontos", fmtCurrency(t.desconto), "", COLORS.orange) +
+    kpiCard("Valor Líquido a Receber", fmtCurrency(t.liquido), "", COLORS.lime) +
+    kpiCard("Recebido até a data de corte", fmtCurrency(t.ate), "", COLORS.teal) +
+    kpiCard("Recebido depois da data de corte", fmtCurrency(t.depois), "", COLORS.yellow) +
+    kpiCard("Saldo na data de corte", fmtCurrency(t.saldo), "", COLORS.gray) +
+    "</div>";
+}
+const REL_ENTIDADE = "Instituto de Gestão Estratégica de Saúde do Distrito Federal";
+
 /* ============================ VIEW: RELATÓRIO MENSAL ============================ */
+function pill_td(text, tone) { return "<td>" + pill(text, tone) + "</td>"; }
 function renderMensalView(topbar, content) {
-  const meses = mesesDoAno(state.anoAtual);
+  const f = state.relFiltros;
   if (!state.filters.mensalMes) state.filters.mensalMes = new Date().getMonth() + 1;
-  const m = meses.find((mm) => mm.mes === state.filters.mensalMes) || meses[0];
-  const t = totaisMes(m.parcelas);
+  const mes = state.filters.mensalMes;
+  const parcelas = parcelasRel(state.anoAtual, f, mes);
+  const t = posSoma(parcelas, f);
 
   topbar.innerHTML = topbarHtml(
     "Relatório Mensal", "Detalhamento de repasse previsto x recebido, por competência — pronto para anexar ao processo SEI",
     '<select class="input" id="mensal-select" style="width:150px;">' +
-      MONTH_NAMES.map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === m.mes ? " selected" : "") + ">" + n + "</option>").join("") +
+      MONTH_NAMES.map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === mes ? " selected" : "") + ">" + n + "</option>").join("") +
       "</select>" + exportPdfBtn()
   );
 
   const rows = [];
-  m.parcelas.forEach((p) => {
+  parcelas.forEach((p) => {
     const inst = instrumentoDe(p) || {};
-    const tp = totaisParcela(p);
-    const lancs = (p.lancamentos || []).slice().sort((a, b) => (a.dataEfetivacao || "").localeCompare(b.dataEfetivacao || ""));
+    const x = posParcela(p, f);
+    const lancs = (p.lancamentos || []).filter((l) => !f.fonte || fonteLabel(l) === f.fonte)
+      .sort((a, b) => (a.dataEfetivacao || "").localeCompare(b.dataEfetivacao || ""));
+    const base = '<td class="mono">' + esc(fmtCurrency(p.valorPrevisto)) + '</td><td class="mono">' + (x.desconto ? esc(fmtCurrency(x.desconto)) : "—") +
+      '</td><td class="mono">' + esc(fmtCurrency(x.liquido)) + "</td>";
     if (!lancs.length) {
-      rows.push("<tr><td>" + esc(inst.descricao || "—") + "</td>" + pill_td("Pendente", "warn") +
-        '<td class="mono">' + esc(fmtCurrency(p.valorPrevisto)) + '</td><td class="mono">' + (tp.desconto ? esc(fmtCurrency(tp.desconto)) : "—") +
-        '</td><td class="mono">' + esc(fmtCurrency(tp.liquido)) + "</td><td>—</td><td>—</td><td>—</td><td>" + esc(fmtCurrency(tp.liquido)) + "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>");
+      rows.push("<tr><td>" + esc(inst.descricao || "—") + "</td>" + pill_td("Pendente", "warn") + base +
+        "<td>—</td><td>—</td><td>—</td><td class=\"mono\">" + esc(fmtCurrency(x.liquido)) + "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>");
     } else {
       let acumulado = 0;
       lancs.forEach((l) => {
-        acumulado += l.valorRecebido || 0;
-        const saldoApos = tp.liquido - acumulado;
-        rows.push("<tr><td>" + esc(inst.descricao || "—") + "</td>" + pill_td("recebido", "info") +
-          '<td class="mono">' + esc(fmtCurrency(p.valorPrevisto)) + '</td><td class="mono">' + (tp.desconto ? esc(fmtCurrency(tp.desconto)) : "—") +
-          '</td><td class="mono">' + esc(fmtCurrency(tp.liquido)) + "</td><td>" + fmtDateBR(l.dataEfetivacao) + "</td><td>" + pill(fonteLabel(l), "info") +
+        const depois = l.dataEfetivacao && l.dataEfetivacao > f.corte;
+        if (!depois) acumulado += l.valorRecebido || 0;
+        rows.push("<tr><td>" + esc(inst.descricao || "—") + "</td>" + pill_td(depois ? "Após o corte" : "Recebido", depois ? "warn" : "info") + base +
+          "<td>" + fmtDateBR(l.dataEfetivacao) + "</td><td>" + pill(fonteLabel(l), "info") +
           '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(l.valorRecebido)) +
-          '</td><td class="mono">' + esc(fmtCurrency(saldoApos)) + "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>");
+          '</td><td class="mono">' + (depois ? "—" : esc(fmtCurrency(x.liquido - acumulado))) + "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>");
       });
     }
   });
+  if (!rows.length) rows.push('<tr><td colspan="10" class="empty-state">Nenhuma competência encontrada com os filtros escolhidos.</td></tr>');
 
   content.innerHTML =
-    printHeader("Relatório Mensal — " + MONTH_NAMES[m.mes - 1] + "/" + state.anoAtual, "Instituto de Gestão Estratégica de Saúde do Distrito Federal") +
-    '<div class="kpi-row">' +
-    kpiCard("Repasse Previsto", fmtCurrencyCompact(t.previsto), "", COLORS.blue) +
-    kpiCard("Total de Descontos", fmtCurrencyCompact(t.desconto), "", COLORS.orange) +
-    kpiCard("Valor Líquido a Receber", fmtCurrencyCompact(t.liquido), "", COLORS.lime) +
-    kpiCard("Total Recebido", fmtCurrencyCompact(t.recebido), "", COLORS.teal) +
-    kpiCard("Saldo a Repassar", fmtCurrencyCompact(t.saldo), "", COLORS.gray) +
-    "</div>" +
-    '<div class="panel"><div class="panel-header">Movimentações de ' + MONTH_NAMES[m.mes - 1] + "/" + state.anoAtual + "</div>" +
+    printHeader("Relatório Mensal — " + MONTH_NAMES[mes - 1] + "/" + state.anoAtual, REL_ENTIDADE) +
+    relFilterBar({ fonte: true, faixa: false }) + relFiltrosTexto({ fonte: true, faixa: false }) + relKpis(t) +
+    '<div class="panel"><div class="panel-header">Movimentações de ' + MONTH_NAMES[mes - 1] + "/" + state.anoAtual + "</div>" +
     "<table><thead><tr><th>Instrumento</th><th>Status</th><th>Repasse Previsto</th><th>Desconto</th><th>Valor Líquido a Receber</th><th>Data Efetivação</th><th>Fonte</th><th>Valor Recebido</th><th>Saldo</th><th>Processo SEI</th></tr></thead>" +
     "<tbody>" + rows.join("") + "</tbody>" +
     '<tfoot><tr><td colspan="2">Total do mês</td><td class="mono">' + esc(fmtCurrency(t.previsto)) + '</td><td class="mono">' + esc(fmtCurrency(t.desconto)) +
-    '</td><td class="mono">' + esc(fmtCurrency(t.liquido)) + '</td><td colspan="2"></td><td class="mono">' + esc(fmtCurrency(t.recebido)) +
+    '</td><td class="mono">' + esc(fmtCurrency(t.liquido)) + '</td><td colspan="2"></td><td class="mono">' + esc(fmtCurrency(t.ate)) +
     '</td><td class="mono">' + esc(fmtCurrency(t.saldo)) + '</td><td></td></tr></tfoot></table></div>';
 
   document.getElementById("mensal-select").addEventListener("change", (e) => { state.filters.mensalMes = Number(e.target.value); renderAll(); });
+  wireRelFilters();
   wirePrintButton();
 }
-function pill_td(text, tone) { return "<td>" + pill(text, tone) + "</td>"; }
 
 /* ============================ VIEW: RELATÓRIO ANUAL ============================ */
 function renderAnualView(topbar, content) {
-  topbar.innerHTML = topbarHtml("Relatório Anual Consolidado", "Visão consolidada de todas as competências de " + state.anoAtual, exportPdfBtn());
+  const f = state.relFiltros;
+  topbar.innerHTML = topbarHtml("Relatório Anual Consolidado", "Visão consolidada das competências de " + state.anoAtual + ", na data de corte escolhida", exportPdfBtn());
 
-  const meses = mesesDoAno(state.anoAtual);
-  const grand = totaisAno(state.anoAtual);
-  const trs = meses.map((m) => {
-    const t = totaisMes(m.parcelas);
-    return "<tr><td style='font-weight:600;'>" + MONTH_NAMES[m.mes - 1] + '</td><td class="mono">' + esc(fmtCurrency(t.previsto)) +
+  const parcelas = parcelasRel(state.anoAtual, f);
+  const grand = posSoma(parcelas, f);
+  let trs = "";
+  for (let m = f.mesIni; m <= f.mesFim; m++) {
+    const t = posSoma(parcelas.filter((p) => p.mes === m), f);
+    trs += "<tr><td style='font-weight:600;'>" + MONTH_NAMES[m - 1] + '</td><td class="mono">' + esc(fmtCurrency(t.previsto)) +
       '</td><td class="mono">' + esc(fmtCurrency(t.desconto)) + '</td><td class="mono">' + esc(fmtCurrency(t.liquido)) +
-      '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(t.recebido)) +
+      '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(t.ate)) + '</td><td class="mono">' + esc(fmtCurrency(t.depois)) +
       '</td><td class="mono">' + esc(fmtCurrency(t.saldo)) + "</td></tr>";
-  }).join("");
+  }
 
   content.innerHTML =
-    printHeader("Relatório Anual Consolidado — " + state.anoAtual, "Instituto de Gestão Estratégica de Saúde do Distrito Federal") +
-    '<div class="kpi-row">' +
-    kpiCard("Total Previsto no Ano", fmtCurrencyCompact(grand.previsto), "", COLORS.blue) +
-    kpiCard("Total de Descontos", fmtCurrencyCompact(grand.desconto), "", COLORS.orange) +
-    kpiCard("Valor Líquido a Receber", fmtCurrencyCompact(grand.liquido), "", COLORS.lime) +
-    kpiCard("Total Recebido no Ano", fmtCurrencyCompact(grand.recebido), "", COLORS.teal) +
-    kpiCard("Saldo Pendente", fmtCurrencyCompact(grand.saldo), "", COLORS.gray) +
-    "</div>" +
-    '<div class="panel"><table><thead><tr><th>Competência</th><th>Repasse Previsto</th><th>Desconto</th><th>Valor Líquido a Receber</th><th>Valor Recebido</th><th>Saldo</th></tr></thead>' +
+    printHeader("Relatório Anual Consolidado — " + state.anoAtual, REL_ENTIDADE) +
+    relFilterBar({ fonte: true, faixa: true }) + relFiltrosTexto({ fonte: true, faixa: true }) + relKpis(grand) +
+    '<div class="panel"><table><thead><tr><th>Competência</th><th>Repasse Previsto</th><th>Desconto</th><th>Valor Líquido a Receber</th><th>Recebido até o corte</th><th>Recebido depois do corte</th><th>Saldo na data de corte</th></tr></thead>' +
     "<tbody>" + trs + "</tbody>" +
     '<tfoot><tr><td>TOTAL</td><td class="mono">' + esc(fmtCurrency(grand.previsto)) + '</td><td class="mono">' + esc(fmtCurrency(grand.desconto)) +
-    '</td><td class="mono">' + esc(fmtCurrency(grand.liquido)) + '</td><td class="mono">' + esc(fmtCurrency(grand.recebido)) +
-    '</td><td class="mono">' + esc(fmtCurrency(grand.saldo)) + "</td></tr></tfoot></table></div>";
+    '</td><td class="mono">' + esc(fmtCurrency(grand.liquido)) + '</td><td class="mono">' + esc(fmtCurrency(grand.ate)) +
+    '</td><td class="mono">' + esc(fmtCurrency(grand.depois)) + '</td><td class="mono">' + esc(fmtCurrency(grand.saldo)) + "</td></tr></tfoot></table></div>";
 
+  wireRelFilters();
   wirePrintButton();
 }
 
 /* ============================ VIEW: POR FONTE ============================ */
 function renderFonteView(topbar, content) {
+  const f = Object.assign({}, state.relFiltros, { fonte: "" }); // nesta tela a fonte é escolhida no seletor próprio
   const todasFontes = Array.from(new Set(parcelasDoAno(state.anoAtual).flatMap((p) => (p.lancamentos || []).map((l) => fonteLabel(l)))));
   if (!state.filters.fonteAtual || !todasFontes.includes(state.filters.fonteAtual)) state.filters.fonteAtual = todasFontes[0] || "FONTE 100";
   const fonte = state.filters.fonteAtual;
 
-  topbar.innerHTML = topbarHtml("Relatório por Fonte de Recurso", "Repasses recebidos em " + state.anoAtual + ", segmentados pela fonte informada em cada lançamento",
-    '<select class="input" id="fonte-select" style="width:180px;">' + (todasFontes.length ? todasFontes : ["FONTE 100"]).map((f) => '<option value="' + esc(f) + '"' + (f === fonte ? " selected" : "") + ">" + esc(f) + "</option>").join("") + "</select>" +
+  topbar.innerHTML = topbarHtml("Relatório por Fonte de Recurso", "Repasses recebidos em " + state.anoAtual + ", segmentados pela fonte informada em cada recebimento",
+    '<select class="input" id="fonte-select" style="width:180px;">' + (todasFontes.length ? todasFontes : ["FONTE 100"]).map((x) => '<option value="' + esc(x) + '"' + (x === fonte ? " selected" : "") + ">" + esc(x) + "</option>").join("") + "</select>" +
     exportPdfBtn()
   );
 
-  const meses = mesesDoAno(state.anoAtual).map((m) => {
-    const lancsDoMes = [];
-    m.parcelas.forEach((p) => (p.lancamentos || []).forEach((l) => { if (fonteLabel(l) === fonte) lancsDoMes.push({ p, l }); }));
-    return { mes: m.mes, itens: lancsDoMes };
-  }).filter((m) => m.itens.length > 0);
-  const grandTotal = meses.reduce((s, m) => s + m.itens.reduce((s2, it) => s2 + it.l.valorRecebido, 0), 0);
+  const parcelas = parcelasRel(state.anoAtual, f);
+  let totalAte = 0, totalDepois = 0;
+  const meses = [];
+  for (let m = f.mesIni; m <= f.mesFim; m++) {
+    const itens = [];
+    parcelas.filter((p) => p.mes === m).forEach((p) => (p.lancamentos || []).forEach((l) => { if (fonteLabel(l) === fonte) itens.push({ p, l }); }));
+    if (!itens.length) continue;
+    itens.sort((a, b) => (a.l.dataEfetivacao || "").localeCompare(b.l.dataEfetivacao || ""));
+    let ate = 0, depois = 0;
+    itens.forEach(({ l }) => { if (l.dataEfetivacao && l.dataEfetivacao > f.corte) depois += l.valorRecebido || 0; else ate += l.valorRecebido || 0; });
+    totalAte += ate; totalDepois += depois;
+    meses.push({ mes: m, itens, ate, depois });
+  }
 
-  const blocks = meses.length ? meses.map((m) => {
-    const total = m.itens.reduce((s, it) => s + it.l.valorRecebido, 0);
-    return '<div class="panel" style="margin-bottom:12px;"><div class="panel-header" style="display:flex;justify-content:space-between;">' +
-      "<span>" + MONTH_NAMES[m.mes - 1] + '</span><span class="mono">' + esc(fmtCurrency(total)) + "</span></div>" +
-      "<table><tbody>" + m.itens.map(({ p, l }) => {
-        const inst = instrumentoDe(p) || {};
-        return "<tr><td>" + esc(inst.descricao || "—") + "</td><td>" + fmtDateBR(l.dataEfetivacao) + '</td><td class="mono">' + esc(fmtCurrency(l.valorRecebido)) +
-          "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>";
-      }).join("") + "</tbody></table></div>";
-  }).join("") : '<div class="panel"><div class="empty-state">Nenhum recebimento registrado para esta fonte em ' + state.anoAtual + ".</div></div>";
+  const blocks = meses.length ? meses.map((m) =>
+    '<div class="panel" style="margin-bottom:12px;"><div class="panel-header" style="display:flex;justify-content:space-between;">' +
+    "<span>" + MONTH_NAMES[m.mes - 1] + '</span><span class="mono">' + esc(fmtCurrency(m.ate)) + (m.depois ? " (+ " + esc(fmtCurrency(m.depois)) + " depois do corte)" : "") + "</span></div>" +
+    "<table><tbody>" + m.itens.map(({ p, l }) => {
+      const inst = instrumentoDe(p) || {};
+      const depois = l.dataEfetivacao && l.dataEfetivacao > f.corte;
+      return "<tr><td>" + esc(inst.descricao || "—") + "</td><td>" + fmtDateBR(l.dataEfetivacao) + "</td><td>" + (depois ? pill("Após o corte", "warn") : "") +
+        '</td><td class="mono">' + esc(fmtCurrency(l.valorRecebido)) + "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>";
+    }).join("") + "</tbody></table></div>"
+  ).join("") : '<div class="panel"><div class="empty-state">Nenhum recebimento registrado para esta fonte com os filtros escolhidos.</div></div>';
 
-  content.innerHTML = printHeader("Relatório por Fonte de Recurso — " + fonte + " — " + state.anoAtual, "Instituto de Gestão Estratégica de Saúde do Distrito Federal") +
+  content.innerHTML = printHeader("Relatório por Fonte de Recurso — " + fonte + " — " + state.anoAtual, REL_ENTIDADE) +
+    relFilterBar({ fonte: false, faixa: true }) +
+    '<div class="rel-filtros"><b>Posição em ' + fmtDateBR(f.corte) + "</b> · Fonte: " + esc(fonte) + " · Instrumento: " +
+    esc(f.instrumentoId ? (state.instrumentos.find((i) => i.id === f.instrumentoId) || {}).descricao : "Todos") +
+    " · Competência: " + MONTH_NAMES[f.mesIni - 1] + " a " + MONTH_NAMES[f.mesFim - 1] + " · Status: " + esc(f.status ? statusLabel(f.status) : "Todos") + "</div>" +
     '<div class="kpi-row">' +
-    kpiCard("Total recebido (líquido) — " + fonte, fmtCurrency(grandTotal), "", COLORS.blue) +
+    kpiCard("Recebido até a data de corte — " + fonte, fmtCurrency(totalAte), "", COLORS.blue) +
+    kpiCard("Recebido depois da data de corte", fmtCurrency(totalDepois), "", COLORS.yellow) +
     "</div>" + blocks;
 
   document.getElementById("fonte-select").addEventListener("change", (e) => { state.filters.fonteAtual = e.target.value; renderAll(); });
+  wireRelFilters();
   wirePrintButton();
 }
 
 /* ============================ VIEW: DEMONSTRATIVO ANUAL (MODELO PADRÃO) ============================ */
 function renderDemonstrativoView(topbar, content) {
-  topbar.innerHTML = topbarHtml(
-    "Demonstrativo Anual — Modelo Padrão",
-    "Valor mensal do repasse previsto e recebido — " + state.anoAtual,
-    exportPdfBtn()
-  );
-
+  const f = state.relFiltros;
   const ano = state.anoAtual;
-  const meses = mesesDoAno(ano);
-  const fontesAno = Array.from(new Set(parcelasDoAno(ano).flatMap((p) => (p.lancamentos || []).map((l) => fonteLabel(l)))));
+  topbar.innerHTML = topbarHtml("Demonstrativo Anual — Modelo Padrão", "Valor mensal do repasse previsto e recebido — " + ano, exportPdfBtn());
 
-  const porMes = meses.map((m) => {
-    const bruto = m.parcelas.reduce((s, p) => s + (p.valorPrevisto || 0), 0);
-    const descPorTipo = descontoBreakdown(m.parcelas);
-    const totalDesc = DESCONTO_TIPOS.reduce((s, t) => s + descPorTipo[t], 0);
+  const parcelas = parcelasRel(ano, f);
+  const fontesAno = Array.from(new Set(parcelas.flatMap((p) => (p.lancamentos || []).filter((l) => !f.fonte || fonteLabel(l) === f.fonte).map((l) => fonteLabel(l)))));
+
+  const porMes = [];
+  for (let m = f.mesIni; m <= f.mesFim; m++) {
+    const ps = parcelas.filter((p) => p.mes === m);
+    const t = posSoma(ps, f);
+    const descPorTipo = descontoBreakdown(ps);
     const recPorFonte = {};
-    fontesAno.forEach((f) => (recPorFonte[f] = 0));
-    m.parcelas.forEach((p) => (p.lancamentos || []).forEach((l) => { recPorFonte[fonteLabel(l)] = (recPorFonte[fonteLabel(l)] || 0) + (l.valorRecebido || 0); }));
-    const totalRecebido = Object.values(recPorFonte).reduce((s, v) => s + v, 0);
-    // Desconto é uma categorização de parte do Valor Recebido (não é deduzido do Previsto).
-    const liquidoRecebido = totalRecebido - totalDesc;
-    const saldo = bruto - totalRecebido;
-    return { mes: m.mes, bruto, descPorTipo, totalDesc, totalRecebido, liquidoRecebido, recPorFonte, saldo };
-  });
-
-  function linha(label, getter, opts) {
-    opts = opts || {};
-    const cells = porMes.map((d) => '<td class="mono">' + esc(fmtCurrency(getter(d))) + "</td>").join("");
-    return '<tr class="' + (opts.cls || "") + '"><td>' + esc(label) + "</td>" + cells + "</tr>";
+    fontesAno.forEach((fo) => (recPorFonte[fo] = 0));
+    ps.forEach((p) => (p.lancamentos || []).forEach((l) => {
+      if (l.dataEfetivacao && l.dataEfetivacao > f.corte) return;
+      const k = fonteLabel(l);
+      if (f.fonte && k !== f.fonte) return;
+      recPorFonte[k] = (recPorFonte[k] || 0) + (l.valorRecebido || 0);
+    }));
+    porMes.push({ mes: m, t, descPorTipo, recPorFonte });
   }
 
+  function linha(label, getter, cls) {
+    return '<tr class="' + (cls || "") + '"><td>' + esc(label) + "</td>" +
+      porMes.map((d) => '<td class="mono">' + esc(fmtCurrency(getter(d))) + "</td>").join("") + "</tr>";
+  }
   let rows = "";
-  rows += linha("Previsto (Repasse):", (d) => d.bruto, { cls: "demo-row-bold" });
-  fontesAno.forEach((f) => { rows += linha("Valores Recebidos " + f, (d) => d.recPorFonte[f] || 0); });
-  rows += linha("Recebido (Total):", (d) => d.totalRecebido, { cls: "demo-row-bold" });
+  rows += linha("A receber (Valor Bruto / Previsto):", (d) => d.t.previsto, "demo-row-bold");
   DESCONTO_TIPOS.forEach((tipo) => {
-    const algum = porMes.some((d) => d.descPorTipo[tipo] > 0);
-    if (algum) rows += linha("  dos quais, Dedução " + tipo, (d) => -d.descPorTipo[tipo], { cls: "demo-row-neg" });
+    if (porMes.some((d) => d.descPorTipo[tipo] > 0)) rows += linha("(-) Dedução " + tipo, (d) => -d.descPorTipo[tipo], "demo-row-neg");
   });
-  rows += linha("Valor Líquido Recebido:", (d) => d.liquidoRecebido, { cls: "demo-row-bold" });
-  rows += linha("Saldo (Previsto − Recebido):", (d) => d.saldo, { cls: "demo-row-total" });
+  rows += linha("A receber (Valor Líquido):", (d) => d.t.liquido, "demo-row-bold");
+  fontesAno.forEach((fo) => { rows += linha("Valores Recebidos " + fo, (d) => d.recPorFonte[fo] || 0); });
+  rows += linha("Recebido até a data de corte (Total):", (d) => d.t.ate, "demo-row-bold");
+  if (porMes.some((d) => d.t.depois > 0)) rows += linha("Recebido depois da data de corte (informativo):", (d) => d.t.depois);
+  rows += linha("Saldo a receber (Previsto − Descontos − Recebido):", (d) => d.t.saldo, "demo-row-total");
 
-  const header = '<tr><th>Competência:</th>' + porMes.map((d) => "<th>" + MONTH_SHORT_DOT[d.mes - 1] + "/" + ano + "</th>").join("") + "</tr>";
+  const header = "<tr><th>Competência:</th>" + porMes.map((d) => "<th>" + MONTH_SHORT_DOT[d.mes - 1] + "/" + ano + "</th>").join("") + "</tr>";
 
-  // Resumo
-  const grand = totaisAno(ano);
-  const pendentesAnoAnterior = state.parcelas.some((p) => p.ano === ano - 1) ? totaisAno(ano - 1).saldo : 0;
-  const saldoAtual = pendentesAnoAnterior + (grand.previsto - grand.recebido);
+  // Resumo — mesma regra de saldo; pendências do ano anterior na MESMA data de corte
+  const fAnt = Object.assign({}, f, { mesIni: 1, mesFim: 12, status: "" });
+  const temAnt = state.parcelas.some((p) => p.ano === ano - 1);
+  const ant = temAnt ? posSoma(parcelasRel(ano - 1, fAnt), fAnt) : { saldo: 0 };
+  const grand = posSoma(parcelas, f);
+  const saldoAtual = ant.saldo + grand.saldo;
 
   content.innerHTML =
-    printHeader(state.anoAtual + " - Valor Mensal do Repasse Previsto", "Instituto de Gestão Estratégica de Saúde do Distrito Federal") +
-    '<div class="panel" style="padding:16px;">' +
-    '<div class="demo-table-wrap"><table class="demo-table"><thead>' + header + "</thead><tbody>" + rows + "</tbody></table></div>" +
-    "</div>" +
-    '<div class="demo-resumo panel" style="padding:14px 16px;"><div class="panel-header" style="padding:0 0 10px;border:none;">Resumo — ' + ano + '</div><table>' +
-    "<tr><td>Valores Pendentes " + (ano - 1) + " (automático)</td><td>" + esc(fmtCurrency(pendentesAnoAnterior)) + "</td></tr>" +
+    printHeader(ano + " - Valor Mensal do Repasse Previsto", REL_ENTIDADE) +
+    relFilterBar({ fonte: true, faixa: true }) + relFiltrosTexto({ fonte: true, faixa: true }) +
+    '<div class="panel" style="padding:16px;"><div class="demo-table-wrap"><table class="demo-table"><thead>' + header + "</thead><tbody>" + rows + "</tbody></table></div></div>" +
+    '<div class="demo-resumo panel" style="padding:14px 16px;"><div class="panel-header" style="padding:0 0 10px;border:none;">Resumo — ' + ano + " (posição em " + fmtDateBR(f.corte) + ")</div><table>" +
+    "<tr><td>Valores Pendentes " + (ano - 1) + " (automático, na mesma data de corte)</td><td>" + esc(fmtCurrency(ant.saldo)) + "</td></tr>" +
     "<tr><td>Valor Previsto (Anual)</td><td>" + esc(fmtCurrency(grand.previsto)) + "</td></tr>" +
-    "<tr><td>Valor Recebido</td><td>" + esc(fmtCurrency(grand.recebido)) + "</td></tr>" +
-    "<tr><td>&nbsp;&nbsp;dos quais, Descontos (Estatutário/Custeio/Adiantamento/Outro)</td><td>" + esc(fmtCurrency(grand.desconto)) + "</td></tr>" +
-    "<tr><td>Valor Líquido Recebido</td><td>" + esc(fmtCurrency(grand.liquido)) + "</td></tr>" +
-    '<tr class="destaque"><td>Saldo em ' + ano + "</td><td>" + esc(fmtCurrency(saldoAtual)) + "</td></tr>" +
+    "<tr><td>(-) Descontos (Estatutário/Custeio/Adiantamento/Outro)</td><td>" + esc(fmtCurrency(grand.desconto)) + "</td></tr>" +
+    "<tr><td>Valor Líquido a Receber</td><td>" + esc(fmtCurrency(grand.liquido)) + "</td></tr>" +
+    "<tr><td>(-) Recebido até a data de corte</td><td>" + esc(fmtCurrency(grand.ate)) + "</td></tr>" +
+    "<tr><td>Saldo do exercício (Previsto − Descontos − Recebido)</td><td>" + esc(fmtCurrency(grand.saldo)) + "</td></tr>" +
+    (grand.depois > 0 ? "<tr><td>Informativo: recebido depois da data de corte</td><td>" + esc(fmtCurrency(grand.depois)) + "</td></tr>" : "") +
+    '<tr class="destaque"><td>Saldo total em ' + ano + " (pendências " + (ano - 1) + " + saldo do exercício)</td><td>" + esc(fmtCurrency(saldoAtual)) + "</td></tr>" +
     "</table></div>";
 
+  wireRelFilters();
   wirePrintButton();
 }
 
@@ -1526,7 +1654,7 @@ function renderDemonstrativoView(topbar, content) {
    Carrega a biblioteca SheetJS via CDN sob demanda (só quando o
    usuário entra nesta tela) para não deixar o resto do sistema
    dependente de rede. Lê 3 abas (Repasses Previstos, Descontos,
-   Lançamentos), valida linha a linha e só grava as válidas.
+   Recebimentos), valida linha a linha e só grava as válidas.
    ============================================================ */
 let uiImportLibState = "idle"; // idle | loading | ready | erro
 let uiImportData = null; // { previstos:[], descontos:[], lancamentos:[] } (linhas já validadas)
@@ -1590,49 +1718,92 @@ function mesesRollover(mesInicio, anoInicio, numParcelas) {
   return out;
 }
 
+const COL_DESC_REPASSE = "Descrição do repasse";
+
+function nomeArquivoBackup() { return "backup_repasses_" + hojeISO() + ".xlsx"; }
+function fmtCompetenciaTxt(mes, ano) { return String(mes).padStart(2, "0") + "/" + ano; }
+function fmtDataTxt(iso) { return iso ? fmtDateBR(iso) : ""; }
+
+/** Monta as 3 abas no mesmo formato do modelo de importação. */
+function montarAbas(dados) {
+  const wsPrevistos = XLSX.utils.aoa_to_sheet([
+    ["Tipo", "Descrição", "Valor Total", "Nº de Parcelas", "Mês Inicial", "Ano Inicial", "Unidade/Contrato", "Processo SEI", "Observações"]
+  ].concat(dados.previstos));
+  const wsDescontos = XLSX.utils.aoa_to_sheet([
+    [COL_DESC_REPASSE, "Unidade/Contrato", "Competência (MM/AAAA)", "Tipo de Desconto", "Valor"]
+  ].concat(dados.descontos));
+  const wsRecebimentos = XLSX.utils.aoa_to_sheet([
+    [COL_DESC_REPASSE, "Unidade/Contrato", "Competência (MM/AAAA)", "Data de Efetivação", "Valor Recebido (líquido)", "Fonte"]
+  ].concat(dados.recebimentos));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsPrevistos, "Repasses Previstos");
+  XLSX.utils.book_append_sheet(wb, wsDescontos, "Descontos");
+  XLSX.utils.book_append_sheet(wb, wsRecebimentos, "Recebimentos");
+  return wb;
+}
+
 function gerarModeloXLSX() {
   loadSheetJS(() => {
-    const wb = XLSX.utils.book_new();
-    const wsPrevistos = XLSX.utils.aoa_to_sheet([
-      ["Tipo", "Descrição", "Valor Total", "Nº de Parcelas", "Mês Inicial", "Ano Inicial", "Unidade/Contrato", "Processo SEI", "Observações"],
-      ["Contrato de Gestão (Original)", "Contrato de Gestão nº 001/2025 - HB", 1694889834.36, 12, 1, 2025, "CONTRATO 001 - HB", "00060-00007134/2025-02", "Repasse mensal"],
-    ]);
-    const wsDescontos = XLSX.utils.aoa_to_sheet([
-      ["Unidade/Contrato", "Competência (MM/AAAA)", "Tipo de Desconto", "Valor"],
-      ["CONTRATO 001 - HB", "01/2025", "Estatutário", 6000000],
-      ["CONTRATO 001 - HB", "01/2025", "Custeio", 4000000],
-    ]);
-    const wsLancamentos = XLSX.utils.aoa_to_sheet([
-      ["Unidade/Contrato", "Competência (MM/AAAA)", "Data de Efetivação", "Valor Recebido (líquido)", "Fonte"],
-      ["CONTRATO 001 - HB", "01/2025", "05/01/2025", 44673696.25, "FONTE 100"],
-    ]);
-    XLSX.utils.book_append_sheet(wb, wsPrevistos, "Repasses Previstos");
-    XLSX.utils.book_append_sheet(wb, wsDescontos, "Descontos");
-    XLSX.utils.book_append_sheet(wb, wsLancamentos, "Lançamentos");
+    const wb = montarAbas({
+      previstos: [["Contrato de Gestão (Original)", "Contrato de Gestão nº 001/2025 - HB", 1694889834.36, 12, 1, 2025, "CONTRATO 001 - HB", "00060-00007134/2025-02", "Repasse mensal"]],
+      descontos: [
+        ["Contrato de Gestão nº 001/2025 - HB", "CONTRATO 001 - HB", "01/2025", "Estatutário", 6000000],
+        ["Contrato de Gestão nº 001/2025 - HB", "CONTRATO 001 - HB", "01/2025", "Custeio", 4000000],
+      ],
+      recebimentos: [["Contrato de Gestão nº 001/2025 - HB", "CONTRATO 001 - HB", "01/2025", "05/01/2025", 44673696.25, "FONTE 100"]],
+    });
     XLSX.writeFile(wb, "modelo_importacao_igesdf.xlsx");
   });
 }
 
-function tiposParcelasVirtuais(previstosValidos) {
-  // parcelas "virtuais" (ainda não gravadas) para permitir validar Descontos/Lançamentos no mesmo arquivo
-  const out = [];
-  previstosValidos.forEach((row, idx) => {
-    mesesRollover(row.mesInicial, row.anoInicial, row.numParcelas).forEach(({ mes, ano }) => {
-      out.push({ unidadeKey: normKey(row.unidade || row.descricao), mes, ano, origemIdx: idx });
+/** Backup completo (todos os anos) — pode ser reimportado nesta mesma tela. */
+function gerarBackupXLSX() {
+  loadSheetJS(() => {
+    const previstos = state.instrumentos.map((i) => [
+      i.tipo, i.descricao, i.valorTotal, i.numParcelas, i.mesInicio, i.anoInicio, i.unidade || i.descricao, i.processoSei || "", i.observacoes || "",
+    ]);
+    const descontos = [], recebimentos = [];
+    const ordenadas = state.parcelas.slice().sort((a, b) => (a.ano - b.ano) || (a.mes - b.mes));
+    ordenadas.forEach((p) => {
+      const inst = instrumentoDe(p) || {};
+      const comp = fmtCompetenciaTxt(p.mes, p.ano);
+      (p.descontos || []).forEach((d) => descontos.push([inst.descricao || "", inst.unidade || inst.descricao || "", comp, d.tipo === "Outro" ? (d.tipoOutro || "Outro") : d.tipo, d.valor]));
+      (p.lancamentos || []).slice().sort((a, b) => (a.dataEfetivacao || "").localeCompare(b.dataEfetivacao || "")).forEach((l) =>
+        recebimentos.push([inst.descricao || "", inst.unidade || inst.descricao || "", comp, fmtDataTxt(l.dataEfetivacao), l.valorRecebido, l.fonte === "Outro" ? (l.fonteOutro || "Outro") : l.fonte]));
     });
+    XLSX.writeFile(montarAbas({ previstos, descontos, recebimentos }), nomeArquivoBackup());
+    uiBackupInfo = "Backup gerado: " + nomeArquivoBackup() + " — " + previstos.length + " repasse(s), " + descontos.length + " desconto(s) e " + recebimentos.length + " recebimento(s).";
+    renderAll();
   });
-  return out;
 }
-function encontrarParcelaReal(unidadeKey, mes, ano) {
-  const inst = state.instrumentos.find((i) => normKey(i.unidade || i.descricao) === unidadeKey);
-  if (!inst) return null;
-  return state.parcelas.find((p) => p.instrumentoId === inst.id && p.mes === mes && p.ano === ano) || null;
+let uiBackupInfo = "";
+
+/* ---------- Casamento da linha com o repasse (instrumento) e a parcela ---------- */
+function instCandidatos(descKey, unidadeKey, virtuais) {
+  const reais = state.instrumentos.filter((i) => descKey ? normKey(i.descricao) === descKey : normKey(i.unidade || i.descricao) === unidadeKey)
+    .map((i) => ({ tipo: "real", inst: i }));
+  const virt = virtuais.filter((v) => descKey ? normKey(v.row.descricao) === descKey : normKey(v.row.unidade || v.row.descricao) === unidadeKey)
+    .map((v) => ({ tipo: "virtual", v }));
+  return reais.concat(virt);
 }
+function resolverAlvo(row, virtuais) {
+  const descKey = normKey(row.descRepasse), unidadeKey = normKey(row.unidade);
+  if (!descKey && !unidadeKey) return { erro: "Informe a Descrição do repasse (ou a Unidade/Contrato)" };
+  const cands = instCandidatos(descKey, unidadeKey, virtuais);
+  if (!cands.length) return { erro: "Repasse não encontrado: " + (row.descRepasse || row.unidade) };
+  if (cands.length > 1) return { erro: "Mais de um repasse com este nome (" + (row.descRepasse || row.unidade) + "). Preencha a coluna \"" + COL_DESC_REPASSE + "\" com o nome exato" };
+  const c = cands[0];
+  if (c.tipo === "real") {
+    const p = state.parcelas.find((x) => x.instrumentoId === c.inst.id && x.mes === row.competencia.mes && x.ano === row.competencia.ano);
+    return p ? { parcela: p } : { erro: "O repasse não tem parcela em " + fmtCompetenciaTxt(row.competencia.mes, row.competencia.ano) };
+  }
+  const existe = mesesRollover(c.v.row.mesInicial, c.v.row.anoInicial, c.v.row.numParcelas).some((m) => m.mes === row.competencia.mes && m.ano === row.competencia.ano);
+  return existe ? { virtual: c.v } : { erro: "O repasse não tem parcela em " + fmtCompetenciaTxt(row.competencia.mes, row.competencia.ano) };
+}
+function pegaAba(wb, nomes) { for (const n of nomes) if (wb.Sheets[n]) return wb.Sheets[n]; return null; }
 
 function parseArquivoImportacao(wb) {
-  const previstos = [];
-  const descontos = [];
-  const lancamentos = [];
+  const previstos = [], descontos = [], lancamentos = [];
 
   const shPrevistos = wb.Sheets["Repasses Previstos"];
   if (shPrevistos) {
@@ -1643,33 +1814,36 @@ function parseArquivoImportacao(wb) {
       const numParcelas = Math.round(toNumber(r["Nº de Parcelas"]));
       const mesInicial = Math.round(toNumber(r["Mês Inicial"]));
       const anoInicial = Math.round(toNumber(r["Ano Inicial"]));
-      const unidade = normStr(r["Unidade/Contrato"]);
+      const unidade = normStr(r["Unidade/Contrato"]) || descricao;
       const tipo = normStr(r["Tipo"]) || TIPOS_INSTRUMENTO_BASE[0];
       const processoSei = normStr(r["Processo SEI"]);
       const observacoes = normStr(r["Observações"]);
-      const erros = [];
+      const erros = [], avisos = [];
       if (!descricao) erros.push("Descrição vazia");
       if (!(valorTotal > 0)) erros.push("Valor Total inválido");
       if (!(numParcelas >= 1)) erros.push("Nº de Parcelas inválido");
       if (!(mesInicial >= 1 && mesInicial <= 12)) erros.push("Mês Inicial inválido (use 1–12)");
       if (!(anoInicial >= 2000 && anoInicial <= 2100)) erros.push("Ano Inicial inválido");
-      if (!unidade) erros.push("Unidade/Contrato vazia (necessária para casar Descontos/Lançamentos)");
-      previstos.push({ linha, tipo, descricao, valorTotal, numParcelas, mesInicial, anoInicial, unidade, processoSei, observacoes, valid: erros.length === 0, erros });
+      let dup = false;
+      if (descricao && state.instrumentos.some((x) => normKey(x.descricao) === normKey(descricao))) { dup = true; avisos.push("Já existe um repasse com esta descrição — será ignorado"); }
+      if (descricao && previstos.some((x) => normKey(x.descricao) === normKey(descricao))) { dup = true; avisos.push("Descrição repetida no arquivo — será ignorada"); }
+      previstos.push({ linha, tipo, descricao, valorTotal, numParcelas, mesInicial, anoInicial, unidade, processoSei, observacoes, dup, avisos, valid: erros.length === 0 && !dup, erros });
     });
   }
+  const virtuais = previstos.filter((p) => p.valid).map((row) => ({ row }));
 
-  const previstosValidos = previstos.filter((p) => p.valid);
-  const virtuais = tiposParcelasVirtuais(previstosValidos);
-
-  function existeParcela(unidadeKey, mes, ano) {
-    if (encontrarParcelaReal(unidadeKey, mes, ano)) return true;
-    return virtuais.some((v) => v.unidadeKey === unidadeKey && v.mes === mes && v.ano === ano);
+  /* Duplicidade com multiplicidade: a n-ésima linha igual só é duplicada se já existirem n registros iguais. */
+  const contagem = {};
+  function ehDuplicado(chave, jaExistentes) {
+    contagem[chave] = (contagem[chave] || 0) + 1;
+    return contagem[chave] <= jaExistentes;
   }
 
   const shDescontos = wb.Sheets["Descontos"];
   if (shDescontos) {
     XLSX.utils.sheet_to_json(shDescontos, { defval: "" }).forEach((r, i) => {
       const linha = i + 2;
+      const descRepasse = normStr(r[COL_DESC_REPASSE]);
       const unidade = normStr(r["Unidade/Contrato"]);
       const comp = parseCompetencia(r["Competência (MM/AAAA)"]);
       const tipoRaw = normStr(r["Tipo de Desconto"]);
@@ -1677,20 +1851,29 @@ function parseArquivoImportacao(wb) {
       const tipoMatch = DESCONTO_TIPOS.find((t) => normKey(t) === normKey(tipoRaw));
       const tipo = tipoMatch || "Outro";
       const tipoOutro = tipoMatch ? "" : tipoRaw;
-      const erros = [];
-      if (!unidade) erros.push("Unidade/Contrato vazia");
+      const erros = [], avisos = [];
       if (!comp) erros.push("Competência inválida (use MM/AAAA)");
       if (!(valor > 0)) erros.push("Valor inválido");
       if (!tipoRaw) erros.push("Tipo de Desconto vazio");
-      if (unidade && comp && !existeParcela(normKey(unidade), comp.mes, comp.ano)) erros.push("Nenhuma parcela encontrada para essa Unidade/Contrato + Competência");
-      descontos.push({ linha, unidade, competencia: comp, tipo, tipoOutro, valor, valid: erros.length === 0, erros });
+      const row = { linha, descRepasse, unidade, competencia: comp, tipo, tipoOutro, valor };
+      let alvo = null, dup = false;
+      if (comp) {
+        alvo = resolverAlvo(row, virtuais);
+        if (alvo.erro) erros.push(alvo.erro);
+        else if (alvo.parcela && !erros.length) {
+          const ja = (alvo.parcela.descontos || []).filter((d) => normKey(descontoTipoLabel(d)) === normKey(tipoOutro || tipo) && Math.abs(d.valor - valor) < 0.005).length;
+          if (ehDuplicado("D|" + alvo.parcela.id + "|" + normKey(tipoOutro || tipo) + "|" + valor.toFixed(2), ja)) { dup = true; avisos.push("Desconto idêntico já cadastrado — será ignorado"); }
+        }
+      }
+      descontos.push(Object.assign(row, { alvo, dup, avisos, valid: erros.length === 0 && !dup, erros }));
     });
   }
 
-  const shLancamentos = wb.Sheets["Lançamentos"];
-  if (shLancamentos) {
-    XLSX.utils.sheet_to_json(shLancamentos, { defval: "" }).forEach((r, i) => {
+  const shRec = pegaAba(wb, ["Recebimentos", "Lançamentos"]); // aceita o nome antigo da aba
+  if (shRec) {
+    XLSX.utils.sheet_to_json(shRec, { defval: "" }).forEach((r, i) => {
       const linha = i + 2;
+      const descRepasse = normStr(r[COL_DESC_REPASSE]);
       const unidade = normStr(r["Unidade/Contrato"]);
       const comp = parseCompetencia(r["Competência (MM/AAAA)"]);
       const dataEfetivacao = parseDataCell(r["Data de Efetivação"]);
@@ -1699,17 +1882,24 @@ function parseArquivoImportacao(wb) {
       const fonteMatch = FONTE_OPCOES.find((f) => normKey(f) === normKey(fonteRaw));
       const fonte = fonteMatch || "Outro";
       const fonteOutro = fonteMatch ? "" : fonteRaw;
-      const erros = [];
-      if (!unidade) erros.push("Unidade/Contrato vazia");
+      const erros = [], avisos = [];
       if (!comp) erros.push("Competência inválida (use MM/AAAA)");
       if (!dataEfetivacao) erros.push("Data de Efetivação inválida (use DD/MM/AAAA)");
       if (!(valorRecebido > 0)) erros.push("Valor Recebido inválido");
       if (!fonteRaw) erros.push("Fonte vazia");
-      if (unidade && comp && !existeParcela(normKey(unidade), comp.mes, comp.ano)) erros.push("Nenhuma parcela encontrada para essa Unidade/Contrato + Competência");
-      lancamentos.push({ linha, unidade, competencia: comp, dataEfetivacao, valorRecebido, fonte, fonteOutro, valid: erros.length === 0, erros });
+      const row = { linha, descRepasse, unidade, competencia: comp, dataEfetivacao, valorRecebido, fonte, fonteOutro };
+      let alvo = null, dup = false;
+      if (comp) {
+        alvo = resolverAlvo(row, virtuais);
+        if (alvo.erro) erros.push(alvo.erro);
+        else if (alvo.parcela && !erros.length) {
+          const ja = (alvo.parcela.lancamentos || []).filter((l) => l.dataEfetivacao === dataEfetivacao && Math.abs(l.valorRecebido - valorRecebido) < 0.005 && normKey(fonteLabel(l)) === normKey(fonteOutro || fonte)).length;
+          if (ehDuplicado("R|" + alvo.parcela.id + "|" + dataEfetivacao + "|" + valorRecebido.toFixed(2) + "|" + normKey(fonteOutro || fonte), ja)) { dup = true; avisos.push("Recebimento idêntico já cadastrado — será ignorado"); }
+        }
+      }
+      lancamentos.push(Object.assign(row, { alvo, dup, avisos, valid: erros.length === 0 && !dup, erros }));
     });
   }
-
   return { previstos, descontos, lancamentos };
 }
 
@@ -1718,6 +1908,7 @@ function confirmarImportacao() {
   const previstosValidos = uiImportData.previstos.filter((p) => p.valid);
   const descontosValidos = uiImportData.descontos.filter((d) => d.valid);
   const lancamentosValidos = uiImportData.lancamentos.filter((l) => l.valid);
+  const instPorLinha = new Map();
 
   previstosValidos.forEach((row) => {
     if (!tiposDisponiveis().includes(row.tipo)) registrarTipoCustom(row.tipo);
@@ -1726,28 +1917,33 @@ function confirmarImportacao() {
       numParcelas: row.numParcelas, mesInicio: row.mesInicial, anoInicio: row.anoInicial,
       unidade: row.unidade, processoSei: row.processoSei, observacoes: row.observacoes,
     };
+    instPorLinha.set(row, inst);
     state.instrumentos.push(inst);
     state.parcelas = state.parcelas.concat(gerarParcelas(inst));
   });
+  function parcelaDe(row) {
+    if (row.alvo.parcela) return row.alvo.parcela;
+    const inst = instPorLinha.get(row.alvo.virtual.row);
+    return inst ? state.parcelas.find((p) => p.instrumentoId === inst.id && p.mes === row.competencia.mes && p.ano === row.competencia.ano) : null;
+  }
 
   let descOk = 0, lancOk = 0;
   descontosValidos.forEach((row) => {
-    const p = encontrarParcelaReal(normKey(row.unidade), row.competencia.mes, row.competencia.ano);
-    if (!p) return;
+    const p = parcelaDe(row); if (!p) return;
     if (!p.descontos) p.descontos = [];
     p.descontos.push({ id: uid("desc"), tipo: row.tipo, tipoOutro: row.tipoOutro, valor: row.valor });
     descOk++;
   });
   lancamentosValidos.forEach((row) => {
-    const p = encontrarParcelaReal(normKey(row.unidade), row.competencia.mes, row.competencia.ano);
-    if (!p) return;
+    const p = parcelaDe(row); if (!p) return;
     if (!p.lancamentos) p.lancamentos = [];
     p.lancamentos.push({ id: uid("lanc"), dataEfetivacao: row.dataEfetivacao, valorRecebido: row.valorRecebido, fonte: row.fonte, fonteOutro: row.fonteOutro });
     lancOk++;
   });
 
   persistir();
-  uiImportResultado = { previstos: previstosValidos.length, descontos: descOk, lancamentos: lancOk };
+  const ign = uiImportData.previstos.concat(uiImportData.descontos, uiImportData.lancamentos).filter((r) => r.dup).length;
+  uiImportResultado = { previstos: previstosValidos.length, descontos: descOk, lancamentos: lancOk, ignorados: ign };
   uiImportData = null;
   if (previstosValidos.length) state.anoAtual = previstosValidos[0].anoInicial;
   renderAll();
@@ -1756,20 +1952,22 @@ function confirmarImportacao() {
 function tabelaImportHtml(titulo, linhas, colunas) {
   if (!linhas.length) return "";
   const validas = linhas.filter((l) => l.valid).length;
+  const dups = linhas.filter((l) => l.dup).length;
   const rows = linhas.map((l) =>
-    "<tr>" + '<td>' + pill(l.valid ? "OK" : "Erro", l.valid ? "good" : "bad") + "</td>" +
+    "<tr>" + "<td>" + (l.dup ? pill("Duplicado", "warn") : pill(l.valid ? "OK" : "Erro", l.valid ? "good" : "bad")) + "</td>" +
     "<td>" + l.linha + "</td>" +
     colunas.map((c) => "<td>" + esc(c.get(l)) + "</td>").join("") +
-    '<td style="color:#c0432a;font-size:11.5px;">' + esc(l.erros.join("; ")) + "</td></tr>"
+    '<td style="color:' + (l.dup ? "#b8480f" : "#c0432a") + ';font-size:11.5px;">' + esc(l.erros.concat(l.avisos || []).join("; ")) + "</td></tr>"
   ).join("");
   return '<div class="panel" style="margin-bottom:14px;"><div class="panel-header" style="display:flex;justify-content:space-between;">' +
-    "<span>" + esc(titulo) + "</span><span>" + pill(validas + " de " + linhas.length + " válidas", validas === linhas.length ? "good" : "warn") + "</span></div>" +
+    "<span>" + esc(titulo) + "</span><span>" + (dups ? pill(dups + " duplicada(s) — serão ignoradas", "warn") + " " : "") +
+    pill(validas + " de " + linhas.length + " serão gravadas", validas === linhas.length ? "good" : "warn") + "</span></div>" +
     '<div style="overflow-x:auto;"><table><thead><tr><th>Status</th><th>Linha</th>' + colunas.map((c) => "<th>" + esc(c.label) + "</th>").join("") + "<th>Motivo</th></tr></thead>" +
     "<tbody>" + rows + "</tbody></table></div></div>";
 }
 
 function renderImportarView(topbar, content) {
-  topbar.innerHTML = topbarHtml("Importação", "Suba os Repasses Previstos, Descontos e Lançamentos a partir de uma planilha Excel", "");
+  topbar.innerHTML = topbarHtml("Importação e Backup", "Suba dados de uma planilha Excel ou baixe um backup completo no mesmo formato", "");
 
   if (uiImportLibState === "erro") {
     content.innerHTML = '<div class="panel" style="padding:16px 18px;background:#fde7dc;border-color:#f0c7ba;">' +
@@ -1780,25 +1978,40 @@ function renderImportarView(topbar, content) {
   }
 
   let html = '<div class="panel" style="padding:16px 18px;margin-bottom:16px;">' +
+    '<div class="panel-header" style="padding:0 0 8px;border:none;">Backup dos dados</div>' +
+    '<div style="font-size:12.5px;color:#58585a;margin-bottom:10px;">Gera um arquivo .xlsx com todos os anos, nas 3 abas do modelo (Repasses Previstos, Descontos e Recebimentos). ' +
+    "O mesmo arquivo pode ser enviado de volta na etapa 2. Itens que já existem são identificados como duplicados e ignorados.</div>" +
+    '<button class="btn btn-dark" id="btn-backup" type="button"' + (uiImportLibState === "loading" ? " disabled" : "") + ">" + icon("download", 14) + "Baixar backup (.xlsx)</button>" +
+    (uiBackupInfo ? '<div class="field-hint" style="margin-top:8px;">' + esc(uiBackupInfo) + "</div>" : "") +
+    "</div>";
+
+  html += '<div class="panel" style="padding:16px 18px;margin-bottom:16px;">' +
     '<div class="panel-header" style="padding:0 0 8px;border:none;">1. Baixe o modelo</div>' +
-    '<div style="font-size:12.5px;color:#58585a;margin-bottom:10px;">Arquivo .xlsx com 3 abas: Repasses Previstos, Descontos e Lançamentos, já com um exemplo preenchido.</div>' +
+    '<div style="font-size:12.5px;color:#58585a;margin-bottom:10px;">Arquivo .xlsx com 3 abas: Repasses Previstos, Descontos e Recebimentos, já com um exemplo preenchido. ' +
+    "Nas abas Descontos e Recebimentos, a coluna <b>" + COL_DESC_REPASSE + "</b> identifica o repasse (contrato ou termo aditivo).</div>" +
     '<button class="btn btn-ghost" id="btn-baixar-modelo" type="button">' + icon("download", 14) + "Baixar modelo (.xlsx)</button>" +
     "</div>";
 
   html += '<div class="panel" style="padding:16px 18px;margin-bottom:16px;">' +
-    '<div class="panel-header" style="padding:0 0 8px;border:none;">2. Envie o arquivo preenchido</div>' +
+    '<div class="panel-header" style="padding:0 0 8px;border:none;">2. Envie o arquivo preenchido (ou um backup)</div>' +
     '<input class="input" type="file" id="input-importar" accept=".xlsx,.xls" style="max-width:360px;"' + (uiImportLibState === "loading" ? " disabled" : "") + "/>" +
     (uiImportLibState === "loading" ? '<div class="field-hint" style="margin-top:6px;">Carregando leitor de Excel...</div>' : "") +
     "</div>";
 
   if (uiImportResultado) {
     html += '<div class="panel" style="padding:16px 18px;margin-bottom:16px;background:#eef7de;border-color:#d7e7b8;">' +
-      "Importação concluída: " + uiImportResultado.previstos + " repasse(s) previsto(s), " + uiImportResultado.descontos + " desconto(s) e " + uiImportResultado.lancamentos + " lançamento(s) gravados." +
+      "Importação concluída: " + uiImportResultado.previstos + " repasse(s) previsto(s), " + uiImportResultado.descontos + " desconto(s) e " + uiImportResultado.lancamentos + " recebimento(s) gravados." +
+      (uiImportResultado.ignorados ? " " + uiImportResultado.ignorados + " linha(s) duplicada(s) foram ignoradas." : "") +
       "</div>";
   }
 
   if (uiImportData) {
-    const totalValidas = uiImportData.previstos.filter((r) => r.valid).length + uiImportData.descontos.filter((r) => r.valid).length + uiImportData.lancamentos.filter((r) => r.valid).length;
+    const todas = uiImportData.previstos.concat(uiImportData.descontos, uiImportData.lancamentos);
+    const totalValidas = todas.filter((r) => r.valid).length;
+    const totalDups = todas.filter((r) => r.dup).length;
+    if (totalDups) html += '<div class="panel" style="padding:12px 16px;margin-bottom:14px;background:#fff4e5;border-color:#f3d6a8;">Atenção: <b>' + totalDups +
+      "</b> linha(s) já existem no sistema (ou se repetem no arquivo) e <b>não serão gravadas de novo</b>.</div>";
+    const compTxt = (r) => (r.competencia ? fmtCompetenciaTxt(r.competencia.mes, r.competencia.ano) : "—");
     html += tabelaImportHtml("Repasses Previstos", uiImportData.previstos, [
       { label: "Tipo", get: (r) => r.tipo }, { label: "Descrição", get: (r) => r.descricao },
       { label: "Valor Total", get: (r) => fmtCurrency(r.valorTotal) }, { label: "Parcelas", get: (r) => r.numParcelas },
@@ -1806,11 +2019,11 @@ function renderImportarView(topbar, content) {
       { label: "Unidade/Contrato", get: (r) => r.unidade },
     ]);
     html += tabelaImportHtml("Descontos", uiImportData.descontos, [
-      { label: "Unidade/Contrato", get: (r) => r.unidade }, { label: "Competência", get: (r) => (r.competencia ? String(r.competencia.mes).padStart(2, "0") + "/" + r.competencia.ano : "—") },
+      { label: COL_DESC_REPASSE, get: (r) => r.descRepasse || r.unidade }, { label: "Competência", get: compTxt },
       { label: "Tipo", get: (r) => (r.tipo === "Outro" && r.tipoOutro ? r.tipoOutro : r.tipo) }, { label: "Valor", get: (r) => fmtCurrency(r.valor) },
     ]);
-    html += tabelaImportHtml("Lançamentos", uiImportData.lancamentos, [
-      { label: "Unidade/Contrato", get: (r) => r.unidade }, { label: "Competência", get: (r) => (r.competencia ? String(r.competencia.mes).padStart(2, "0") + "/" + r.competencia.ano : "—") },
+    html += tabelaImportHtml("Recebimentos", uiImportData.lancamentos, [
+      { label: COL_DESC_REPASSE, get: (r) => r.descRepasse || r.unidade }, { label: "Competência", get: compTxt },
       { label: "Data Efetivação", get: (r) => fmtDateBR(r.dataEfetivacao) }, { label: "Valor Recebido", get: (r) => fmtCurrency(r.valorRecebido) }, { label: "Fonte", get: (r) => (r.fonte === "Outro" && r.fonteOutro ? r.fonteOutro : r.fonte) },
     ]);
     html += '<div style="display:flex;gap:8px;">' +
@@ -1821,6 +2034,8 @@ function renderImportarView(topbar, content) {
 
   content.innerHTML = html;
 
+  const btnBackup = document.getElementById("btn-backup");
+  if (btnBackup) btnBackup.onclick = gerarBackupXLSX;
   const btnModelo = document.getElementById("btn-baixar-modelo");
   if (btnModelo) btnModelo.onclick = gerarModeloXLSX;
 
