@@ -1386,8 +1386,12 @@ function relFilterBar(opts) {
   const f = state.relFiltros;
   const ano = state.anoAtual;
   const fontes = Array.from(new Set(parcelasDoAno(ano).flatMap((p) => (p.lancamentos || []).map((l) => fonteLabel(l)))));
-  let h = '<div class="filter-bar no-print">' +
-    '<div class="filter-field"><label>Data de corte (posição em)</label><input class="input" type="date" id="rf-corte" value="' + esc(f.corte) + '"/></div>' +
+  let h = '<div class="filter-bar no-print">';
+  if (opts.mes) {
+    h += '<div class="filter-field"><label>Competência (mês)</label><select class="input" id="rf-mes">' +
+      MONTH_NAMES.map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === state.filters.mensalMes ? " selected" : "") + ">" + n + "/" + ano + "</option>").join("") + "</select></div>";
+  }
+  h += '<div class="filter-field"><label>Data de corte (posição em)</label><input class="input" type="date" id="rf-corte" value="' + esc(f.corte) + '"/></div>' +
     '<div class="filter-field"><label>Instrumento / Contrato</label><select class="input" id="rf-instrumento"><option value="">Todos</option>' +
     instrumentosDoAno(ano).map((i) => '<option value="' + i.id + '"' + (i.id === f.instrumentoId ? " selected" : "") + ">" + esc(i.descricao) + "</option>").join("") + "</select></div>";
   if (opts.fonte) {
@@ -1409,6 +1413,7 @@ function relFilterBar(opts) {
 function wireRelFilters() {
   const f = state.relFiltros;
   const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("change", (e) => { fn(e.target.value); renderAll(); }); };
+  bind("rf-mes", (v) => { state.filters.mensalMes = Number(v); });
   bind("rf-corte", (v) => { f.corte = v || hojeISO(); });
   bind("rf-instrumento", (v) => { f.instrumentoId = v; });
   bind("rf-fonte", (v) => { f.fonte = v; });
@@ -1454,9 +1459,7 @@ function renderMensalView(topbar, content) {
 
   topbar.innerHTML = topbarHtml(
     "Relatório Mensal", "Detalhamento de repasse previsto x recebido, por competência — pronto para anexar ao processo SEI",
-    '<select class="input" id="mensal-select" style="width:150px;">' +
-      MONTH_NAMES.map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === mes ? " selected" : "") + ">" + n + "</option>").join("") +
-      "</select>" + exportPdfBtn()
+    exportPdfBtn()
   );
 
   const rows = [];
@@ -1486,7 +1489,7 @@ function renderMensalView(topbar, content) {
 
   content.innerHTML =
     printHeader("Relatório Mensal — " + MONTH_NAMES[mes - 1] + "/" + state.anoAtual, REL_ENTIDADE) +
-    relFilterBar({ fonte: true, faixa: false }) + relFiltrosTexto({ fonte: true, faixa: false }) + relKpis(t) +
+    relFilterBar({ fonte: true, faixa: false, mes: true }) + relFiltrosTexto({ fonte: true, faixa: false }) + relKpis(t) +
     '<div class="panel"><div class="panel-header">Movimentações de ' + MONTH_NAMES[mes - 1] + "/" + state.anoAtual + "</div>" +
     "<table><thead><tr><th>Instrumento</th><th>Status</th><th>Repasse Previsto</th><th>Desconto</th><th>Valor Líquido a Receber</th><th>Data Efetivação</th><th>Fonte</th><th>Valor Recebido</th><th>Saldo</th><th>Processo SEI</th></tr></thead>" +
     "<tbody>" + rows.join("") + "</tbody>" +
@@ -1494,7 +1497,6 @@ function renderMensalView(topbar, content) {
     '</td><td class="mono">' + esc(fmtCurrency(t.liquido)) + '</td><td colspan="2"></td><td class="mono">' + esc(fmtCurrency(t.ate)) +
     '</td><td class="mono">' + esc(fmtCurrency(t.saldo)) + '</td><td></td></tr></tfoot></table></div>';
 
-  document.getElementById("mensal-select").addEventListener("change", (e) => { state.filters.mensalMes = Number(e.target.value); renderAll(); });
   wireRelFilters();
   wirePrintButton();
 }
