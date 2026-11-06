@@ -193,6 +193,33 @@
   }
 
   /* Demonstrativo (modelo padrão) — tabela larga com meses em coluna */
+  @page { size: A4 landscape; margin: 10mm; }
+  @media print {
+    html, body { height: auto !important; background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .app { display: block !important; height: auto !important; }
+    .content { padding: 0 !important; }
+    .panel, .demo-table-wrap, .table-wrap, .month-block { overflow: visible !important; }
+    .kpi-row { gap: 8px !important; margin-bottom: 12px !important; }
+    .kpi-card { min-width: 0 !important; flex: 1 1 22% !important; padding: 8px 10px !important; break-inside: avoid; }
+    .kpi-value { font-size: 12px !important; }
+    .kpi-label { font-size: 8px !important; }
+    table { width: 100% !important; min-width: 0 !important; table-layout: auto; font-size: 8.5px !important; }
+    table th, table td { padding: 4px 5px !important; white-space: normal !important; overflow-wrap: anywhere; }
+    td.nw { white-space: nowrap !important; }
+    table td.mono, table th, table .mono { white-space: nowrap !important; overflow-wrap: normal !important; }
+    table.demo-table { font-size: 6.3px !important; }
+    table.demo-table td:first-child { white-space: normal !important; }
+    table.demo-table th, table.demo-table td { padding: 3px 2px !important; }
+    table.demo-table th:first-child, table.demo-table td:first-child { position: static !important; width: 18%; }
+    thead { display: table-header-group; }
+    tfoot { display: table-row-group; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    .panel, .rel-filtros { break-inside: auto; }
+    .pill { font-size: 7.5px !important; padding: 1px 5px !important; }
+    .parcela-preview { display: flex; flex-wrap: wrap; gap: 2px; }
+    .parcela-chip { font-size: 7px !important; padding: 1px 4px !important; }
+  }
+  td.nw { white-space: nowrap; }
   .demo-table-wrap { overflow-x: auto; }
   table.demo-table { min-width: 1400px; }
   table.demo-table th, table.demo-table td { text-align: right; }
@@ -270,6 +297,7 @@ const ICONS = {
   minus: '<path d="M5 12h14"/>',
   filter: '<path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>',
   upload: '<path d="M12 21V9m0 0-4 4m4-4 4 4M4 21h16"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
 };
 function icon(name, size) {
   size = size || 16;
@@ -281,7 +309,7 @@ const COLORS = { blue: "#1b94c2", teal: "#0ebcca", lime: "#bcd630", yellow: "#e6
 const MONTH_NAMES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const MONTH_SHORT = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 const MONTH_SHORT_DOT = ["jan.","fev.","mar.","abr.","mai.","jun.","jul.","ago.","set.","out.","nov.","dez."];
-const FONTE_OPCOES = ["FONTE 100", "FONTE 138", "Não informado", "Outro"];
+const FONTE_OPCOES = ["FONTE 100", "FONTE 138", "Não informado", "Outro"]; // recalculada por atualizarFonteOpcoes()
 const TIPOS_INSTRUMENTO_BASE = ["Contrato de Gestão (Original)", "Termo Aditivo", "Repactuação", "Alteração Contratual", "Outro"];
 const DESCONTO_TIPOS = ["Estatutário", "Custeio", "Adiantamento", "Outro"];
 const STATUS_OPCOES = [{ v: "pendente", l: "Pendente" }, { v: "parcial", l: "Parcial" }, { v: "quitado", l: "Quitado" }];
@@ -373,6 +401,7 @@ const DB_KEY_INSTRUMENTOS = "igesdf_instrumentos_v3";
 const DB_KEY_PARCELAS = "igesdf_parcelas_v3";
 const DB_KEY_TIPOS_CUSTOM = "igesdf_tipos_custom_v3";
 const DB_KEY_ADIANTAMENTOS = "igesdf_adiantamentos_v3";
+const DB_KEY_FONTES = "igesdf_fontes_v3";
 
 /**
  * ==================== CONEXÃO COM GOOGLE SHEETS ====================
@@ -386,14 +415,16 @@ const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 const db = {
   load() {
-    let instrumentos = [], parcelas = [], tiposCustom = [], adiantamentos = [];
+    let instrumentos = [], parcelas = [], tiposCustom = [], adiantamentos = [], fontes = null;
     try { instrumentos = JSON.parse(localStorage.getItem(DB_KEY_INSTRUMENTOS)) || []; } catch (e) {}
     try { parcelas = JSON.parse(localStorage.getItem(DB_KEY_PARCELAS)) || []; } catch (e) {}
     try { tiposCustom = JSON.parse(localStorage.getItem(DB_KEY_TIPOS_CUSTOM)) || []; } catch (e) {}
     try { adiantamentos = JSON.parse(localStorage.getItem(DB_KEY_ADIANTAMENTOS)) || []; } catch (e) {}
-    return { instrumentos, parcelas, tiposCustom, adiantamentos };
+    try { fontes = JSON.parse(localStorage.getItem(DB_KEY_FONTES)); } catch (e) {}
+    return { instrumentos, parcelas, tiposCustom, adiantamentos, fontes };
   },
-  save(instrumentos, parcelas, tiposCustom, adiantamentos) {
+  save(instrumentos, parcelas, tiposCustom, adiantamentos, fontes) {
+    if (fontes) localStorage.setItem(DB_KEY_FONTES, JSON.stringify(fontes));
     localStorage.setItem(DB_KEY_ADIANTAMENTOS, JSON.stringify(adiantamentos || []));
     localStorage.setItem(DB_KEY_INSTRUMENTOS, JSON.stringify(instrumentos));
     localStorage.setItem(DB_KEY_PARCELAS, JSON.stringify(parcelas));
@@ -431,6 +462,8 @@ const state = {
   parcelas: [],
   tiposCustom: [],
   adiantamentos: [],
+  fontes: [],
+  extratoFiltros: { ini: "", fim: "", instrumentoId: "", fonte: "", comp: "", incluirAdi: true },
   anoAtual: null,
   filters: { lancMonthOpen: null, lancQuery: "", mensalMes: null, fonteAtual: null },
   painelFiltros: { instrumentoId: "", fonte: "", mesIni: 1, mesFim: 12, status: "" },
@@ -443,12 +476,15 @@ function carregarEstado() {
   state.parcelas = d.parcelas;
   state.tiposCustom = d.tiposCustom;
   state.adiantamentos = d.adiantamentos;
+  state.fontes = Array.isArray(d.fontes) ? d.fontes : fontesPadrao();
+  atualizarFonteOpcoes();
   reaplicarAdiantamentos();
   state.anoAtual = anoComDadosMaisRecente();
 }
 function persistir() {
   reaplicarAdiantamentos();
-  db.save(state.instrumentos, state.parcelas, state.tiposCustom, state.adiantamentos);
+  atualizarFonteOpcoes();
+  db.save(state.instrumentos, state.parcelas, state.tiposCustom, state.adiantamentos, state.fontes);
   agendarSync();
 }
 function tiposDisponiveis() { return TIPOS_INSTRUMENTO_BASE.concat(state.tiposCustom); }
@@ -565,7 +601,7 @@ function buildSyncPayload() {
     id: p.id, instrumentoId: p.instrumentoId, ano: p.ano, mes: p.mes, valorPrevisto: p.valorPrevisto, dataContrato: p.dataContrato,
     descontos: p.descontos || [],
   }));
-  return { instrumentos: state.instrumentos, parcelas: parcelasFlat, lancamentos: lancamentosFlat, tiposCustom: state.tiposCustom, adiantamentos: state.adiantamentos };
+  return { instrumentos: state.instrumentos, parcelas: parcelasFlat, lancamentos: lancamentosFlat, tiposCustom: state.tiposCustom, adiantamentos: state.adiantamentos, fontes: state.fontes };
 }
 function setSyncStatus(kind, msg) {
   const el = document.getElementById("sync-status");
@@ -615,8 +651,10 @@ async function carregarDeSheets() {
     state.parcelas = parcelasComLancs;
     state.tiposCustom = data.tiposCustom || [];
     state.adiantamentos = Array.isArray(data.adiantamentos) ? data.adiantamentos : state.adiantamentos;
+    if (Array.isArray(data.fontes) && data.fontes.length) state.fontes = data.fontes;
+    atualizarFonteOpcoes();
     reaplicarAdiantamentos();
-    db.save(state.instrumentos, state.parcelas, state.tiposCustom, state.adiantamentos);
+    db.save(state.instrumentos, state.parcelas, state.tiposCustom, state.adiantamentos, state.fontes);
     setSyncStatus("ok", "Carregado da planilha");
     return true;
   } catch (err) {
@@ -693,10 +731,12 @@ const NAV_ITEMS = [
   { id: "previstos", label: "Repasses Previstos", icon: "filetext" },
   { id: "lancamentos", label: "Recebimentos", icon: "table" },
   { id: "adiantamentos", label: "Adiantamentos", icon: "download" },
+  { id: "extrato", label: "Extrato de Recebimentos", icon: "filetext" },
   { id: "mensal", label: "Relatório Mensal", icon: "calendar" },
   { id: "anual", label: "Relatório Anual", icon: "bar" },
   { id: "demonstrativo", label: "Demonstrativo Anual", icon: "sheet" },
   { id: "fonte", label: "Por Fonte de Recurso", icon: "layers" },
+  { id: "fontes", label: "Fontes de Recurso", icon: "settings" },
   { id: "importar", label: "Importação e Backup", icon: "upload" },
 ];
 
@@ -729,11 +769,14 @@ function kpiCard(label, value, sub, accent, iconName) {
   );
 }
 function exportPdfBtn() {
-  return '<button class="btn btn-dark" id="btn-print" type="button">' + icon("download", 14) + "Exportar PDF</button>";
+  return '<button class="btn btn-ghost" id="btn-xlsx" type="button">' + icon("sheet", 14) + "Exportar Excel</button>" +
+    '<button class="btn btn-dark" id="btn-print" type="button">' + icon("download", 14) + "Exportar PDF</button>";
 }
 function wirePrintButton() {
   const b = document.getElementById("btn-print");
   if (b) b.onclick = () => window.print();
+  const x = document.getElementById("btn-xlsx");
+  if (x) x.onclick = exportarXLSX;
 }
 
 /* ============================ RENDER PRINCIPAL ============================ */
@@ -749,6 +792,10 @@ function renderAll() {
     renderPrevistosView(topbar, content);
   } else if (state.view === "lancamentos") {
     renderLancamentosView(topbar, content);
+  } else if (state.view === "fontes") {
+    renderFontesView(topbar, content);
+  } else if (state.view === "extrato") {
+    renderExtratoView(topbar, content);
   } else if (state.view === "adiantamentos") {
     renderAdiantamentosView(topbar, content);
   } else if (state.view === "mensal") {
@@ -1146,7 +1193,7 @@ function descontoEditorHtml(p) {
 
 function fonteSelectHtml(cls, value, extraAttr) {
   return '<select class="input mini ' + cls + '" ' + (extraAttr || "") + ">" +
-    FONTE_OPCOES.map((fo) => '<option' + (fo === value ? " selected" : "") + ">" + fo + "</option>").join("") + "</select>";
+    opcoesFonteHtml(value) + "</select>";
 }
 
 function parcelaCardHtml(p) {
@@ -1388,7 +1435,7 @@ let uiAdiDraft = null; // { id, instrumentoId, data, fonte, fonteOutro, valor, o
 
 function renderAdiantamentosView(topbar, content) {
   topbar.innerHTML = topbarHtml("Adiantamentos", "Repasses recebidos adiantados, que serão descontados em competências futuras",
-    '<button class="btn btn-primary" id="btn-novo-adi" type="button">' + icon("plus", 14) + "Novo adiantamento</button>");
+    exportPdfBtn() + '<button class="btn btn-primary" id="btn-novo-adi" type="button">' + icon("plus", 14) + "Novo adiantamento</button>");
   const r = adiantResumo();
   const lista = state.adiantamentos.slice().sort((a, b) => (b.data || "").localeCompare(a.data || ""));
   const rows = lista.map((a) => {
@@ -1421,6 +1468,7 @@ function renderAdiantamentosView(topbar, content) {
     "</table></div>";
 
   document.getElementById("btn-novo-adi").onclick = () => abrirAdiantamentoModal(null);
+  wirePrintButton();
   content.querySelectorAll(".btn-edit-adi").forEach((b) => b.onclick = () => abrirAdiantamentoModal(state.adiantamentos.find((a) => a.id === b.dataset.id)));
   content.querySelectorAll(".btn-del-adi").forEach((b) => b.onclick = () => {
     const a = state.adiantamentos.find((x) => x.id === b.dataset.id); if (!a) return;
@@ -1449,7 +1497,7 @@ function abrirAdiantamentoModal(existing) {
     field("Repasse (contrato / termo aditivo)", '<select class="input" id="a-inst">' +
       state.instrumentos.map((i) => '<option value="' + i.id + '"' + (i.id === d.instrumentoId ? " selected" : "") + ">" + esc(i.descricao) + "</option>").join("") + "</select>", { full: true }) +
     field("Data do recebimento", '<input class="input" type="date" id="a-data" value="' + esc(d.data) + '"/>') +
-    field("Fonte de Recurso", '<select class="input" id="a-fonte">' + FONTE_OPCOES.map((fo) => "<option" + (fo === d.fonte ? " selected" : "") + ">" + fo + "</option>").join("") + "</select>" +
+    field("Fonte de Recurso", '<select class="input" id="a-fonte">' + opcoesFonteHtml(d.fonte) + "</select>" +
       '<input class="input" id="a-fonte-outro" placeholder="Qual fonte?" style="margin-top:6px;display:' + (d.fonte === "Outro" ? "block" : "none") + ';" value="' + esc(d.fonteOutro || "") + '"/>') +
     field("Valor adiantado (R$)", '<input class="input" type="text" inputmode="decimal" id="a-valor"/>') +
     field("Observações", '<input class="input" id="a-obs" placeholder="Ex.: adiantamento referente ao processo SEI..." value="' + esc(d.observacao || "") + '"/>') +
@@ -1534,6 +1582,221 @@ function abrirAdiantamentoModal(existing) {
     if (d.id) state.adiantamentos = state.adiantamentos.map((a) => (a.id === d.id ? novo : a)); else state.adiantamentos.push(novo);
     persistir(); closeModal(); renderAll();
   };
+}
+
+/* ============================================================
+   FONTES DE RECURSO (parametrização)
+   ------------------------------------------------------------
+   O usuário cadastra as fontes (ex.: "Fonte 138 - IAC"). O nome
+   cadastrado é o que aparece nos recebimentos e nos relatórios.
+   "Não informado" e "Outro" continuam sempre disponíveis.
+   ============================================================ */
+const FONTES_PADRAO = [{ nome: "FONTE 100", conta: "", ativa: true }, { nome: "FONTE 138", conta: "", ativa: true }];
+function fontesPadrao() { return FONTES_PADRAO.map((f) => Object.assign({ id: uid("fonte") }, f)); }
+/** Atualiza (no mesmo array) a lista usada nos seletores: fontes ativas + "Não informado" + "Outro". */
+function atualizarFonteOpcoes() {
+  FONTE_OPCOES.length = 0;
+  state.fontes.filter((f) => f.ativa !== false).forEach((f) => FONTE_OPCOES.push(f.nome));
+  FONTE_OPCOES.push("Não informado", "Outro");
+}
+function fontesNomesTodos() { return state.fontes.map((f) => f.nome).concat(["Não informado", "Outro"]); }
+function opcoesFonteHtml(valorAtual) {
+  const lista = FONTE_OPCOES.slice();
+  if (valorAtual && !lista.includes(valorAtual)) lista.unshift(valorAtual); // fonte inativa/removida ainda aparece no registro antigo
+  return lista.map((fo) => "<option" + (fo === valorAtual ? " selected" : "") + ">" + esc(fo) + "</option>").join("");
+}
+function usoDaFonte(nome) {
+  let qtd = 0, total = 0;
+  state.parcelas.forEach((p) => (p.lancamentos || []).forEach((l) => { if (l.fonte === nome) { qtd++; total += l.valorRecebido || 0; } }));
+  state.adiantamentos.forEach((a) => { if (a.fonte === nome) { qtd++; total += a.valor || 0; } });
+  return { qtd, total };
+}
+function renderFontesView(topbar, content) {
+  topbar.innerHTML = topbarHtml("Fontes de Recurso", "Cadastre as fontes que aparecem nos recebimentos, adiantamentos e relatórios",
+    '<button class="btn btn-primary" id="btn-nova-fonte" type="button">' + icon("plus", 14) + "Nova fonte</button>");
+  const rows = state.fontes.map((f) => {
+    const u = usoDaFonte(f.nome);
+    return "<tr><td style='font-weight:600;'>" + esc(f.nome) + "</td><td>" + esc(f.conta || "—") + "</td><td>" + u.qtd + ' recebimento(s)</td><td class="mono">' + esc(fmtCurrency(u.total)) +
+      "</td><td>" + (f.ativa !== false ? pill("Ativa", "good") : pill("Inativa", "warn")) + "</td>" +
+      '<td style="white-space:nowrap;"><button class="icon-btn btn-edit-fonte" data-id="' + f.id + '" title="Editar" type="button">' + icon("pencil", 14) + "</button>" +
+      '<button class="btn btn-ghost btn-sm btn-toggle-fonte" data-id="' + f.id + '" type="button">' + (f.ativa !== false ? "Inativar" : "Ativar") + "</button>" +
+      '<button class="icon-btn danger btn-del-fonte" data-id="' + f.id + '" title="Excluir" type="button">' + icon("trash", 14) + "</button></td></tr>";
+  }).join("");
+  content.innerHTML =
+    '<div class="rel-filtros">Fonte <b>inativa</b> não aparece para novos lançamentos, mas os registros antigos continuam iguais. Para <b>excluir</b>, a fonte não pode ter recebimentos; se tiver, use Inativar. ' +
+    "Ao mudar o nome de uma fonte, todos os recebimentos dela são atualizados.</div>" +
+    '<div class="panel"><table><thead><tr><th>Fonte</th><th>Conta / descrição</th><th>Uso</th><th>Total recebido</th><th>Situação</th><th></th></tr></thead><tbody>' +
+    (rows || '<tr><td colspan="6" class="empty-state">Nenhuma fonte cadastrada.</td></tr>') + "</tbody></table></div>";
+  document.getElementById("btn-nova-fonte").onclick = () => abrirFonteModal(null);
+  content.querySelectorAll(".btn-edit-fonte").forEach((b) => b.onclick = () => abrirFonteModal(state.fontes.find((f) => f.id === b.dataset.id)));
+  content.querySelectorAll(".btn-toggle-fonte").forEach((b) => b.onclick = () => {
+    const f = state.fontes.find((x) => x.id === b.dataset.id); f.ativa = f.ativa === false; persistir(); renderAll();
+  });
+  content.querySelectorAll(".btn-del-fonte").forEach((b) => b.onclick = () => {
+    const f = state.fontes.find((x) => x.id === b.dataset.id); if (!f) return;
+    if (usoDaFonte(f.nome).qtd > 0) { alert("Esta fonte tem recebimentos ou adiantamentos. Use \"Inativar\" para tirá-la da lista sem perder o histórico."); return; }
+    if (!confirm('Excluir a fonte "' + f.nome + '"?')) return;
+    state.fontes = state.fontes.filter((x) => x.id !== f.id); persistir(); renderAll();
+  });
+}
+function abrirFonteModal(existing) {
+  const f = existing || { id: null, nome: "", conta: "", ativa: true };
+  document.getElementById("modal-root").innerHTML =
+    '<div class="modal-backdrop" id="modal-backdrop"><div class="modal"><div class="modal-header"><div class="modal-title">' + (existing ? "Editar fonte" : "Nova fonte") + "</div>" +
+    '<button class="icon-btn" id="modal-close" type="button">' + icon("x", 18) + "</button></div><div class=\"modal-body\">" +
+    field("Nome da fonte", '<input class="input" id="fo-nome" placeholder="ex: Fonte 138 - IAC" value="' + esc(f.nome) + '"/>', { full: true }) +
+    field("Conta / descrição (opcional)", '<input class="input" id="fo-conta" placeholder="ex: 73.808-5" value="' + esc(f.conta || "") + '"/>', { full: true }) +
+    '<div class="field full"><label style="display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" id="fo-ativa"' + (f.ativa !== false ? " checked" : "") + "/> Fonte ativa</label></div></div>" +
+    '<div class="modal-footer"><div></div><div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modal-cancel" type="button">Cancelar</button>' +
+    '<button class="btn btn-primary" id="modal-save" type="button">' + icon("check", 14) + "Salvar</button></div></div></div></div>";
+  document.getElementById("modal-close").onclick = closeModal;
+  document.getElementById("modal-cancel").onclick = closeModal;
+  document.getElementById("modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") closeModal(); });
+  document.getElementById("modal-save").onclick = () => {
+    const nome = document.getElementById("fo-nome").value.trim();
+    if (!nome) { alert("Informe o nome da fonte."); return; }
+    if (["outro", "não informado", "nao informado"].includes(normKey(nome))) { alert('"' + nome + '" já existe como opção fixa do sistema.'); return; }
+    if (state.fontes.some((x) => x.id !== f.id && normKey(x.nome) === normKey(nome))) { alert("Já existe uma fonte com este nome."); return; }
+    const conta = document.getElementById("fo-conta").value.trim(), ativa = document.getElementById("fo-ativa").checked;
+    if (existing) {
+      const antigo = existing.nome;
+      if (antigo !== nome) {
+        state.parcelas.forEach((p) => (p.lancamentos || []).forEach((l) => { if (l.fonte === antigo) l.fonte = nome; }));
+        state.adiantamentos.forEach((a) => { if (a.fonte === antigo) a.fonte = nome; });
+      }
+      Object.assign(existing, { nome, conta, ativa });
+    } else {
+      state.fontes.push({ id: uid("fonte"), nome, conta, ativa });
+    }
+    persistir(); closeModal(); renderAll();
+  };
+}
+
+/* ============================================================
+   EXTRATO DE RECEBIMENTOS (estilo extrato bancário)
+   ------------------------------------------------------------
+   Lista cronológica de créditos, com saldo acumulado.
+   Saldo anterior = tudo que foi recebido antes da data inicial.
+   Saldo final = Saldo anterior + créditos do período.
+   ============================================================ */
+function extratoEntradas(f) {
+  const out = [];
+  state.parcelas.forEach((p) => (p.lancamentos || []).forEach((l) => {
+    const inst = instrumentoDe(p) || {};
+    if (f.instrumentoId && p.instrumentoId !== f.instrumentoId) return;
+    if (f.fonte && fonteLabel(l) !== f.fonte) return;
+    if (f.comp && f.comp !== p.ano + "-" + String(p.mes).padStart(2, "0")) return;
+    out.push({ data: l.dataEfetivacao || "", hist: "Repasse recebido — " + (inst.descricao || "—"), comp: fmtCompetenciaTxt(p.mes, p.ano), fonte: fonteLabel(l), valor: l.valorRecebido || 0, sei: inst.processoSei || "" });
+  }));
+  if (f.incluirAdi && !f.comp) {
+    state.adiantamentos.forEach((a) => {
+      const inst = state.instrumentos.find((i) => i.id === a.instrumentoId) || {};
+      if (f.instrumentoId && a.instrumentoId !== f.instrumentoId) return;
+      const fl = a.fonte === "Outro" ? (a.fonteOutro || "Outro") : a.fonte;
+      if (f.fonte && fl !== f.fonte) return;
+      out.push({ data: a.data || "", hist: "Adiantamento recebido — " + (inst.descricao || "—") + (a.observacao ? " (" + a.observacao + ")" : ""), comp: "Adiantamento", fonte: fl, valor: a.valor || 0, sei: "" });
+    });
+  }
+  return out.sort((a, b) => a.data.localeCompare(b.data) || a.hist.localeCompare(b.hist));
+}
+function renderExtratoView(topbar, content) {
+  const f = state.extratoFiltros;
+  const ini = f.ini || state.anoAtual + "-01-01", fim = f.fim || state.anoAtual + "-12-31";
+  topbar.innerHTML = topbarHtml("Extrato de Recebimentos", "Créditos recebidos em ordem de data, com saldo acumulado — como um extrato bancário", exportPdfBtn());
+  const todas = extratoEntradas(f);
+  const anterior = todas.filter((e) => e.data < ini).reduce((s, e) => s + e.valor, 0);
+  const periodo = todas.filter((e) => e.data >= ini && e.data <= fim);
+  const fontes = Array.from(new Set(state.parcelas.flatMap((p) => (p.lancamentos || []).map((l) => fonteLabel(l)))));
+  const comps = Array.from(new Set(state.parcelas.filter((p) => (p.lancamentos || []).length).map((p) => p.ano + "-" + String(p.mes).padStart(2, "0")))).sort();
+
+  let saldo = anterior, totalCred = 0, html = "", mesAtual = "", subMes = 0;
+  const fechaMes = () => { if (mesAtual) html += '<tr class="demo-row-bold"><td colspan="4">Total de ' + MONTH_NAMES[Number(mesAtual.slice(5, 7)) - 1] + "/" + mesAtual.slice(0, 4) + '</td><td class="mono">' + esc(fmtCurrency(subMes)) + "</td><td></td></tr>"; };
+  periodo.forEach((e) => {
+    const m = e.data.slice(0, 7);
+    if (m !== mesAtual) { fechaMes(); mesAtual = m; subMes = 0; }
+    subMes += e.valor; saldo += e.valor; totalCred += e.valor;
+    html += '<tr><td class="nw">' + fmtDateBR(e.data) + "</td><td>" + esc(e.hist) + "</td><td>" + esc(e.comp) + "</td><td>" + pill(e.fonte, "info") +
+      '</td><td class="mono" style="color:#2c7a3f;">' + esc(fmtCurrency(e.valor)) + '</td><td class="mono">' + esc(fmtCurrency(saldo)) + "</td></tr>";
+  });
+  fechaMes();
+
+  const opt = (v, t, sel) => '<option value="' + esc(v) + '"' + (v === sel ? " selected" : "") + ">" + esc(t) + "</option>";
+  content.innerHTML =
+    printHeader("Extrato de Recebimentos — " + fmtDateBR(ini) + " a " + fmtDateBR(fim), REL_ENTIDADE) +
+    '<div class="filter-bar no-print">' +
+    '<div class="filter-field"><label>Data inicial</label><input class="input" type="date" id="ex-ini" value="' + esc(ini) + '"/></div>' +
+    '<div class="filter-field"><label>Data final</label><input class="input" type="date" id="ex-fim" value="' + esc(fim) + '"/></div>' +
+    '<div class="filter-field"><label>Instrumento / Contrato</label><select class="input" id="ex-inst"><option value="">Todos</option>' + state.instrumentos.map((i) => opt(i.id, i.descricao, f.instrumentoId)).join("") + "</select></div>" +
+    '<div class="filter-field"><label>Fonte de Recurso</label><select class="input" id="ex-fonte"><option value="">Todas</option>' + fontes.map((x) => opt(x, x, f.fonte)).join("") + "</select></div>" +
+    '<div class="filter-field"><label>Competência</label><select class="input" id="ex-comp"><option value="">Todas</option>' + comps.map((c) => opt(c, fmtCompetenciaTxt(Number(c.slice(5)), c.slice(0, 4)), f.comp)).join("") + "</select></div>" +
+    '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;padding-bottom:8px;"><input type="checkbox" id="ex-adi"' + (f.incluirAdi ? " checked" : "") + "/> Incluir adiantamentos</label>" +
+    '<button class="btn btn-ghost btn-sm" id="ex-limpar" type="button">' + icon("x", 13) + "Limpar filtros</button></div>" +
+    '<div class="rel-filtros"><b>Período: ' + fmtDateBR(ini) + " a " + fmtDateBR(fim) + "</b> · Instrumento: " + esc(f.instrumentoId ? (state.instrumentos.find((i) => i.id === f.instrumentoId) || {}).descricao : "Todos") +
+    " · Fonte: " + esc(f.fonte || "Todas") + " · Competência: " + esc(f.comp ? fmtCompetenciaTxt(Number(f.comp.slice(5)), f.comp.slice(0, 4)) : "Todas") + " · Adiantamentos: " + (f.incluirAdi && !f.comp ? "incluídos" : "não incluídos") + "</div>" +
+    '<div class="kpi-row">' + kpiCard("Saldo anterior", fmtCurrency(anterior), "Recebido antes de " + fmtDateBR(ini), COLORS.gray) +
+    kpiCard("Créditos no período", fmtCurrency(totalCred), periodo.length + " lançamento(s)", COLORS.teal) +
+    kpiCard("Saldo final", fmtCurrency(anterior + totalCred), "Acumulado em " + fmtDateBR(fim), COLORS.blue) + "</div>" +
+    '<div class="panel"><table><thead><tr><th>Data</th><th>Histórico</th><th>Competência</th><th>Fonte</th><th>Crédito</th><th>Saldo</th></tr></thead><tbody>' +
+    '<tr class="demo-row-bold"><td colspan="5">SALDO ANTERIOR</td><td class="mono">' + esc(fmtCurrency(anterior)) + "</td></tr>" +
+    (html || '<tr><td colspan="6" class="empty-state">Nenhum recebimento no período.</td></tr>') + "</tbody>" +
+    '<tfoot><tr><td colspan="4">SALDO FINAL</td><td class="mono">' + esc(fmtCurrency(totalCred)) + '</td><td class="mono">' + esc(fmtCurrency(anterior + totalCred)) + "</td></tr></tfoot></table></div>";
+
+  const bind = (id, fn) => document.getElementById(id).addEventListener("change", (e) => { fn(e.target); renderAll(); });
+  bind("ex-ini", (t) => { f.ini = t.value; }); bind("ex-fim", (t) => { f.fim = t.value; });
+  bind("ex-inst", (t) => { f.instrumentoId = t.value; }); bind("ex-fonte", (t) => { f.fonte = t.value; });
+  bind("ex-comp", (t) => { f.comp = t.value; }); bind("ex-adi", (t) => { f.incluirAdi = t.checked; });
+  document.getElementById("ex-limpar").onclick = () => { state.extratoFiltros = { ini: "", fim: "", instrumentoId: "", fonte: "", comp: "", incluirAdi: true }; renderAll(); };
+  wirePrintButton();
+}
+
+/* ============================ EXPORTAR PARA EXCEL ============================ */
+function textoParaNumero(t) {
+  const m = String(t).replace(/ /g, " ").trim().match(/^(-)?R\$\s*(-)?([\d.]+),(\d{2})$/);
+  if (!m) return null;
+  const n = Number(m[3].replace(/\./g, "") + "." + m[4]);
+  return (m[1] || m[2]) ? -n : n;
+}
+function exportarXLSX() {
+  loadSheetJS(() => {
+    const aoa = [];
+    const t = document.querySelector("#content .print-header .ph-title");
+    aoa.push([t ? t.textContent.trim() : "Relatório"]);
+    aoa.push(["Instituto de Gestão Estratégica de Saúde do Distrito Federal — emitido em " + new Date().toLocaleDateString("pt-BR")]);
+    const filtros = document.querySelector("#content .rel-filtros");
+    if (filtros) aoa.push([filtros.innerText.replace(/\s*\n+\s*/g, " · ")]);
+    aoa.push([]);
+    const kpis = [...document.querySelectorAll("#content .kpi-card")];
+    kpis.forEach((k) => { const v = k.querySelector(".kpi-value").textContent; const n = textoParaNumero(v); aoa.push([k.querySelector(".kpi-label").textContent.trim(), n === null ? v : n]); });
+    if (kpis.length) aoa.push([]);
+    document.querySelectorAll("#content .panel").forEach((panel) => {
+      const ph = panel.querySelector(".panel-header");
+      if (ph && !ph.closest("table")) aoa.push([ph.innerText.replace(/\s*\n+\s*/g, "  ")]);
+      panel.querySelectorAll("table").forEach((tb) => {
+        [...tb.rows].forEach((tr) => {
+          const cels = [...tr.cells].filter((c) => !c.classList.contains("no-print"));
+          if (!cels.length) return;
+          const linha = [];
+          cels.forEach((c) => {
+            const txt = c.innerText.replace(/\s*\n+\s*/g, " ").trim();
+            const n = textoParaNumero(txt);
+            linha.push(n === null ? (txt === "—" ? "" : txt) : n);
+            for (let i = 1; i < (c.colSpan || 1); i++) linha.push("");
+          });
+          aoa.push(linha);
+        });
+      });
+      aoa.push([]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const larg = [];
+    aoa.forEach((r) => r.forEach((v, i) => { const l = typeof v === "number" ? 16 : Math.min(String(v).length + 2, 60); larg[i] = Math.max(larg[i] || 10, l); }));
+    ws["!cols"] = larg.map((w) => ({ wch: w }));
+    Object.keys(ws).forEach((k) => { if (k[0] !== "!" && ws[k].t === "n") ws[k].z = "#,##0.00"; });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, (t ? t.textContent : "Relatório").replace(/[\\\/\?\*\[\]:]/g, " ").slice(0, 31));
+    const base = (t ? t.textContent : "relatorio").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "").toLowerCase().slice(0, 50);
+    XLSX.writeFile(wb, base + "_" + hojeISO() + ".xlsx");
+  });
 }
 
 /* ============================================================
@@ -1937,11 +2200,13 @@ function montarAbas(dados) {
   const wsAdiant = XLSX.utils.aoa_to_sheet([
     [COL_DESC_REPASSE, "Data do recebimento", "Fonte", "Valor adiantado", "Compensações (MM/AAAA:valor; ...)", "Observações"]
   ].concat(dados.adiantamentos || []));
+  const wsFontes = XLSX.utils.aoa_to_sheet([["Fonte", "Conta / descrição", "Ativa (Sim/Não)"]].concat(dados.fontes || []));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsPrevistos, "Repasses Previstos");
   XLSX.utils.book_append_sheet(wb, wsDescontos, "Descontos");
   XLSX.utils.book_append_sheet(wb, wsRecebimentos, "Recebimentos");
   XLSX.utils.book_append_sheet(wb, wsAdiant, "Adiantamentos");
+  XLSX.utils.book_append_sheet(wb, wsFontes, "Fontes de Recurso");
   return wb;
 }
 
@@ -1980,7 +2245,8 @@ function gerarBackupXLSX() {
       const comps = (a.compensacoes || []).slice().sort((x, y) => compKey(x).localeCompare(compKey(y))).map((c) => fmtCompetenciaTxt(c.mes, c.ano) + ":" + Number(c.valor).toFixed(2)).join("; ");
       return [inst.descricao || "", fmtDataTxt(a.data), a.fonte === "Outro" ? (a.fonteOutro || "Outro") : a.fonte, a.valor, comps, a.observacao || ""];
     });
-    XLSX.writeFile(montarAbas({ previstos, descontos, recebimentos, adiantamentos }), nomeArquivoBackup());
+    const fontes = state.fontes.map((x) => [x.nome, x.conta || "", x.ativa === false ? "Não" : "Sim"]);
+    XLSX.writeFile(montarAbas({ previstos, descontos, recebimentos, adiantamentos, fontes }), nomeArquivoBackup());
     uiBackupInfo = "Backup gerado: " + nomeArquivoBackup() + " — " + previstos.length + " repasse(s), " + descontos.length + " desconto(s), " + recebimentos.length + " recebimento(s) e " + adiantamentos.length + " adiantamento(s).";
     renderAll();
   });
@@ -2013,6 +2279,17 @@ function pegaAba(wb, nomes) { for (const n of nomes) if (wb.Sheets[n]) return wb
 
 function parseArquivoImportacao(wb) {
   const previstos = [], descontos = [], lancamentos = [];
+  const fontesImp = [];
+  const shFontes = wb.Sheets["Fontes de Recurso"];
+  if (shFontes) {
+    XLSX.utils.sheet_to_json(shFontes, { defval: "" }).forEach((r, i) => {
+      const nome = normStr(r["Fonte"]); const erros = [], avisos = [];
+      if (!nome) erros.push("Nome da fonte vazio");
+      let dup = false;
+      if (nome && (state.fontes.some((x) => normKey(x.nome) === normKey(nome)) || fontesImp.some((x) => normKey(x.nome) === normKey(nome)))) { dup = true; avisos.push("Fonte já cadastrada — será ignorada"); }
+      fontesImp.push({ linha: i + 2, nome, conta: normStr(r["Conta / descrição"]), ativa: normKey(r["Ativa (Sim/Não)"]) !== "não" && normKey(r["Ativa (Sim/Não)"]) !== "nao", dup, avisos, valid: erros.length === 0 && !dup, erros });
+    });
+  }
 
   const shPrevistos = wb.Sheets["Repasses Previstos"];
   if (shPrevistos) {
@@ -2088,7 +2365,7 @@ function parseArquivoImportacao(wb) {
       const dataEfetivacao = parseDataCell(r["Data de Efetivação"]);
       const valorRecebido = toNumber(r["Valor Recebido (líquido)"]);
       const fonteRaw = normStr(r["Fonte"]);
-      const fonteMatch = FONTE_OPCOES.find((f) => normKey(f) === normKey(fonteRaw));
+      const fonteMatch = fontesNomesTodos().concat(fontesImp.map((x) => x.nome)).find((f) => f && normKey(f) === normKey(fonteRaw));
       const fonte = fonteMatch || "Outro";
       const fonteOutro = fonteMatch ? "" : fonteRaw;
       const erros = [], avisos = [];
@@ -2117,7 +2394,7 @@ function parseArquivoImportacao(wb) {
       const descRepasse = normStr(r[COL_DESC_REPASSE]);
       const data = parseDataCell(r["Data do recebimento"]);
       const fonteRaw = normStr(r["Fonte"]);
-      const fonteMatch = FONTE_OPCOES.find((f) => normKey(f) === normKey(fonteRaw));
+      const fonteMatch = fontesNomesTodos().concat(fontesImp.map((x) => x.nome)).find((f) => f && normKey(f) === normKey(fonteRaw));
       const fonte = fonteMatch || "Outro", fonteOutro = fonteMatch ? "" : fonteRaw;
       const valor = toNumber(r["Valor adiantado"]);
       const observacao = normStr(r["Observações"]);
@@ -2155,7 +2432,7 @@ function parseArquivoImportacao(wb) {
       adiantamentos.push({ linha, descRepasse, data, fonte, fonteOutro, valor, observacao, compensacoes, alvo, dup, avisos, valid: erros.length === 0 && !dup, erros });
     });
   }
-  return { previstos, descontos, lancamentos, adiantamentos };
+  return { previstos, descontos, lancamentos, adiantamentos, fontes: fontesImp };
 }
 
 function confirmarImportacao() {
@@ -2165,6 +2442,9 @@ function confirmarImportacao() {
   const lancamentosValidos = uiImportData.lancamentos.filter((l) => l.valid);
   const adiantamentosValidos = (uiImportData.adiantamentos || []).filter((a) => a.valid);
   const instPorLinha = new Map();
+  const fontesValidas = (uiImportData.fontes || []).filter((x) => x.valid);
+  fontesValidas.forEach((x) => state.fontes.push({ id: uid("fonte"), nome: x.nome, conta: x.conta, ativa: x.ativa }));
+  atualizarFonteOpcoes();
 
   previstosValidos.forEach((row) => {
     if (!tiposDisponiveis().includes(row.tipo)) registrarTipoCustom(row.tipo);
@@ -2205,7 +2485,7 @@ function confirmarImportacao() {
     adiOk++;
   });
   persistir();
-  const ign = uiImportData.previstos.concat(uiImportData.descontos, uiImportData.lancamentos, uiImportData.adiantamentos || []).filter((r) => r.dup).length;
+  const ign = uiImportData.previstos.concat(uiImportData.descontos, uiImportData.lancamentos, uiImportData.adiantamentos || [], uiImportData.fontes || []).filter((r) => r.dup).length;
   uiImportResultado = { previstos: previstosValidos.length, descontos: descOk, lancamentos: lancOk, adiantamentos: adiOk, ignorados: ign };
   uiImportData = null;
   if (previstosValidos.length) state.anoAtual = previstosValidos[0].anoInicial;
@@ -2270,12 +2550,13 @@ function renderImportarView(topbar, content) {
   }
 
   if (uiImportData) {
-    const todas = uiImportData.previstos.concat(uiImportData.descontos, uiImportData.lancamentos, uiImportData.adiantamentos || []);
+    const todas = uiImportData.previstos.concat(uiImportData.descontos, uiImportData.lancamentos, uiImportData.adiantamentos || [], uiImportData.fontes || []);
     const totalValidas = todas.filter((r) => r.valid).length;
     const totalDups = todas.filter((r) => r.dup).length;
     if (totalDups) html += '<div class="panel" style="padding:12px 16px;margin-bottom:14px;background:#fff4e5;border-color:#f3d6a8;">Atenção: <b>' + totalDups +
       "</b> linha(s) já existem no sistema (ou se repetem no arquivo) e <b>não serão gravadas de novo</b>.</div>";
     const compTxt = (r) => (r.competencia ? fmtCompetenciaTxt(r.competencia.mes, r.competencia.ano) : "—");
+    html += tabelaImportHtml("Fontes de Recurso", uiImportData.fontes || [], [{ label: "Fonte", get: (r) => r.nome }, { label: "Conta", get: (r) => r.conta }, { label: "Ativa", get: (r) => (r.ativa ? "Sim" : "Não") }]);
     html += tabelaImportHtml("Repasses Previstos", uiImportData.previstos, [
       { label: "Tipo", get: (r) => r.tipo }, { label: "Descrição", get: (r) => r.descricao },
       { label: "Valor Total", get: (r) => fmtCurrency(r.valorTotal) }, { label: "Parcelas", get: (r) => r.numParcelas },
@@ -2347,6 +2628,7 @@ function semearDadosIniciais() {
   state.instrumentos = [contrato, aditivo];
   state.parcelas = gerarParcelas(contrato).concat(gerarParcelas(aditivo));
   state.tiposCustom = [];
+  state.fontes = fontesPadrao();
   persistir();
 }
 
