@@ -58,6 +58,9 @@
 
   /* KPI cards */
   .kpi-row { display: flex; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
+  .modal .kpi-value { font-size: 15px; white-space: nowrap; }
+  .kpi-card.clickable { cursor: pointer; transition: box-shadow .15s, transform .15s; }
+  .kpi-card.clickable:hover { box-shadow: 0 4px 14px rgba(27,148,194,.25); transform: translateY(-1px); }
   .kpi-card { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px;
     flex: 1; min-width: 190px; position: relative; overflow: hidden; }
   .kpi-card::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--accent, var(--blue)); }
@@ -332,8 +335,29 @@ function fmtPercent(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
   return (v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + "%";
 }
+/** Aceita "2026-01-08", "2026-01-08T08:00:00.000Z" (o Google Sheets às vezes devolve assim) ou um Date; devolve "AAAA-MM-DD". */
+function normalizarDataISO(v) {
+  if (v === null || v === undefined || v === "") return "";
+  const t = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const br = t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (br) return br[3] + "-" + br[2] + "-" + br[1];
+  const d = new Date(t);
+  if (isNaN(d.getTime())) return t.slice(0, 10);
+  const p = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  return p;
+}
+/** Corrige datas já gravadas no formato errado (estado local e dados vindos da planilha). */
+function sanearDatas() {
+  state.parcelas.forEach((p) => {
+    if (p.dataContrato) p.dataContrato = normalizarDataISO(p.dataContrato);
+    (p.lancamentos || []).forEach((l) => { if (l.dataEfetivacao) l.dataEfetivacao = normalizarDataISO(l.dataEfetivacao); });
+  });
+  state.adiantamentos.forEach((a) => { if (a.data) a.data = normalizarDataISO(a.data); });
+}
 function fmtDateBR(iso) {
   if (!iso) return "—";
+  iso = normalizarDataISO(iso);
   const parts = String(iso).split("-");
   if (parts.length !== 3) return esc(iso);
   return parts[2] + "/" + parts[1] + "/" + parts[0];
@@ -651,6 +675,7 @@ async function carregarDeSheets() {
     state.parcelas = parcelasComLancs;
     state.tiposCustom = data.tiposCustom || [];
     state.adiantamentos = Array.isArray(data.adiantamentos) ? data.adiantamentos : state.adiantamentos;
+    sanearDatas();
     if (Array.isArray(data.fontes) && data.fontes.length) state.fontes = data.fontes;
     atualizarFonteOpcoes();
     reaplicarAdiantamentos();
@@ -761,9 +786,9 @@ function topbarHtml(title, subtitle, actionsHtml) {
     '<div class="actions">' + (actionsHtml || "") + "</div></div>"
   );
 }
-function kpiCard(label, value, sub, accent, iconName) {
+function kpiCard(label, value, sub, accent, iconName, extra) {
   return (
-    '<div class="kpi-card" style="--accent:' + accent + '"><div class="kpi-label">' + esc(label) + (iconName ? '<span style="color:' + accent + '">' + icon(iconName, 16) + "</span>" : "") + "</div>" +
+    '<div class="kpi-card' + (extra ? " clickable" : "") + '" ' + (extra || "") + 'style="--accent:' + accent + '"><div class="kpi-label">' + esc(label) + (iconName ? '<span style="color:' + accent + '">' + icon(iconName, 16) + "</span>" : "") + "</div>" +
     '<div class="kpi-value">' + esc(value) + "</div>" +
     (sub ? '<div class="kpi-sub">' + esc(sub) + "</div>" : "") + "</div>"
   );
@@ -903,7 +928,7 @@ function renderDashboardView(topbar, content) {
     kpiCard("Total de Descontos", fmtCurrency(desconto), "", COLORS.orange, "minus") +
     kpiCard("Valor Líquido a Receber", fmtCurrency(liquido), "", COLORS.lime, "sheet") +
     kpiCard("Total Recebido", fmtCurrency(recebido), "", COLORS.teal, "bar") +
-    kpiCard("Saldo a Repassar", fmtCurrency(saldo), "", COLORS.gray, "alert") +
+    kpiCard("Saldo a Receber", fmtCurrency(saldo), "Clique para detalhar", COLORS.gray, "alert", 'id="card-saldo" title="Ver a composição do saldo" ') +
     kpiCard("Adiantamentos a compensar", fmtCurrency(adiantResumo().saldo), "de " + fmtCurrency(adiantResumo().valor) + " adiantados", COLORS.yellow, "download") +
     "</div>" +
     '<div class="grid-2">' +
@@ -924,6 +949,7 @@ function renderDashboardView(topbar, content) {
       renderAll();
     });
   });
+  document.getElementById("card-saldo").onclick = abrirSaldoDetalhe;
   document.getElementById("pf-limpar").onclick = () => {
     state.painelFiltros = { instrumentoId: "", fonte: "", mesIni: 1, mesFim: 12, status: "" };
     renderAll();
@@ -1800,6 +1826,75 @@ function exportarXLSX() {
 }
 
 /* ============================================================
+   SALDO A RECEBER — detalhamento (estilo BI)
+   Clicando no card, abre a composição do saldo por competência
+   e por repasse. Clicar numa competência abre o Relatório Mensal.
+   Respeita os filtros do Painel Geral.
+   Saldo = Previsto − Descontos − Recebido.
+   ============================================================ */
+function barraSaldoHtml(pct, cor) {
+  const w = Math.max(0, Math.min(100, pct));
+  return '<div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;height:8px;background:#e9eef0;border-radius:4px;overflow:hidden;min-width:70px;">' +
+    '<div style="width:' + w.toFixed(1) + "%;height:100%;background:" + cor + ';"></div></div><span class="mono" style="font-size:11.5px;min-width:52px;text-align:right;">' + fmtPercent(pct / 100) + "</span></div>";
+}
+function abrirSaldoDetalhe() {
+  const f = state.painelFiltros;
+  const parcelas = parcelasFiltradasPainel();
+  const itens = lancamentosFiltradosPainel(parcelas);
+  const recPorParcela = {};
+  itens.forEach(({ p, l }) => { recPorParcela[p.id] = (recPorParcela[p.id] || 0) + (l.valorRecebido || 0); });
+  const lin = (p) => { const prev = p.valorPrevisto || 0, desc = descontoTotalParcela(p), liq = prev - desc, rec = recPorParcela[p.id] || 0; return { prev, desc, liq, rec, saldo: liq - rec }; };
+
+  const meses = {}, insts = {};
+  parcelas.forEach((p) => {
+    const x = lin(p);
+    const m = meses[p.mes] = meses[p.mes] || { prev: 0, desc: 0, liq: 0, rec: 0, saldo: 0 };
+    const i = insts[p.instrumentoId] = insts[p.instrumentoId] || { prev: 0, desc: 0, liq: 0, rec: 0, saldo: 0 };
+    ["prev", "desc", "liq", "rec", "saldo"].forEach((k) => { m[k] += x[k]; i[k] += x[k]; });
+  });
+  const tot = Object.values(meses).reduce((a, m) => { ["prev", "desc", "liq", "rec", "saldo"].forEach((k) => { a[k] += m[k]; }); return a; }, { prev: 0, desc: 0, liq: 0, rec: 0, saldo: 0 });
+  const pctPend = (x) => (x.liq > 0 ? (x.saldo / x.liq) * 100 : 0);
+
+  const linhasMes = Object.keys(meses).map(Number).sort((a, b) => a - b).map((m) => {
+    const x = meses[m];
+    return '<tr class="bi-linha" data-mes="' + m + '" style="cursor:pointer;"><td style="font-weight:600;">' + MONTH_NAMES[m - 1] + "</td>" +
+      '<td class="mono">' + esc(fmtCurrency(x.prev)) + '</td><td class="mono">' + esc(fmtCurrency(x.desc)) + '</td><td class="mono">' + esc(fmtCurrency(x.rec)) +
+      '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(x.saldo)) + "</td><td>" + barraSaldoHtml(pctPend(x), x.saldo > 0.005 ? COLORS.orange : COLORS.lime) + "</td></tr>";
+  }).join("");
+  const linhasInst = Object.keys(insts).map((id) => {
+    const x = insts[id]; const inst = state.instrumentos.find((i) => i.id === id) || {};
+    return "<tr><td style='font-weight:600;'>" + esc(inst.descricao || "—") + '</td><td class="mono">' + esc(fmtCurrency(x.liq)) + '</td><td class="mono">' + esc(fmtCurrency(x.rec)) +
+      '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(x.saldo)) + "</td><td>" + barraSaldoHtml(x.liq > 0 ? (x.rec / x.liq) * 100 : 0, COLORS.teal) + "</td></tr>";
+  }).join("");
+
+  document.getElementById("modal-root").innerHTML =
+    '<div class="modal-backdrop" id="modal-backdrop"><div class="modal" style="width:980px;"><div class="modal-header"><div class="modal-title">Saldo a Receber — detalhamento · ' + state.anoAtual + "</div>" +
+    '<button class="icon-btn" id="modal-close" type="button">' + icon("x", 18) + "</button></div><div class=\"modal-body\" style=\"display:block;\">" +
+    '<div class="rel-filtros"><b>Como o saldo é calculado:</b> Previsto − Descontos − Recebido = Saldo a Receber. ' +
+    "Mostra os mesmos filtros do Painel Geral (" + MONTH_NAMES[f.mesIni - 1] + " a " + MONTH_NAMES[f.mesFim - 1] + "). Clique numa competência para abrir o Relatório Mensal.</div>" +
+    '<div class="kpi-row" style="margin-bottom:14px;">' + kpiCard("Previsto", fmtCurrency(tot.prev), "", COLORS.blue) + kpiCard("(−) Descontos", fmtCurrency(tot.desc), "", COLORS.orange) +
+    kpiCard("(−) Recebido", fmtCurrency(tot.rec), "", COLORS.teal) + kpiCard("= Saldo a Receber", fmtCurrency(tot.saldo), fmtPercent(pctPend(tot) / 100) + " do valor líquido ainda pendente", COLORS.gray) + "</div>" +
+    '<div class="panel" style="margin-bottom:14px;"><div class="panel-header">Por competência</div><table><thead><tr><th>Competência</th><th>Previsto</th><th>Descontos</th><th>Recebido</th><th>Saldo a Receber</th><th>% pendente</th></tr></thead><tbody>' +
+    (linhasMes || '<tr><td colspan="6" class="empty-state">Sem competências no filtro.</td></tr>') + "</tbody></table></div>" +
+    '<div class="panel"><div class="panel-header">Por repasse (contrato / termo aditivo)</div><table><thead><tr><th>Repasse</th><th>Valor líquido</th><th>Recebido</th><th>Saldo a Receber</th><th>% recebido</th></tr></thead><tbody>' +
+    (linhasInst || '<tr><td colspan="5" class="empty-state">Sem repasses no filtro.</td></tr>') + "</tbody></table></div>" +
+    '</div><div class="modal-footer"><div></div><div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modal-cancel" type="button">Fechar</button>' +
+    '<button class="btn btn-primary" id="bi-abrir-mensal" type="button">Abrir no Relatório Mensal</button></div></div></div></div>';
+
+  const irParaMensal = (ini, fim) => {
+    state.relFiltros.mesIni = ini; state.relFiltros.mesFim = fim;
+    state.relFiltros.instrumentoId = f.instrumentoId; state.relFiltros.fonte = f.fonte; state.relFiltros.status = "";
+    state.relFiltros.corte = hojeISO();
+    closeModal(); state.view = "mensal"; renderAll();
+  };
+  document.getElementById("modal-close").onclick = closeModal;
+  document.getElementById("modal-cancel").onclick = closeModal;
+  document.getElementById("modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") closeModal(); });
+  document.getElementById("bi-abrir-mensal").onclick = () => irParaMensal(f.mesIni, f.mesFim);
+  document.querySelectorAll(".bi-linha").forEach((tr) => tr.onclick = () => irParaMensal(Number(tr.dataset.mes), Number(tr.dataset.mes)));
+}
+
+/* ============================================================
    POSIÇÃO CONTÁBIL (DATA DE CORTE) — usada nos relatórios
    ------------------------------------------------------------
    Regra: a contabilidade é estática. Para a posição em uma data:
@@ -1912,10 +2007,9 @@ const REL_ENTIDADE = "Instituto de Gestão Estratégica de Saúde do Distrito Fe
 function pill_td(text, tone) { return "<td>" + pill(text, tone) + "</td>"; }
 function renderMensalView(topbar, content) {
   const f = state.relFiltros;
-  if (!state.filters.mensalMes) state.filters.mensalMes = new Date().getMonth() + 1;
-  const mes = state.filters.mensalMes;
-  const parcelas = parcelasRel(state.anoAtual, f, mes);
+  const parcelas = parcelasRel(state.anoAtual, f).sort((a, b) => (a.mes - b.mes) || String(a.instrumentoId).localeCompare(String(b.instrumentoId)));
   const t = posSoma(parcelas, f);
+  const periodoTxt = f.mesIni === f.mesFim ? MONTH_NAMES[f.mesIni - 1] + "/" + state.anoAtual : MONTH_NAMES[f.mesIni - 1] + " a " + MONTH_NAMES[f.mesFim - 1] + "/" + state.anoAtual;
 
   topbar.innerHTML = topbarHtml(
     "Relatório Mensal", "Detalhamento de repasse previsto x recebido, por competência — pronto para anexar ao processo SEI",
@@ -1928,32 +2022,33 @@ function renderMensalView(topbar, content) {
     const x = posParcela(p, f);
     const lancs = (p.lancamentos || []).filter((l) => !f.fonte || fonteLabel(l) === f.fonte)
       .sort((a, b) => (a.dataEfetivacao || "").localeCompare(b.dataEfetivacao || ""));
+    const compTd = "<td class=\"nw\">" + MONTH_SHORT[p.mes - 1] + "/" + p.ano + "</td>";
     const base = '<td class="mono">' + esc(fmtCurrency(p.valorPrevisto)) + '</td><td class="mono">' + (x.desconto ? esc(fmtCurrency(x.desconto)) : "—") +
       '</td><td class="mono">' + esc(fmtCurrency(x.liquido)) + "</td>";
     if (!lancs.length) {
-      rows.push("<tr><td>" + esc(inst.descricao || "—") + "</td>" + pill_td("Pendente", "warn") + base +
+      rows.push("<tr>" + compTd + "<td>" + esc(inst.descricao || "—") + "</td>" + pill_td("Pendente", "warn") + base +
         "<td>—</td><td>—</td><td>—</td><td class=\"mono\">" + esc(fmtCurrency(x.liquido)) + "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>");
     } else {
       let acumulado = 0;
       lancs.forEach((l) => {
         const depois = l.dataEfetivacao && l.dataEfetivacao > f.corte;
         if (!depois) acumulado += l.valorRecebido || 0;
-        rows.push("<tr><td>" + esc(inst.descricao || "—") + "</td>" + pill_td(depois ? "Após o corte" : "Recebido", depois ? "warn" : "info") + base +
+        rows.push("<tr>" + compTd + "<td>" + esc(inst.descricao || "—") + "</td>" + pill_td(depois ? "Após o corte" : "Recebido", depois ? "warn" : "info") + base +
           "<td>" + fmtDateBR(l.dataEfetivacao) + "</td><td>" + pill(fonteLabel(l), "info") +
           '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(l.valorRecebido)) +
           '</td><td class="mono">' + (depois ? "—" : esc(fmtCurrency(x.liquido - acumulado))) + "</td><td>" + esc(inst.processoSei || "—") + "</td></tr>");
       });
     }
   });
-  if (!rows.length) rows.push('<tr><td colspan="10" class="empty-state">Nenhuma competência encontrada com os filtros escolhidos.</td></tr>');
+  if (!rows.length) rows.push('<tr><td colspan="11" class="empty-state">Nenhuma competência encontrada com os filtros escolhidos.</td></tr>');
 
   content.innerHTML =
-    printHeader("Relatório Mensal — " + MONTH_NAMES[mes - 1] + "/" + state.anoAtual, REL_ENTIDADE) +
-    relFilterBar({ fonte: true, faixa: false, mes: true }) + relFiltrosTexto({ fonte: true, faixa: false }) + relKpis(t) +
-    '<div class="panel"><div class="panel-header">Movimentações de ' + MONTH_NAMES[mes - 1] + "/" + state.anoAtual + "</div>" +
-    "<table><thead><tr><th>Instrumento</th><th>Status</th><th>Repasse Previsto</th><th>Desconto</th><th>Valor Líquido a Receber</th><th>Data Efetivação</th><th>Fonte</th><th>Valor Recebido</th><th>Saldo</th><th>Processo SEI</th></tr></thead>" +
+    printHeader("Relatório Mensal — " + periodoTxt, REL_ENTIDADE) +
+    relFilterBar({ fonte: true, faixa: true }) + relFiltrosTexto({ fonte: true, faixa: true }) + relKpis(t) +
+    '<div class="panel"><div class="panel-header">Movimentações de ' + periodoTxt + "</div>" +
+    "<table><thead><tr><th>Competência</th><th>Instrumento</th><th>Status</th><th>Repasse Previsto</th><th>Desconto</th><th>Valor Líquido a Receber</th><th>Data Efetivação</th><th>Fonte</th><th>Valor Recebido</th><th>Saldo</th><th>Processo SEI</th></tr></thead>" +
     "<tbody>" + rows.join("") + "</tbody>" +
-    '<tfoot><tr><td colspan="2">Total do mês</td><td class="mono">' + esc(fmtCurrency(t.previsto)) + '</td><td class="mono">' + esc(fmtCurrency(t.desconto)) +
+    '<tfoot><tr><td colspan="3">Total do período</td><td class="mono">' + esc(fmtCurrency(t.previsto)) + '</td><td class="mono">' + esc(fmtCurrency(t.desconto)) +
     '</td><td class="mono">' + esc(fmtCurrency(t.liquido)) + '</td><td colspan="2"></td><td class="mono">' + esc(fmtCurrency(t.ate)) +
     '</td><td class="mono">' + esc(fmtCurrency(t.saldo)) + '</td><td></td></tr></tfoot></table></div>';
 
@@ -2636,6 +2731,7 @@ function semearDadosIniciais() {
 async function init() {
   semearDadosIniciais();
   carregarEstado();
+  sanearDatas();
   if (!state.filters.lancMonthOpen) state.filters.lancMonthOpen = state.anoAtual + "-1";
   renderAll();
 
