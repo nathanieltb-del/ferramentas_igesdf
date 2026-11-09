@@ -59,6 +59,15 @@
   /* KPI cards */
   .kpi-row { display: flex; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
   .modal .kpi-value { font-size: 15px; white-space: nowrap; }
+  #bi-tip { position: fixed; z-index: 9999; display: none; background: #2b3336; color: #fff; font-size: 12px; line-height: 1.5; padding: 8px 11px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.25); pointer-events: none; max-width: 280px; }
+  .modal .panel { overflow-x: auto; }
+  .modal td, .modal th { white-space: nowrap; }
+  .bi-chip-row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .bi-chip { background: #e3f4f8; color: #1b94c2; font-size: 12px; font-weight: 600; padding: 3px 4px 3px 10px; border-radius: 12px; }
+  .bi-chip button { border: none; background: none; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 6px; }
+  .bi-leg-fonte:hover, .bi-leg-serie:hover { background: #f3f7f8; }
+  .bi-fatia { transition: opacity .15s; }
+  @media print { #bi-tip { display: none !important; } }
   .kpi-card.clickable { cursor: pointer; transition: box-shadow .15s, transform .15s; }
   .kpi-card.clickable:hover { box-shadow: 0 4px 14px rgba(27,148,194,.25); transform: translateY(-1px); }
   .kpi-card { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px;
@@ -490,7 +499,8 @@ const state = {
   extratoFiltros: { ini: "", fim: "", instrumentoId: "", fonte: "", comp: "", incluirAdi: true },
   anoAtual: null,
   filters: { lancMonthOpen: null, lancQuery: "", mensalMes: null, fonteAtual: null },
-  painelFiltros: { instrumentoId: "", fonte: "", mesIni: 1, mesFim: 12, status: "" },
+  painelFiltros: { instrumentoId: "", fonte: "", mesIni: 1, mesFim: 12, status: "", destaqueMes: 0 },
+  painelSeriesOcultas: [],
   relFiltros: { corte: hojeISO(), instrumentoId: "", fonte: "", status: "", mesIni: 1, mesFim: 12 },
 };
 
@@ -690,7 +700,7 @@ async function carregarDeSheets() {
 
 /* ============================ GRÁFICOS (SVG puro) ============================ */
 /** series: [{key, label, color}]; data: [{mes, [key]: valor, ...}] */
-function svgBarChart(data, series, width, height) {
+function svgBarChart(data, series, width, height, opts) {
   width = width || 640; height = height || 260;
   const padL = 56, padB = 40, padT = 10, padR = 10;
   const innerW = width - padL - padR, innerH = height - padT - padB;
@@ -707,30 +717,40 @@ function svgBarChart(data, series, width, height) {
     gridLines += '<line x1="' + padL + '" y1="' + y + '" x2="' + (width - padR) + '" y2="' + y + '" stroke="#eef1f2" stroke-width="1"/>';
     gridLines += '<text x="' + (padL - 8) + '" y="' + (y + 3) + '" font-size="9" fill="#8a9296" text-anchor="end">' + esc(fmtCurrencyCompact(val)) + "</text>";
   }
-  const totalBarsW = series.length * barW + (series.length - 1) * gap;
+  opts = opts || {};
+  const ocultas = opts.ocultas || [];
+  const visiveis = series.filter((s) => ocultas.indexOf(s.key) < 0);
+  const totalBarsW = visiveis.length * barW + (visiveis.length - 1) * gap;
+  let hits = "";
   data.forEach((d, i) => {
     const cx = padL + groupW * i + groupW / 2;
     const startX = cx - totalBarsW / 2;
-    series.forEach((s, si) => {
+    const ativo = !opts.destaque || opts.destaque === d.m;
+    visiveis.forEach((s, si) => {
       const val = d[s.key] || 0;
       const h = maxVal > 0 ? (innerH * val) / maxVal : 0;
       const x = startX + si * (barW + gap);
       const y = padT + innerH - h;
-      bars += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + h + '" fill="' + s.color + '" rx="2"><title>' + esc(d.mes) + " — " + esc(s.label) + ": " + esc(fmtCurrency(val)) + '</title></rect>';
+      bars += '<rect class="bi-bar" data-m="' + d.m + '" x="' + x + '" y="' + y + '" width="' + barW + '" height="' + h + '" fill="' + s.color + '" rx="2" opacity="' + (ativo ? 1 : 0.28) + '"/>';
     });
-    labels += '<text x="' + cx + '" y="' + (height - padB + 18) + '" font-size="10" fill="#8a9296" text-anchor="middle">' + esc(d.mes) + "</text>";
+    const tip = "<b>" + esc(d.mesLongo || d.mes) + "</b>" + visiveis.map((s) =>
+      '<div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + s.color + ';margin-right:6px;"></span>' + esc(s.label) + ": <b>" + esc(fmtCurrency(d[s.key] || 0)) + "</b></div>").join("") +
+      '<div style="margin-top:4px;opacity:.75;">Clique para filtrar o painel</div>';
+    hits += '<rect class="bi-hit" data-m="' + d.m + '" data-tip="' + esc(tip) + '" x="' + (cx - groupW / 2) + '" y="' + padT + '" width="' + groupW + '" height="' + innerH + '" fill="#1b94c2" fill-opacity="0" style="cursor:pointer;"/>';
+    labels += '<text x="' + cx + '" y="' + (height - padB + 18) + '" font-size="10" fill="' + (opts.destaque === d.m ? "#1b94c2" : "#8a9296") + '" font-weight="' + (opts.destaque === d.m ? 700 : 400) + '" text-anchor="middle">' + esc(d.mes) + "</text>";
   });
-  const legend = series.map((s) =>
-    '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + s.color + ';margin-right:6px;"></span>' + esc(s.label) + "</span>"
-  ).join("");
+  const legend = series.map((s) => {
+    const off = ocultas.indexOf(s.key) >= 0;
+    return '<span class="bi-leg-serie" data-serie="' + s.key + '" title="Clique para ' + (off ? "mostrar" : "ocultar") + '" style="cursor:pointer;opacity:' + (off ? 0.4 : 1) + ';' + (off ? "text-decoration:line-through;" : "") + '"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + s.color + ';margin-right:6px;"></span>' + esc(s.label) + "</span>";
+  }).join("");
   return (
     '<svg viewBox="0 0 ' + width + " " + height + '" width="100%" height="' + height + '" role="img" aria-label="Gráfico por competência">' +
-    gridLines + bars + labels + "</svg>" +
+    gridLines + bars + labels + hits + "</svg>" +
     '<div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:#58585a;flex-wrap:wrap;">' + legend + "</div>"
   );
 }
 
-function svgDonutChart(data, size) {
+function svgDonutChart(data, size, ativa) {
   size = size || 200;
   const r = size / 2 - 14, cx = size / 2, cy = size / 2;
   const circumference = 2 * Math.PI * r;
@@ -741,9 +761,9 @@ function svgDonutChart(data, size) {
     const frac = d.total / total;
     const dash = frac * circumference, gap = circumference - dash;
     const color = corDaFonte(d.fonte, listaFontes);
-    circles += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="18" ' +
+    circles += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="' + (ativa === d.fonte ? 22 : 18) + '" class="bi-fatia" data-fonte="' + esc(d.fonte) + '" opacity="' + (ativa && ativa !== d.fonte ? 0.3 : 1) + '" style="cursor:pointer;" data-tip="' + esc("<b>" + d.fonte + "</b><div>" + fmtCurrency(d.total) + " (" + fmtPercent(frac) + ")</div><div style='margin-top:4px;opacity:.75;'>Clique para filtrar o painel</div>") + '" ' +
       'stroke-dasharray="' + dash + " " + gap + '" stroke-dashoffset="' + (-offsetAcc) + '" transform="rotate(-90 ' + cx + " " + cy + ')">' +
-      "<title>" + esc(d.fonte) + " — " + esc(fmtCurrency(d.total)) + "</title></circle>";
+      "</circle>";
     offsetAcc += dash;
   });
   if (!data.length) circles = '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="#e7ebec" stroke-width="18"/>';
@@ -843,10 +863,11 @@ function field(label, inputHtml, opts) {
 }
 
 /* ============================ VIEW: DASHBOARD ============================ */
-function parcelasFiltradasPainel() {
+function parcelasFiltradasPainel(ignoraDestaque) {
   const f = state.painelFiltros;
   return parcelasDoAno(state.anoAtual).filter((p) => {
     if (p.mes < f.mesIni || p.mes > f.mesFim) return false;
+    if (!ignoraDestaque && f.destaqueMes && p.mes !== f.destaqueMes) return false;
     if (f.instrumentoId && p.instrumentoId !== f.instrumentoId) return false;
     if (f.status && totaisParcela(p).status !== f.status) return false;
     return true;
@@ -885,8 +906,10 @@ function renderDashboardView(topbar, content) {
     '<button class="btn btn-ghost btn-sm" id="pf-limpar" type="button">' + icon("x", 13) + "Limpar filtros</button>" +
     "</div>";
 
+  const parcelasBase = parcelasFiltradasPainel(true);
   const parcelasFilt = parcelasFiltradasPainel();
   const itensFilt = lancamentosFiltradosPainel(parcelasFilt);
+  const itensBase = lancamentosFiltradosPainel(parcelasBase);
   const previsto = parcelasFilt.reduce((s, p) => s + (p.valorPrevisto || 0), 0);
   const recebido = itensFilt.reduce((s, it) => s + (it.l.valorRecebido || 0), 0);
   const desconto = parcelasFilt.reduce((s, p) => s + descontoTotalParcela(p), 0);
@@ -895,17 +918,19 @@ function renderDashboardView(topbar, content) {
 
   const porMes = {};
   for (let m = f.mesIni; m <= f.mesFim; m++) porMes[m] = { previsto: 0, recebido: 0, desconto: 0 };
-  parcelasFilt.forEach((p) => { if (porMes[p.mes]) { porMes[p.mes].previsto += p.valorPrevisto || 0; porMes[p.mes].desconto += descontoTotalParcela(p); } });
-  itensFilt.forEach(({ p, l }) => { if (porMes[p.mes]) porMes[p.mes].recebido += l.valorRecebido || 0; });
-  const chartData = Object.keys(porMes).map((m) => Object.assign({ mes: MONTH_SHORT[m - 1] }, porMes[m]));
+  parcelasBase.forEach((p) => { if (porMes[p.mes]) { porMes[p.mes].previsto += p.valorPrevisto || 0; porMes[p.mes].desconto += descontoTotalParcela(p); } });
+  itensBase.forEach(({ p, l }) => { if (porMes[p.mes]) porMes[p.mes].recebido += l.valorRecebido || 0; });
+  const chartData = Object.keys(porMes).map((m) => Object.assign({ m: Number(m), mes: MONTH_SHORT[m - 1], mesLongo: MONTH_NAMES[m - 1] }, porMes[m]));
 
   const fonteData = {};
-  itensFilt.forEach(({ l }) => { const k = fonteLabel(l); fonteData[k] = (fonteData[k] || 0) + (l.valorRecebido || 0); });
+  const itensDonut = [];
+  parcelasFilt.forEach((p) => (p.lancamentos || []).forEach((l) => itensDonut.push({ p, l })));
+  itensDonut.forEach(({ l }) => { const k = fonteLabel(l); fonteData[k] = (fonteData[k] || 0) + (l.valorRecebido || 0); });
   const fonteArr = Object.keys(fonteData).map((fonte) => ({ fonte, total: fonteData[fonte] }));
   const listaFontes = fonteArr.map((x) => x.fonte);
 
   const legend = fonteArr.length ? fonteArr.map((x) =>
-    '<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;">' +
+    '<div class="bi-leg-fonte" data-fonte="' + esc(x.fonte) + '" title="Clique para filtrar por esta fonte" style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;padding:3px 4px;border-radius:6px;' + (f.fonte === x.fonte ? "background:#e3f4f8;" : "") + (f.fonte && f.fonte !== x.fonte ? "opacity:.45;" : "") + '">' +
     '<span style="width:10px;height:10px;border-radius:3px;background:' + corDaFonte(x.fonte, listaFontes) + ';"></span>' +
     '<span style="color:#8a9296;flex:1;">' + esc(x.fonte) + '</span>' +
     '<span class="mono" style="font-weight:600;">' + esc(fmtCurrency(x.total)) + "</span></div>"
@@ -924,17 +949,18 @@ function renderDashboardView(topbar, content) {
     (semInstrumentos ? '<div class="panel" style="padding:16px 18px;margin-bottom:18px;background:#e3f4f8;border-color:#bfe3ec;">' +
       "Nenhum repasse previsto foi cadastrado ainda. Comece em <b>Repasses Previstos</b>." + "</div>" : "") +
     '<div class="kpi-row">' +
-    kpiCard("Repasse Previsto (filtro)", fmtCurrency(previsto), "", COLORS.blue, "sheet") +
-    kpiCard("Total de Descontos", fmtCurrency(desconto), "", COLORS.orange, "minus") +
-    kpiCard("Valor Líquido a Receber", fmtCurrency(liquido), "", COLORS.lime, "sheet") +
-    kpiCard("Total Recebido", fmtCurrency(recebido), "", COLORS.teal, "bar") +
+    kpiCard("Repasse Previsto (filtro)", fmtCurrency(previsto), "Clique para detalhar", COLORS.blue, "sheet", 'id="card-prev" ') +
+    kpiCard("Total de Descontos", fmtCurrency(desconto), "Clique para detalhar", COLORS.orange, "minus", 'id="card-desc" ') +
+    kpiCard("Valor Líquido a Receber", fmtCurrency(liquido), "Clique para detalhar", COLORS.lime, "sheet", 'id="card-liq" ') +
+    kpiCard("Total Recebido", fmtCurrency(recebido), "Clique para detalhar", COLORS.teal, "bar", 'id="card-rec" ') +
     kpiCard("Saldo a Receber", fmtCurrency(saldo), "Clique para detalhar", COLORS.gray, "alert", 'id="card-saldo" title="Ver a composição do saldo" ') +
-    kpiCard("Adiantamentos a compensar", fmtCurrency(adiantResumo().saldo), "de " + fmtCurrency(adiantResumo().valor) + " adiantados", COLORS.yellow, "download") +
+    kpiCard("Adiantamentos a compensar", fmtCurrency(adiantResumo().saldo), "de " + fmtCurrency(adiantResumo().valor) + " adiantados · clique para detalhar", COLORS.yellow, "download", 'id="card-adi" ') +
     "</div>" +
     '<div class="grid-2">' +
-    '<div class="panel" style="padding:18px;"><div class="panel-header" style="padding:0 0 12px;border:none;">Previsto x Recebido x Desconto por competência</div>' + svgBarChart(chartData, series) + "</div>" +
+    '<div class="panel" style="padding:18px;"><div class="panel-header" style="padding:0 0 12px;border:none;">Previsto x Recebido x Desconto por competência</div>' + (f.destaqueMes || f.fonte ? '<div class="bi-chip-row no-print">' + (f.destaqueMes ? '<span class="bi-chip">Mês: ' + MONTH_NAMES[f.destaqueMes - 1] + ' <button type="button" id="bi-limpa-mes" title="Remover">×</button></span>' : "") + (f.fonte ? '<span class="bi-chip">Fonte: ' + esc(f.fonte) + ' <button type="button" id="bi-limpa-fonte" title="Remover">×</button></span>' : "") + "</div>" : "") +
+    svgBarChart(chartData, series, 640, 260, { destaque: f.destaqueMes, ocultas: state.painelSeriesOcultas }) + "</div>" +
     '<div class="panel" style="padding:18px;"><div class="panel-header" style="padding:0 0 12px;border:none;">Recebido por Fonte de Recurso</div>' +
-    svgDonutChart(fonteArr, 200) + '<div style="display:flex;flex-direction:column;gap:6px;margin-top:12px;">' + legend + "</div></div>" +
+    svgDonutChart(fonteArr, 200, f.fonte) + '<div style="display:flex;flex-direction:column;gap:6px;margin-top:12px;">' + legend + "</div></div>" +
     "</div>";
 
   ["pf-instrumento", "pf-fonte", "pf-mesini", "pf-mesfim", "pf-status"].forEach((id) => {
@@ -945,13 +971,29 @@ function renderDashboardView(topbar, content) {
       f.mesIni = Number(document.getElementById("pf-mesini").value);
       f.mesFim = Number(document.getElementById("pf-mesfim").value);
       f.status = document.getElementById("pf-status").value;
+      f.destaqueMes = 0;
       if (f.mesIni > f.mesFim) { if (el.id === "pf-mesini") f.mesFim = f.mesIni; else f.mesIni = f.mesFim; }
       renderAll();
     });
   });
-  document.getElementById("card-saldo").onclick = abrirSaldoDetalhe;
+  document.getElementById("card-saldo").onclick = () => abrirDetalheCard("saldo");
+  document.getElementById("card-prev").onclick = () => abrirDetalheCard("prev");
+  document.getElementById("card-desc").onclick = () => abrirDetalheCard("desc");
+  document.getElementById("card-liq").onclick = () => abrirDetalheCard("liq");
+  document.getElementById("card-rec").onclick = () => abrirDetalheCard("rec");
+  document.getElementById("card-adi").onclick = abrirAdiantDetalhe;
+  const limpaM = document.getElementById("bi-limpa-mes"); if (limpaM) limpaM.onclick = () => { f.destaqueMes = 0; renderAll(); };
+  const limpaF = document.getElementById("bi-limpa-fonte"); if (limpaF) limpaF.onclick = () => { f.fonte = ""; renderAll(); };
+  content.querySelectorAll(".bi-hit").forEach((el) => el.onclick = () => { const m = Number(el.dataset.m); f.destaqueMes = f.destaqueMes === m ? 0 : m; esconderTip(); renderAll(); });
+  content.querySelectorAll(".bi-fatia, .bi-leg-fonte").forEach((el) => el.onclick = () => { const fo = el.dataset.fonte; f.fonte = f.fonte === fo ? "" : fo; esconderTip(); renderAll(); });
+  content.querySelectorAll(".bi-leg-serie").forEach((el) => el.onclick = () => {
+    const k = el.dataset.serie, a = state.painelSeriesOcultas;
+    const i = a.indexOf(k); if (i >= 0) a.splice(i, 1); else if (a.length < 2) a.push(k);
+    renderAll();
+  });
   document.getElementById("pf-limpar").onclick = () => {
-    state.painelFiltros = { instrumentoId: "", fonte: "", mesIni: 1, mesFim: 12, status: "" };
+    state.painelFiltros = { instrumentoId: "", fonte: "", mesIni: 1, mesFim: 12, status: "", destaqueMes: 0 };
+    state.painelSeriesOcultas = [];
     renderAll();
   };
   wirePrintButton();
@@ -1832,12 +1874,66 @@ function exportarXLSX() {
    Respeita os filtros do Painel Geral.
    Saldo = Previsto − Descontos − Recebido.
    ============================================================ */
+function abrirAdiantDetalhe() {
+  const linhas = state.adiantamentos.map((a) => {
+    const t = adiantTotais(a); const inst = state.instrumentos.find((i) => i.id === a.instrumentoId) || {};
+    const comps = (a.compensacoes || []).map((c) => MONTH_SHORT[c.mes - 1] + "/" + c.ano).join(", ") || "—";
+    return "<tr><td>" + esc(fmtDateBR(a.dataRecebimento)) + "</td><td>" + esc(inst.descricao || "—") + '</td><td class="mono">' + esc(fmtCurrency(t.valor)) + '</td><td class="mono">' + esc(fmtCurrency(t.compensado)) +
+      '</td><td class="mono" style="font-weight:700;background:#fff8d6;">' + esc(fmtCurrency(t.saldo)) + "</td><td>" + barraSaldoHtml(t.valor > 0 ? (t.compensado / t.valor) * 100 : 0, COLORS.yellow) + "</td><td>" + esc(comps) + "</td></tr>";
+  }).join("");
+  const r = adiantResumo();
+  document.getElementById("modal-root").innerHTML =
+    '<div class="modal-backdrop" id="modal-backdrop"><div class="modal" style="width:980px;"><div class="modal-header"><div class="modal-title">Adiantamentos a compensar — detalhamento</div>' +
+    '<button class="icon-btn" id="modal-close" type="button">' + icon("x", 18) + '</button></div><div class="modal-body" style="display:block;">' +
+    '<div class="rel-filtros"><b>Como é calculado:</b> Valor adiantado − Valor já descontado nas competências = Saldo a compensar. Este quadro mostra todos os adiantamentos, sem os filtros do Painel.</div>' +
+    '<div class="kpi-row" style="margin-bottom:14px;">' + kpiCard("Adiantado", fmtCurrency(r.valor), "", COLORS.yellow) + kpiCard("(−) Já compensado", fmtCurrency(r.compensado), "", COLORS.teal) + kpiCard("= A compensar", fmtCurrency(r.saldo), "", COLORS.gray) + "</div>" +
+    '<div class="panel"><table><thead><tr><th>Data</th><th>Repasse</th><th>Adiantado</th><th>Compensado</th><th>A compensar</th><th>% compensado</th><th>Competências</th></tr></thead><tbody>' +
+    (linhas || '<tr><td colspan="7" class="empty-state">Nenhum adiantamento registrado.</td></tr>') + "</tbody></table></div></div>" +
+    '<div class="modal-footer"><div></div><div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modal-cancel" type="button">Fechar</button><button class="btn btn-primary" id="adi-abrir" type="button">Abrir Adiantamentos</button></div></div></div></div>';
+  document.getElementById("modal-close").onclick = closeModal;
+  document.getElementById("modal-cancel").onclick = closeModal;
+  document.getElementById("modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") closeModal(); });
+  document.getElementById("adi-abrir").onclick = () => { closeModal(); state.view = "adiantamentos"; renderAll(); };
+}
+/* Dica flutuante (tooltip) dos gráficos do Painel */
+function esconderTip() { const t = document.getElementById("bi-tip"); if (t) t.style.display = "none"; }
+(function () {
+  function tip() {
+    let t = document.getElementById("bi-tip");
+    if (!t) { t = document.createElement("div"); t.id = "bi-tip"; document.body.appendChild(t); }
+    return t;
+  }
+  document.addEventListener("mousemove", (e) => {
+    const el = e.target.closest && e.target.closest("[data-tip]");
+    if (!el) { esconderTip(); return; }
+    const t = tip(); t.innerHTML = el.getAttribute("data-tip"); t.style.display = "block";
+    const w = t.offsetWidth, h = t.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + w > window.innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > window.innerHeight - 8) y = e.clientY - h - 14;
+    t.style.left = x + "px"; t.style.top = y + "px";
+  });
+  document.addEventListener("mouseleave", esconderTip);
+  document.addEventListener("mouseover", (e) => {
+    const m = e.target.closest && e.target.closest(".bi-hit");
+    document.querySelectorAll(".bi-hit").forEach((r) => r.setAttribute("fill-opacity", r === m ? "0.07" : "0"));
+  });
+})();
 function barraSaldoHtml(pct, cor) {
   const w = Math.max(0, Math.min(100, pct));
   return '<div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;height:8px;background:#e9eef0;border-radius:4px;overflow:hidden;min-width:70px;">' +
     '<div style="width:' + w.toFixed(1) + "%;height:100%;background:" + cor + ';"></div></div><span class="mono" style="font-size:11.5px;min-width:52px;text-align:right;">' + fmtPercent(pct / 100) + "</span></div>";
 }
-function abrirSaldoDetalhe() {
+const DETALHE_CARDS = {
+  prev: { titulo: "Repasse Previsto", foco: "prev", formula: "Valor previsto de cada competência, antes dos descontos." },
+  desc: { titulo: "Total de Descontos", foco: "desc", formula: "Soma dos descontos (estatutário, custeio, adiantamento e outros) lançados nas competências." },
+  liq: { titulo: "Valor Líquido a Receber", foco: "liq", formula: "Previsto − Descontos = Valor Líquido a Receber." },
+  rec: { titulo: "Total Recebido", foco: "rec", formula: "Soma dos recebimentos lançados (valores líquidos efetivamente recebidos)." },
+  saldo: { titulo: "Saldo a Receber", foco: "saldo", formula: "Previsto − Descontos − Recebido = Saldo a Receber." },
+};
+function abrirDetalheCard(tipo) {
+  tipo = tipo || "saldo";
+  const cfg = DETALHE_CARDS[tipo];
   const f = state.painelFiltros;
   const parcelas = parcelasFiltradasPainel();
   const itens = lancamentosFiltradosPainel(parcelas);
@@ -1855,29 +1951,45 @@ function abrirSaldoDetalhe() {
   const tot = Object.values(meses).reduce((a, m) => { ["prev", "desc", "liq", "rec", "saldo"].forEach((k) => { a[k] += m[k]; }); return a; }, { prev: 0, desc: 0, liq: 0, rec: 0, saldo: 0 });
   const pctPend = (x) => (x.liq > 0 ? (x.saldo / x.liq) * 100 : 0);
 
+  const cel = (k, v) => '<td class="mono" style="' + (cfg.foco === k ? "font-weight:700;background:#f1f9fc;" : "") + '">' + esc(fmtCurrency(v)) + "</td>";
   const linhasMes = Object.keys(meses).map(Number).sort((a, b) => a - b).map((m) => {
     const x = meses[m];
     return '<tr class="bi-linha" data-mes="' + m + '" style="cursor:pointer;"><td style="font-weight:600;">' + MONTH_NAMES[m - 1] + "</td>" +
-      '<td class="mono">' + esc(fmtCurrency(x.prev)) + '</td><td class="mono">' + esc(fmtCurrency(x.desc)) + '</td><td class="mono">' + esc(fmtCurrency(x.rec)) +
-      '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(x.saldo)) + "</td><td>" + barraSaldoHtml(pctPend(x), x.saldo > 0.005 ? COLORS.orange : COLORS.lime) + "</td></tr>";
+      cel("prev", x.prev) + cel("desc", x.desc) + cel("liq", x.liq) + cel("rec", x.rec) + cel("saldo", x.saldo) +
+      "<td>" + barraSaldoHtml(pctPend(x), x.saldo > 0.005 ? COLORS.orange : COLORS.lime) + "</td></tr>";
   }).join("");
   const linhasInst = Object.keys(insts).map((id) => {
     const x = insts[id]; const inst = state.instrumentos.find((i) => i.id === id) || {};
-    return "<tr><td style='font-weight:600;'>" + esc(inst.descricao || "—") + '</td><td class="mono">' + esc(fmtCurrency(x.liq)) + '</td><td class="mono">' + esc(fmtCurrency(x.rec)) +
-      '</td><td class="mono" style="font-weight:600;">' + esc(fmtCurrency(x.saldo)) + "</td><td>" + barraSaldoHtml(x.liq > 0 ? (x.rec / x.liq) * 100 : 0, COLORS.teal) + "</td></tr>";
+    return "<tr><td style='font-weight:600;'>" + esc(inst.descricao || "—") + "</td>" + cel("prev", x.prev) + cel("desc", x.desc) + cel("liq", x.liq) + cel("rec", x.rec) + cel("saldo", x.saldo) +
+      "<td>" + barraSaldoHtml(x.liq > 0 ? (x.rec / x.liq) * 100 : 0, COLORS.teal) + "</td></tr>";
   }).join("");
+  // quadro extra: descontos por tipo ou recebido por fonte
+  let extra = "";
+  if (tipo === "desc") {
+    const porTipo = {};
+    parcelas.forEach((p) => (p.descontos || []).forEach((d) => { const k = d.tipo === "Outro" && d.tipoOutro ? d.tipoOutro : (d.tipo || "Outro"); porTipo[k] = (porTipo[k] || 0) + (d.valor || 0); }));
+    const tt = Object.values(porTipo).reduce((a, v) => a + v, 0) || 1;
+    extra = '<div class="panel" style="margin-top:14px;"><div class="panel-header">Descontos por tipo</div><table><thead><tr><th>Tipo</th><th>Valor</th><th>% do total</th></tr></thead><tbody>' +
+      (Object.keys(porTipo).map((k) => "<tr><td style='font-weight:600;'>" + esc(k) + '</td><td class="mono">' + esc(fmtCurrency(porTipo[k])) + "</td><td>" + barraSaldoHtml((porTipo[k] / tt) * 100, COLORS.orange) + "</td></tr>").join("") || '<tr><td colspan="3" class="empty-state">Sem descontos no filtro.</td></tr>') + "</tbody></table></div>";
+  } else if (tipo === "rec") {
+    const porFonte = {};
+    itens.forEach(({ l }) => { const k = fonteLabel(l); porFonte[k] = porFonte[k] || { v: 0, q: 0 }; porFonte[k].v += l.valorRecebido || 0; porFonte[k].q++; });
+    const tt = tot.rec || 1;
+    extra = '<div class="panel" style="margin-top:14px;"><div class="panel-header">Recebido por fonte de recurso</div><table><thead><tr><th>Fonte</th><th>Qtd.</th><th>Valor</th><th>% do total</th></tr></thead><tbody>' +
+      (Object.keys(porFonte).map((k) => "<tr><td style='font-weight:600;'>" + esc(k) + "</td><td>" + porFonte[k].q + '</td><td class="mono">' + esc(fmtCurrency(porFonte[k].v)) + "</td><td>" + barraSaldoHtml((porFonte[k].v / tt) * 100, COLORS.teal) + "</td></tr>").join("") || '<tr><td colspan="4" class="empty-state">Sem recebimentos no filtro.</td></tr>') + "</tbody></table></div>";
+  }
 
   document.getElementById("modal-root").innerHTML =
-    '<div class="modal-backdrop" id="modal-backdrop"><div class="modal" style="width:980px;"><div class="modal-header"><div class="modal-title">Saldo a Receber — detalhamento · ' + state.anoAtual + "</div>" +
+    '<div class="modal-backdrop" id="modal-backdrop"><div class="modal" style="width:1120px;max-width:96vw;"><div class="modal-header"><div class="modal-title">' + cfg.titulo + ' — detalhamento · ' + state.anoAtual + "</div>" +
     '<button class="icon-btn" id="modal-close" type="button">' + icon("x", 18) + "</button></div><div class=\"modal-body\" style=\"display:block;\">" +
-    '<div class="rel-filtros"><b>Como o saldo é calculado:</b> Previsto − Descontos − Recebido = Saldo a Receber. ' +
+    '<div class="rel-filtros"><b>Como é calculado:</b> ' + cfg.formula + ' ' +
     "Mostra os mesmos filtros do Painel Geral (" + MONTH_NAMES[f.mesIni - 1] + " a " + MONTH_NAMES[f.mesFim - 1] + "). Clique numa competência para abrir o Relatório Mensal.</div>" +
     '<div class="kpi-row" style="margin-bottom:14px;">' + kpiCard("Previsto", fmtCurrency(tot.prev), "", COLORS.blue) + kpiCard("(−) Descontos", fmtCurrency(tot.desc), "", COLORS.orange) +
     kpiCard("(−) Recebido", fmtCurrency(tot.rec), "", COLORS.teal) + kpiCard("= Saldo a Receber", fmtCurrency(tot.saldo), fmtPercent(pctPend(tot) / 100) + " do valor líquido ainda pendente", COLORS.gray) + "</div>" +
-    '<div class="panel" style="margin-bottom:14px;"><div class="panel-header">Por competência</div><table><thead><tr><th>Competência</th><th>Previsto</th><th>Descontos</th><th>Recebido</th><th>Saldo a Receber</th><th>% pendente</th></tr></thead><tbody>' +
-    (linhasMes || '<tr><td colspan="6" class="empty-state">Sem competências no filtro.</td></tr>') + "</tbody></table></div>" +
-    '<div class="panel"><div class="panel-header">Por repasse (contrato / termo aditivo)</div><table><thead><tr><th>Repasse</th><th>Valor líquido</th><th>Recebido</th><th>Saldo a Receber</th><th>% recebido</th></tr></thead><tbody>' +
-    (linhasInst || '<tr><td colspan="5" class="empty-state">Sem repasses no filtro.</td></tr>') + "</tbody></table></div>" +
+    '<div class="panel" style="margin-bottom:14px;"><div class="panel-header">Por competência</div><table><thead><tr><th>Competência</th><th>Previsto</th><th>Descontos</th><th>Líquido</th><th>Recebido</th><th>Saldo a Receber</th><th>% pendente</th></tr></thead><tbody>' +
+    (linhasMes || '<tr><td colspan="7" class="empty-state">Sem competências no filtro.</td></tr>') + "</tbody></table></div>" +
+    '<div class="panel"><div class="panel-header">Por repasse (contrato / termo aditivo)</div><table><thead><tr><th>Repasse</th><th>Previsto</th><th>Descontos</th><th>Líquido</th><th>Recebido</th><th>Saldo a Receber</th><th>% recebido</th></tr></thead><tbody>' +
+    (linhasInst || '<tr><td colspan="7" class="empty-state">Sem repasses no filtro.</td></tr>') + "</tbody></table></div>" + extra +
     '</div><div class="modal-footer"><div></div><div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modal-cancel" type="button">Fechar</button>' +
     '<button class="btn btn-primary" id="bi-abrir-mensal" type="button">Abrir no Relatório Mensal</button></div></div></div></div>';
 
