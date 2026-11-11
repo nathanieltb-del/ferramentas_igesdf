@@ -477,7 +477,7 @@ body.ocupado::before { opacity: 1; animation: carregando 1s linear infinite; }
    Exemplo: 'https://script.google.com/macros/s/AKfycb.../exec'
    Veja o passo a passo no GUIA_INSTALACAO.md.
    ===================================================================== */
-const ENDERECO_DO_SISTEMA = 'https://script.google.com/macros/s/AKfycbwg85um-wuGU_xwVTgcj6enKCW-3YG2y1HVvL5yZ_iEwL85_Xb21H8NWbLmVEaQEFbk0A/exec';
+const ENDERECO_DO_SISTEMA = 'https://script.google.com/macros/s/AKfycbySg1bGs0YKfMlB13ZdAQkAlU169opf_hjUGD_M52SKFX5mw-Z6aZfuXMDVNowNW7AMcA/exec';
 
 const PADRAO_ENDERECO = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
 const CHAVE_SESSAO = 'nf_sessao';
@@ -2132,6 +2132,9 @@ function telaDiario() {
   function opcoesFornecedor() {
     return ((dados.referencias || {}).FORNECEDOR_ID || []).map(o => ({ id: o.id, ativo: o.ativo, rotulo: razaoDe(o.rotulo) + ' — ' + String(o.rotulo).split(' — ')[0] }));
   }
+  // Quem marca vários nomes seguidos gera uma única consulta (espera 300 ms depois do último clique).
+  let esperaCargas = null;
+  function agendarCargas() { clearTimeout(esperaCargas); esperaCargas = setTimeout(atualizarCargas, 300); }
   async function atualizarCargas() {
     const minha = ++seq;
     try {
@@ -2153,7 +2156,7 @@ function telaDiario() {
       h('p', { class: 'ajuda', style: 'margin:-4px 0 10px', texto: 'Desmarque quem não recebe processos hoje (folga, férias, reunião). Vale só enquanto esta tela estiver aberta.' }),
       h('ul', { class: 'quem-lista' }, lista.map(c => {
         const marca = h('input', { type: 'checkbox', id: 'quem-' + c.ID, checked: c.RECEBE ? true : null });
-        marca.addEventListener('change', () => { if (marca.checked) presentes.add(c.ID); else presentes.delete(c.ID); atualizarCargas(); });
+        marca.addEventListener('change', () => { if (marca.checked) presentes.add(c.ID); else presentes.delete(c.ID); agendarCargas(); });
         return h('li', {}, h('label', { for: 'quem-' + c.ID }, marca, h('span', { texto: c.NOME })),
           c.PROXIMO ? h('span', { class: 'selo ativo', texto: 'Próximo' }) : null,
           h('span', { class: 'carga', title: 'Processos recebidos em ' + mesTxt, texto: c.CARGA + (c.CARGA === 1 ? ' processo' : ' processos') }));
@@ -2166,7 +2169,7 @@ function telaDiario() {
     campoSei = h('input', { type: 'text', id: 'd-PROCESSO_SEI', inputmode: 'numeric', maxlength: '22', autocomplete: 'off', placeholder: '04016-00130700/2026-57' });
     campoSei.addEventListener('input', () => { const p = mascaraSei(campoSei.value); if (p !== campoSei.value) campoSei.value = p; });
     campoData = h('input', { type: 'date', id: 'd-DATA', value: hojeIso() });
-    campoData.addEventListener('change', atualizarCargas);
+    campoData.addEventListener('change', agendarCargas);
     campoForn = comboBusca({ id: 'd-FORNECEDOR_ID', opcoes: opcoesFornecedor(), valor: '', placeholder: 'Digite o nome ou o CNPJ do fornecedor…' });
     campoColab = h('select', { id: 'd-COLABORADOR_ID' }, h('option', { value: '', texto: 'Automático (distribuição justa)' }),
       ...colabAtivos().map(o => h('option', { value: o.id, texto: String(o.rotulo).split(' — ').slice(-1)[0] })));
@@ -2335,14 +2338,14 @@ function telaDiario() {
     montada = true;
   }
   async function recarregar() {
-    dados = await chamar('diario.listar', {});
+    // As duas consultas saem juntas: o tempo de espera é o de uma só.
+    const [lista] = await Promise.all([chamar('diario.listar', {}), atualizarCargas()]);
+    dados = lista;
     desenharLinhas();
-    await atualizarCargas();
   }
   (async function iniciar() {
     try {
-      dados = await chamar('diario.listar', {});
-      cargas = await chamar('diario.cargas', { data: hojeIso() });
+      [dados, cargas] = await Promise.all([chamar('diario.listar', {}), chamar('diario.cargas', { data: hojeIso() })]);
       cargas.colaboradores.forEach(c => { if (c.RECEBE) presentes.add(c.ID); });
       montarTela(); desenharQuem(); desenharLinhas();
     } catch (e) {
