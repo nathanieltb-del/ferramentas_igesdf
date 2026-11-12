@@ -581,7 +581,7 @@ async function enviarPedido(url, corpo) {
   }
 }
 
-async function chamar(acao, dados, opcoes) {
+async function chamarDireto(acao, dados, opcoes) {
   opcoes = opcoes || {};
   if (!enderecoValido()) throw new ErroApi('O endereço da planilha ainda não foi colado no arquivo index.html.', 'SEM_ENDERECO');
   const corpo = { acao, dados: dados || {} };
@@ -608,6 +608,57 @@ async function chamar(acao, dados, opcoes) {
   }
   return json.dados;
 }
+
+/* ---------------------------------------------------------------------
+   MEMÓRIA CURTA DAS CONSULTAS
+   Cada ida ao Google custa de 1 a 3 segundos. Para não repetir à toa:
+   - a mesma consulta feita de novo em até 30 s volta na hora (da memória da tela);
+   - duas consultas iguais ao mesmo tempo viram uma só;
+   - qualquer gravação apaga essa memória, então a tela nunca mostra o que você acabou de mudar com o valor antigo.
+   Outras pessoas que gravarem podem demorar até 30 s para aparecer para você.
+   --------------------------------------------------------------------- */
+const CACHEAVEIS = /^(cadastros\.listar|notas\.listar|notas\.obter|diario\.listar|diario\.cargas|tributacao\.listar|tributacao\.resumo)$/;
+const VALIDADE_MS = 30000;
+const memoria = new Map();
+estado.tempos = [];
+
+function registrarTempo(acao, ms, origem) {
+  estado.tempos.unshift({ acao, ms: Math.round(ms), origem, hora: new Date() });
+  if (estado.tempos.length > 40) estado.tempos.length = 40;
+}
+function copiar(x) { return x === undefined ? x : JSON.parse(JSON.stringify(x)); }
+
+async function chamar(acao, dados, opcoes) {
+  opcoes = opcoes || {};
+  const escreve = !SO_LEITURA.test(acao) && !CACHEAVEIS.test(acao);
+  const chave = CACHEAVEIS.test(acao) && !opcoes.semCache
+    ? (estado.sessao ? estado.sessao.token.slice(-12) : '') + '|' + acao + '|' + JSON.stringify(dados || {}) : null;
+  const inicio = performance.now();
+  if (chave) {
+    const g = memoria.get(chave);
+    if (g && Date.now() - g.quando < VALIDADE_MS) {
+      const r = await g.promessa;
+      registrarTempo(acao, performance.now() - inicio, 'memória');
+      return copiar(r);
+    }
+  }
+  const promessa = chamarDireto(acao, dados, opcoes);
+  if (chave) {
+    memoria.set(chave, { quando: Date.now(), promessa });
+    promessa.catch(() => { const g = memoria.get(chave); if (g && g.promessa === promessa) memoria.delete(chave); });
+  }
+  try {
+    const r = await promessa;
+    registrarTempo(acao, performance.now() - inicio, 'planilha');
+    return copiar(r);
+  } catch (e) {
+    registrarTempo(acao, performance.now() - inicio, 'erro');
+    throw e;
+  } finally {
+    if (escreve && acao !== 'sair') memoria.clear();
+  }
+}
+function esquecerMemoria() { memoria.clear(); }
 
 function atualizarEstadoDados() { /* os dados ficam na planilha: não há o que mostrar */ }
 
@@ -679,6 +730,7 @@ function guardarSessao(token, expiraEm) {
   estado.temporizador = setTimeout(() => encerrar('Sua sessão terminou. Entre de novo.'), Math.min(ms, 2147000000));
 }
 function limparSessao() {
+  esquecerMemoria();
   estado.sessao = null; estado.usuario = null;
   clearTimeout(estado.temporizador);
   try { sessionStorage.removeItem(CHAVE_SESSAO); } catch (e) { /* segue */ }
@@ -805,6 +857,51 @@ async function carregarUsuario() {
     limparSessao();
     telaLogin({ aviso: e.message });
   }
+}
+
+/* =====================================================================
+   VELOCIDADE: mede quanto tempo cada parte leva
+   ===================================================================== */
+function janelaVelocidade() {
+  let janela;
+  const resultado = h('div');
+  const historico = h('div');
+  const medir = h('button', { type: 'button', class: 'botao', texto: 'Medir agora' });
+  const seg = ms => (ms / 1000).toFixed(1).replace('.', ',') + ' s';
+  function desenharHistorico() {
+    const lista = estado.tempos.slice(0, 12);
+    historico.replaceChildren(
+      h('h3', { texto: 'Últimas ações desta aba' }),
+      lista.length
+        ? h('div', { class: 'tabela-caixa' }, h('table', {}, h('thead', {}, h('tr', {}, ['Ação', 'Tempo', 'De onde veio'].map(t => h('th', { scope: 'col', texto: t })))),
+            h('tbody', {}, lista.map(t => h('tr', {}, h('td', { texto: t.acao }), h('td', { texto: seg(t.ms) }), h('td', { texto: t.origem }))))))
+        : h('p', { texto: 'Ainda não há ações.' }));
+  }
+  medir.addEventListener('click', async () => {
+    medir.disabled = true; medir.textContent = 'Medindo…';
+    const testes = [
+      ['Google sozinho (sem a planilha), 1ª vez', 'ping', {}, true],
+      ['Google sozinho (sem a planilha), 2ª vez', 'ping', {}, true],
+      ['Conferir quem você é', 'eu', {}, false],
+      ['Ler os serviços', 'cadastros.listar', { cadastro: 'servicos' }, false],
+      ['Ler as notas fiscais', 'notas.listar', {}, false],
+      ['Ler as notas fiscais, de novo', 'notas.listar', {}, false]
+    ];
+    const linhas = [];
+    for (const [nome, acao, dados, semToken] of testes) {
+      const t0 = performance.now(); let ok = true;
+      try { await chamar(acao, dados, { semToken, semCache: true }); } catch (e) { ok = false; }
+      linhas.push([nome, ok ? seg(performance.now() - t0) : 'erro']);
+      resultado.replaceChildren(h('div', { class: 'tabela-caixa' }, h('table', {}, h('tbody', {}, linhas.map(l => h('tr', {}, h('td', { texto: l[0] }), h('td', { texto: l[1] })))))));
+    }
+    resultado.append(h('p', { class: 'ajuda', style: 'margin-top:8px', texto: 'A 1ª linha é o tempo que o Google leva só para responder. O que passar disso é a leitura da planilha e o cálculo.' }));
+    medir.disabled = false; medir.textContent = 'Medir de novo'; desenharHistorico();
+  });
+  desenharHistorico();
+  janela = abrirJanela(h('div', {},
+    h('div', { class: 'jan-corpo' }, h('h2', { texto: 'Velocidade do sistema' }),
+      h('p', { texto: 'Aperte "Medir agora" e me conte os tempos que aparecerem.' }), h('div', { style: 'margin:12px 0' }, medir), resultado, historico),
+    h('div', { class: 'jan-pe' }, h('button', { type: 'button', class: 'botao', texto: 'Fechar', onclick: () => janela.close() }))));
 }
 
 /* =====================================================================
@@ -993,6 +1090,7 @@ function telaSistema() {
         h('span', { id: 'usuario-perfil', texto: nomePerfil(u.PERFIL) }),
         h('div', { class: 'linha-botoes' },
           h('button', { type: 'button', class: 'botao pequeno', texto: 'Trocar senha', onclick: () => { fecharMenu(); telaTrocaSenha({ obrigatoria: false }); } }),
+          h('button', { type: 'button', class: 'botao pequeno', texto: 'Velocidade', onclick: () => { fecharMenu(); janelaVelocidade(); } }),
           h('button', { type: 'button', class: 'botao pequeno', onclick: sair }, icone('sair'), 'Sair'))));
 
   const celular = h('div', { class: 'barra-celular' },
