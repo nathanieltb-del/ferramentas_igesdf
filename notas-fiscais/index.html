@@ -477,7 +477,7 @@ body.ocupado::before { opacity: 1; animation: carregando 1s linear infinite; }
    Exemplo: 'https://script.google.com/macros/s/AKfycb.../exec'
    Veja o passo a passo no GUIA_INSTALACAO.md.
    ===================================================================== */
-const ENDERECO_DO_SISTEMA = 'https://script.google.com/macros/s/AKfycbySg1bGs0YKfMlB13ZdAQkAlU169opf_hjUGD_M52SKFX5mw-Z6aZfuXMDVNowNW7AMcA/exec';
+const ENDERECO_DO_SISTEMA = 'https://script.google.com/macros/s/AKfycbyR76tZGwi2w9-KkARxzpcMZ3_yAfP4ODj8_O38XQr4DZw_lcWQjFG1XYltWDp_vnwBpQ/exec';
 
 const PADRAO_ENDERECO = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
 const CHAVE_SESSAO = 'nf_sessao';
@@ -554,7 +554,7 @@ function marcarOcupado(delta) {
 }
 
 // Consultas podem ser repetidas sem risco. Gravações nunca são repetidas sozinhas (para não duplicar).
-const SO_LEITURA = /^(ping|eu|[a-z]+\.(listar|obter|calcular|cargas|resumo|mv))$/;
+const SO_LEITURA = /^(ping|eu|lote|[a-z]+\.(listar|obter|calcular|cargas|resumo|mv))$/;
 
 async function enviarPedido(url, corpo) {
   const controle = new AbortController();
@@ -581,84 +581,202 @@ async function enviarPedido(url, corpo) {
   }
 }
 
-async function chamarDireto(acao, dados, opcoes) {
-  opcoes = opcoes || {};
+// Confere a resposta do sistema. Se deu erro, cuida da sessão (se for o caso) e lança o erro.
+function abrirResposta(json, opcoes) {
+  if (json && json.ok === true) return json.dados;
+  const erro = new ErroApi((json && json.erro) || 'Erro desconhecido.', (json && json.codigo) || 'ERRO');
+  if (!opcoes.semToken && !opcoes.semTela) {
+    if (erro.codigo === 'NAO_AUTENTICADO') encerrar('Sua sessão terminou. Entre de novo.');
+    else if (erro.codigo === 'TROCAR_SENHA') telaTrocaSenha({ obrigatoria: true });
+  }
+  throw erro;
+}
+
+// Uma viagem ao Google. Devolve a resposta inteira (para quem precisa do "depois").
+async function viajar(acao, dados, opcoes, depois) {
   if (!enderecoValido()) throw new ErroApi('O endereço da planilha ainda não foi colado no arquivo index.html.', 'SEM_ENDERECO');
   const corpo = { acao, dados: dados || {} };
   if (estado.sessao && !opcoes.semToken) corpo.token = estado.sessao.token;
-  marcarOcupado(1);
-  let json;
+  if (depois && depois.length) corpo.depois = depois;
+  if (!opcoes.discreto) marcarOcupado(1);
   try {
     try {
-      json = await enviarPedido(ENDERECO_DO_SISTEMA, corpo);
+      return await enviarPedido(ENDERECO_DO_SISTEMA, corpo);
     } catch (e) {
       if (!SO_LEITURA.test(acao) || (e.codigo !== 'REDE' && e.codigo !== 'RESPOSTA')) throw e;
-      json = await enviarPedido(ENDERECO_DO_SISTEMA, corpo);   // uma segunda tentativa, só para consultas
+      return await enviarPedido(ENDERECO_DO_SISTEMA, corpo);   // uma segunda tentativa, só para consultas
     }
   } finally {
-    marcarOcupado(-1);
+    if (!opcoes.discreto) marcarOcupado(-1);
   }
-  if (!json || json.ok !== true) {
-    const erro = new ErroApi((json && json.erro) || 'Erro desconhecido.', (json && json.codigo) || 'ERRO');
-    if (!opcoes.semToken) {
-      if (erro.codigo === 'NAO_AUTENTICADO') encerrar('Sua sessão terminou. Entre de novo.');
-      else if (erro.codigo === 'TROCAR_SENHA') telaTrocaSenha({ obrigatoria: true });
-    }
-    throw erro;
-  }
-  return json.dados;
+}
+
+async function chamarDireto(acao, dados, opcoes) {
+  opcoes = opcoes || {};
+  return abrirResposta(await viajar(acao, dados, opcoes), opcoes);
 }
 
 /* ---------------------------------------------------------------------
-   MEMÓRIA CURTA DAS CONSULTAS
-   Cada ida ao Google custa de 1 a 3 segundos. Para não repetir à toa:
-   - a mesma consulta feita de novo em até 30 s volta na hora (da memória da tela);
-   - duas consultas iguais ao mesmo tempo viram uma só;
-   - qualquer gravação apaga essa memória, então a tela nunca mostra o que você acabou de mudar com o valor antigo.
-   Outras pessoas que gravarem podem demorar até 30 s para aparecer para você.
+   MENOS VIAGENS AO GOOGLE
+   Cada ida ao Google custa mais de 1 segundo, mesmo sem ler nada. Por isso:
+   1. MEMÓRIA: o que a tela já leu fica guardado por até 10 minutos. Ao abrir um menu, a tela mostra
+      na hora o que tem. Se o dado tiver mais de 30 segundos, ela busca de novo por trás e avisa se mudou.
+   2. LOTE: as consultas que uma tela faz juntas vão em UMA viagem só.
+   3. CARONA: toda gravação já volta com as listas da tela atualizadas, sem uma segunda viagem.
+   4. AQUECIMENTO: logo depois de entrar, as listas principais são lidas por trás.
+   Qualquer gravação sua apaga a memória, então você nunca vê o valor antigo do que acabou de mudar.
    --------------------------------------------------------------------- */
 const CACHEAVEIS = /^(cadastros\.listar|notas\.listar|notas\.obter|diario\.listar|diario\.cargas|tributacao\.listar|tributacao\.resumo)$/;
-const VALIDADE_MS = 30000;
-const memoria = new Map();
+const GRAVACOES_COM_CARONA = /\.(criar|atualizar|inativar|reativar|situacao)$/;
+const FRESCO_MS = 30000;        // até aqui, nem confere de novo
+const VALIDADE_MS = 600000;     // depois disso, não mostra mais o que está na memória
+const MAX_LOTE = 12;
+const memoria = new Map();      // chave -> { quando, promessa, texto, acao, dados }
+const emUso = new Map();        // consultas que a tela de agora fez (para a carona e para o aviso de dado novo)
+let geracao = 0;                // muda a cada gravação: respostas pedidas antes dela não entram na memória
+let semLote = false;            // vira true se o Code.gs for antigo e não conhecer o "lote"
 estado.tempos = [];
 
 function registrarTempo(acao, ms, origem) {
   estado.tempos.unshift({ acao, ms: Math.round(ms), origem, hora: new Date() });
   if (estado.tempos.length > 40) estado.tempos.length = 40;
 }
-function copiar(x) { return x === undefined ? x : JSON.parse(JSON.stringify(x)); }
+function chaveDe(acao, dados) {
+  return (estado.sessao ? estado.sessao.token.slice(-12) : '') + '|' + acao + '|' + JSON.stringify(dados || {});
+}
+
+/* ---------- lote: junta as consultas pedidas no mesmo instante ---------- */
+const fila = [];
+let relogioFila = null;
+function pedirEmLote(acao, dados, discreto) {
+  return new Promise((resolver, rejeitar) => {
+    fila.push({ acao, dados: dados || {}, discreto, resolver, rejeitar });
+    if (!relogioFila) relogioFila = setTimeout(despacharFila, 15);
+  });
+}
+async function despacharFila() {
+  relogioFila = null;
+  const itens = fila.splice(0, MAX_LOTE);
+  if (fila.length) relogioFila = setTimeout(despacharFila, 0);
+  const umPorUm = () => itens.forEach(i => chamarDireto(i.acao, i.dados, { discreto: i.discreto }).then(i.resolver, i.rejeitar));
+  if (itens.length === 1 || semLote) return umPorUm();
+  const discreto = itens.every(i => i.discreto);
+  let lista;
+  try {
+    lista = await chamarDireto('lote', { pedidos: itens.map(i => ({ acao: i.acao, dados: i.dados })) }, { discreto });
+  } catch (e) {
+    if (e.codigo === 'VALIDACAO' && /desconhecida/i.test(e.message)) { semLote = true; return umPorUm(); }   // Code.gs antigo
+    return itens.forEach(i => i.rejeitar(e));
+  }
+  let telaJaTrocada = false;
+  itens.forEach((i, k) => {
+    try { i.resolver(abrirResposta(lista[k], { semTela: telaJaTrocada || i.discreto })); }
+    catch (e) { if (e.codigo === 'NAO_AUTENTICADO' || e.codigo === 'TROCAR_SENHA') telaJaTrocada = true; i.rejeitar(e); }
+  });
+}
+
+/* ---------- memória ---------- */
+function guardar(chave, acao, dados, promessa) {
+  const minhaGeracao = geracao;
+  const item = { quando: Date.now(), promessa, texto: null, acao, dados: dados || {} };
+  memoria.set(chave, item);
+  promessa.then(r => { item.texto = JSON.stringify(r === undefined ? null : r); if (minhaGeracao !== geracao && memoria.get(chave) === item) memoria.delete(chave); },
+    () => { if (memoria.get(chave) === item) memoria.delete(chave); });
+  return item;
+}
+function entregar(item) {
+  return item.promessa.then(() => (item.texto === null ? undefined : JSON.parse(item.texto)));
+}
+// Busca de novo por trás. Se o dado mudou e a tela ainda usa essa consulta, oferece atualizar.
+function conferirPorTras(chave, velho) {
+  if (velho.conferindo) return;
+  velho.conferindo = true;
+  const minhaGeracao = geracao;
+  pedirEmLote(velho.acao, velho.dados, true).then(r => {
+    if (minhaGeracao !== geracao || memoria.get(chave) !== velho) return;
+    const texto = JSON.stringify(r === undefined ? null : r);
+    const mudou = texto !== velho.texto;
+    memoria.set(chave, { quando: Date.now(), promessa: Promise.resolve(r), texto, acao: velho.acao, dados: velho.dados });
+    if (mudou && emUso.has(chave)) avisarDadoNovo();
+  }, () => { velho.conferindo = false; });
+}
+
+function avisarDadoNovo() {
+  if (document.getElementById('dado-novo')) return;
+  const barra = document.createElement('div');
+  barra.id = 'dado-novo'; barra.className = 'aviso-toque'; barra.setAttribute('role', 'status');
+  barra.append('Há dados mais novos nesta tela. ');
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'botao claro pequeno'; b.textContent = 'Atualizar';
+  b.style.marginLeft = '8px';
+  b.addEventListener('click', () => { barra.remove(); desenharRota(); });
+  barra.append(b);
+  document.body.append(barra);
+}
+function tirarAvisoDadoNovo() { const a = document.getElementById('dado-novo'); if (a) a.remove(); }
+window.addEventListener('hashchange', () => { emUso.clear(); tirarAvisoDadoNovo(); });
 
 async function chamar(acao, dados, opcoes) {
   opcoes = opcoes || {};
-  const escreve = !SO_LEITURA.test(acao) && !CACHEAVEIS.test(acao);
-  const chave = CACHEAVEIS.test(acao) && !opcoes.semCache
-    ? (estado.sessao ? estado.sessao.token.slice(-12) : '') + '|' + acao + '|' + JSON.stringify(dados || {}) : null;
   const inicio = performance.now();
-  if (chave) {
-    const g = memoria.get(chave);
-    if (g && Date.now() - g.quando < VALIDADE_MS) {
-      const r = await g.promessa;
-      registrarTempo(acao, performance.now() - inicio, 'memória');
-      return copiar(r);
+  const consulta = CACHEAVEIS.test(acao);
+
+  // 1) consultas que podem ficar na memória
+  if (consulta && !opcoes.semCache) {
+    const chave = chaveDe(acao, dados);
+    if (!opcoes.aquecendo) { emUso.delete(chave); emUso.set(chave, { acao, dados: dados || {} }); }
+    let item = memoria.get(chave);
+    let origem = 'memória';
+    if (item && Date.now() - item.quando > VALIDADE_MS) { memoria.delete(chave); item = null; }
+    if (item && item.texto !== null && Date.now() - item.quando > FRESCO_MS) conferirPorTras(chave, item);
+    if (!item) { origem = 'planilha'; item = guardar(chave, acao, dados, pedirEmLote(acao, dados, !!opcoes.aquecendo)); }
+    try {
+      const r = await entregar(item);
+      if (!opcoes.aquecendo) registrarTempo(acao, performance.now() - inicio, origem);
+      return r;
+    } catch (e) {
+      if (!opcoes.aquecendo) registrarTempo(acao, performance.now() - inicio, 'erro');
+      throw e;
     }
   }
-  const promessa = chamarDireto(acao, dados, opcoes);
-  if (chave) {
-    memoria.set(chave, { quando: Date.now(), promessa });
-    promessa.catch(() => { const g = memoria.get(chave); if (g && g.promessa === promessa) memoria.delete(chave); });
-  }
+
+  // 2) gravações e o resto
+  const escreve = !SO_LEITURA.test(acao) && !consulta;
+  const carona = escreve && estado.sessao && !opcoes.semToken && GRAVACOES_COM_CARONA.test(acao)
+    ? [...emUso.entries()].slice(-6) : [];
   try {
-    const r = await promessa;
+    const json = await viajar(acao, dados, opcoes, carona.map(c => c[1]));
+    const r = abrirResposta(json, opcoes);
+    if (escreve && acao !== 'sair') {
+      geracao++; memoria.clear();
+      if (Array.isArray(json.depois)) {
+        carona.forEach((c, k) => {
+          const d = json.depois[k];
+          if (d && d.ok === true) guardar(c[0], c[1].acao, c[1].dados, Promise.resolve(d.dados));
+        });
+      }
+    }
     registrarTempo(acao, performance.now() - inicio, 'planilha');
-    return copiar(r);
+    return r;
   } catch (e) {
+    if (escreve && acao !== 'sair') { geracao++; memoria.clear(); }   // na dúvida, lê tudo de novo
     registrarTempo(acao, performance.now() - inicio, 'erro');
     throw e;
-  } finally {
-    if (escreve && acao !== 'sair') memoria.clear();
   }
 }
-function esquecerMemoria() { memoria.clear(); }
+function esquecerMemoria() { geracao++; memoria.clear(); emUso.clear(); tirarAvisoDadoNovo(); }
+
+// Logo depois de entrar: lê por trás as listas principais, para os menus abrirem na hora.
+let relogioAquecer = null;
+function aquecerMemoria() {
+  clearTimeout(relogioAquecer);
+  relogioAquecer = setTimeout(() => {
+    if (!estado.sessao || !estado.usuario) return;
+    const lista = [['notas.listar', {}], ['diario.listar', {}], ['diario.cargas', { data: hojeIso() }], ['tributacao.resumo', {}]]
+      .concat(['fornecedores', 'servicos', 'centros', 'oficinas', 'colaboradores'].map(c => ['cadastros.listar', { cadastro: c }]));
+    lista.forEach(p => { if (!memoria.has(chaveDe(p[0], p[1]))) chamar(p[0], p[1], { aquecendo: true }).catch(() => { /* só aquecimento */ }); });
+  }, 1200);
+}
 
 function atualizarEstadoDados() { /* os dados ficam na planilha: não há o que mostrar */ }
 
@@ -1065,6 +1183,7 @@ function telaSistema() {
 
   if (!estado.usuario) { carregarUsuario(); return; }
   const u = estado.usuario;
+  aquecerMemoria();
   const lista = h('ul');
   MENU.filter(m => !m.so || pode(m.so)).forEach(m => {
     const filhos = m.filhos ? h('ul', { class: 'sub', 'data-grupo': m.rota }, m.filhos.map(f =>
