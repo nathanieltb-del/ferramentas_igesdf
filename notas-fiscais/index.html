@@ -345,6 +345,11 @@ dialog .jan-corpo { padding: 22px 24px 8px; }
 dialog h2 { font-size: 20px; margin-bottom: 12px; }
 dialog .jan-pe { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; padding: 14px 24px 20px; }
 
+#envios { position: fixed; left: 12px; bottom: 76px; z-index: 49; display: grid; gap: 8px; width: min(420px, calc(100vw - 24px)); }
+#envios .envio { background: #fff; border: 1px solid var(--linha); border-left: 5px solid var(--azul-medio, #2b6a9a); border-radius: var(--raio); padding: 10px 12px; box-shadow: 0 8px 28px rgba(10,30,45,.2); font-size: .92rem; }
+#envios .envio.falhou { border-left-color: #b3261e; }
+#envios .envio strong { display: block; }
+#envios .envio .acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .aviso-toque { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 50; max-width: min(520px, calc(100vw - 24px)); padding: 12px 16px; border-radius: var(--raio); background: var(--azul-profundo); color: #fff; font-weight: 600; box-shadow: 0 8px 28px rgba(10,30,45,.3); }
 
 /* ---------- celular ---------- */
@@ -477,7 +482,7 @@ body.ocupado::before { opacity: 1; animation: carregando 1s linear infinite; }
    Exemplo: 'https://script.google.com/macros/s/AKfycb.../exec'
    Veja o passo a passo no GUIA_INSTALACAO.md.
    ===================================================================== */
-const ENDERECO_DO_SISTEMA = 'https://script.google.com/macros/s/AKfycby0X3UPJzuR2FFvh5q9nJ7jouqJ9RTGyIzSjAXI-Sep3hcqpbqyLQpTgqzJLCgkj-S73w/exec';
+const ENDERECO_DO_SISTEMA = 'https://script.google.com/macros/s/AKfycbwUaDxq4OLalX3RenLyJzfIoeJYYSNjsuwOFim4_PKGlJuEge-OHiCwkdB1SCKtfgrFtQ/exec';
 
 const PADRAO_ENDERECO = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
 const CHAVE_SESSAO = 'nf_sessao';
@@ -537,7 +542,7 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_TELA = 'Etapa 9b — com planilha';
+const VERSAO_TELA = 'Etapa 10 — com planilha';
 
 class ErroApi extends Error {
   constructor(mensagem, codigo) { super(mensagem); this.codigo = codigo || 'ERRO'; }
@@ -787,6 +792,61 @@ function aquecerMemoria() {
 function atualizarEstadoDados() { /* os dados ficam na planilha: não há o que mostrar */ }
 
 
+/* =====================================================================
+   ENVIOS EM SEGUNDO PLANO
+   Ao registrar, a tela volta a ficar livre na hora e o registro vai para a planilha por trás.
+   - "Enviando…" fica à vista até a planilha confirmar. Só então vale como salvo.
+   - Se falhar, o aviso fica na tela com os botões "Tentar de novo" e "Devolver ao formulário".
+   - Os envios saem um de cada vez, na ordem em que foram feitos.
+   - Enquanto houver envio pendente, o navegador avisa antes de fechar a página e o sistema não deixa sair.
+   ===================================================================== */
+const envios = [];
+let enviosRodando = false;
+let rascunhoDiario = null, rascunhoNota = null;
+
+function enviarEmSegundoPlano(item) {
+  item.estado = 'esperando'; item.erro = ''; item.incerto = false;
+  envios.push(item); desenharEnvios(); processarEnvios();
+}
+async function processarEnvios() {
+  if (enviosRodando) return;
+  enviosRodando = true;
+  try {
+    for (;;) {
+      const item = envios.find(x => x.estado === 'esperando');
+      if (!item) break;
+      item.estado = 'enviando'; desenharEnvios();
+      let resposta;
+      try {
+        resposta = await item.executar();
+      } catch (e) {
+        item.estado = 'falhou'; item.erro = e.message || 'Não consegui enviar.';
+        item.incerto = e.codigo === 'REDE' || e.codigo === 'RESPOSTA';
+        desenharEnvios();
+        continue;
+      }
+      envios.splice(envios.indexOf(item), 1); desenharEnvios();
+      try { item.confirmar(resposta); } catch (e) { /* a tela mudou: o registro já está salvo */ }
+    }
+  } finally { enviosRodando = false; }
+}
+function desenharEnvios() {
+  let caixa = document.getElementById('envios');
+  if (!envios.length) { if (caixa) caixa.remove(); return; }
+  if (!caixa) { caixa = h('div', { id: 'envios', role: 'region', 'aria-label': 'Envios para a planilha', 'aria-live': 'polite' }); document.body.append(caixa); }
+  caixa.replaceChildren(...envios.map(item => {
+    if (item.estado !== 'falhou') {
+      return h('div', { class: 'envio' }, h('strong', { texto: item.estado === 'enviando' ? 'Enviando…' : 'Na fila para enviar…' }), h('span', { texto: item.titulo }));
+    }
+    return h('div', { class: 'envio falhou', role: 'alert' }, h('strong', { texto: 'Não foi salvo: ' + item.titulo }), h('span', { texto: item.erro }),
+      item.incerto ? h('span', { style: 'display:block;margin-top:4px', texto: 'A conexão caiu. O registro pode ter sido salvo. Confira a lista antes de tentar de novo.' }) : null,
+      h('div', { class: 'acoes' },
+        h('button', { type: 'button', class: 'botao pequeno', texto: 'Tentar de novo', onclick: () => { item.estado = 'esperando'; desenharEnvios(); processarEnvios(); } }),
+        h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Devolver ao formulário', onclick: () => { envios.splice(envios.indexOf(item), 1); desenharEnvios(); item.devolver(); } })));
+  }));
+}
+window.addEventListener('beforeunload', ev => { if (envios.length) { ev.preventDefault(); ev.returnValue = ''; } });
+
 /* ---------- peças de formulário ---------- */
 function campo(id, rotulo, atributos, ajuda) {
   return h('div', { class: 'campo' },
@@ -866,6 +926,7 @@ function encerrar(mensagem) {
   telaLogin(mensagem ? { aviso: mensagem } : {});
 }
 async function sair() {
+  if (envios.length) { toque('Ainda há registro sendo enviado. Espere terminar ou resolva o aviso antes de sair.', 6000); return; }
   try { await chamar('sair'); } catch (e) { /* mesmo com erro, a saída aqui vale */ }
   encerrar('');
 }
@@ -1030,6 +1091,37 @@ function janelaVelocidade() {
 }
 
 /* =====================================================================
+   USO DO SISTEMA (só o administrador): quanto tempo o Google trabalhou por dia
+   ===================================================================== */
+function telaUso() {
+  const area = h('div', { class: 'painel' }, h('div', { class: 'vazio', texto: 'Carregando…' }));
+  const min = seg => (seg / 60).toFixed(1).replace('.', ',') + ' min';
+  const seg1 = seg => seg.toFixed(1).replace('.', ',') + ' s';
+  (async () => {
+    try {
+      const r = await chamar('uso.resumo', {}, { semCache: true });
+      if (!r.dias.length) { area.replaceChildren(h('div', { class: 'vazio', texto: 'Ainda não há uso registrado. Os números aparecem depois dos primeiros pedidos.' })); return; }
+      const ref = r.referenciaMin * 60;
+      area.replaceChildren(
+        h('div', { class: 'painel-corpo' },
+          h('p', { texto: 'Tempo que o Google gastou trabalhando para o sistema em cada dia. Não inclui a viagem pela internet. A conta é aproximada.' }),
+          h('p', { class: 'ajuda', style: 'margin-top:6px', texto: 'Referência: 90 minutos por dia é o limite de gatilhos em contas gmail.com (6 horas em contas Workspace). O Google não publica o limite de aplicativos da Web, por isso use a coluna "% da referência" só como alerta. Se aparecer o erro "too much computer time" na aba LOGS, o limite foi atingido.' })),
+        h('div', { class: 'tabela-caixa' }, h('table', {},
+          h('thead', {}, h('tr', {}, ['Dia', 'Pedidos', 'Tempo de trabalho', '% da referência', 'Mais lento', 'Erros', 'O que mais gasta'].map(t => h('th', { scope: 'col', texto: t })))),
+          h('tbody', {}, r.dias.map(d => h('tr', {},
+            h('td', { class: 'principal', style: 'white-space:nowrap', texto: d.data.split('-').reverse().join('/') }),
+            h('td', { texto: String(d.pedidos) }),
+            h('td', { texto: min(d.segundos) }),
+            h('td', { texto: (d.segundos / ref * 100).toFixed(1).replace('.', ',') + '%' }),
+            h('td', { texto: seg1(d.maiorSegundos) }),
+            h('td', { texto: String(d.erros) }),
+            h('td', { texto: d.acoes.slice(0, 3).map(a => a.acao + ' (' + a.pedidos + ' x, ' + seg1(a.segundos) + ')').join('; ') })))))));
+    } catch (e) { area.replaceChildren(h('div', { class: 'painel-corpo' }, caixaAviso(e.message))); }
+  })();
+  return h('div', {}, cabecalho('Uso do sistema', 'Acompanhe quanto tempo o sistema trabalha por dia.'), area);
+}
+
+/* =====================================================================
    USUÁRIOS (só o administrador)
    ===================================================================== */
 let listaUsuarios = [];
@@ -1178,7 +1270,7 @@ const MENU = [
     { rota: 'manutencao/colaboradores', nome: 'Colaboradores', texto: 'Quem recebe os processos do Diário.', cadastro: 'colaboradores' },
   ] },
   { rota: 'admin', nome: MODO_LOCAL ? 'Administração' : 'Usuários', icone: 'admin', so: 'ADMIN' }
-];
+].concat(MODO_LOCAL ? [] : [{ rota: 'uso', nome: 'Uso do sistema', icone: 'relatorios', so: 'ADMIN' }]);
 
 function rotaAtual() {
   return location.hash.replace(/^#\/?/, '') || 'dashboard';
@@ -1269,6 +1361,8 @@ function desenharRota() {
     conteudo = telaCadastro(itemMenu.cadastro);
   } else if (rota === 'admin') {
     conteudo = MODO_LOCAL ? telaAdministracaoLocal() : (pode('ADMIN') ? telaUsuarios() : semPermissao());
+  } else if (rota === 'uso') {
+    conteudo = MODO_LOCAL ? semPermissao() : (pode('ADMIN') ? telaUso() : semPermissao());
   } else if (rota === 'relatorios') {
     conteudo = telaRelatorios();
   } else if (rota === 'dashboard') {
@@ -2115,6 +2209,13 @@ function telaNotaForm(id) {
       if (nota) trib = await chamar('tributacao.listar', { fornecedorId: nota.FORNECEDOR_ID });
       if (nota && trib && trib.fornecedor.SIMPLES === 'SIM') { const iss = d.impostos.find(i => i.SIGLA === 'ISS'); if (iss) aliqIss = textoPct(iss.ALIQUOTA); }
       vencAuto = !nota || !nota.VENCIMENTO || (nota.DATA_ATESTO && nota.VENCIMENTO === somarDiasIso(nota.DATA_ATESTO, DIAS_VENCIMENTO));
+      const devolvido = rascunhoNota && rascunhoNota.id === (id || '') ? rascunhoNota : null;
+      if (devolvido) {   // um envio que falhou voltou para cá: os dados digitados são devolvidos
+        rascunhoNota = null;
+        nota = Object.assign({}, nota || {}, devolvido.dados); bases = devolvido.bases || {}; aliqIss = devolvido.aliquotaIss || ''; vencAuto = false;
+        if (novo && nota.FORNECEDOR_ID) trib = await chamar('tributacao.listar', { fornecedorId: nota.FORNECEDOR_ID });
+        erroForm.replaceChildren(caixaAviso((devolvido.erro || 'Esta nota não foi salva.') + ' Corrija e tente de novo.'));
+      }
       desenhar();
       if (nota) calcular(0);
     } catch (e) {
@@ -2305,13 +2406,27 @@ function telaNotaForm(id) {
       if (!envio.SERVICO_ID && campos.SERVICO_ID.entrada.value.trim()) { erroForm.append(caixaAviso('Escolha o serviço na lista que aparece ao digitar.')); campos.SERVICO_ID.entrada.focus(); return; }
       if (!envio.CENTRO_CUSTO_ID && campos.CENTRO_CUSTO_ID.entrada.value.trim()) { erroForm.append(caixaAviso('Escolha o centro de custo na lista que aparece ao digitar.')); campos.CENTRO_CUSTO_ID.entrada.focus(); return; }
       if (ehSimples() && !aliqIss) { erroForm.append(caixaAviso('Informe a alíquota do ISS. O fornecedor é optante pelo Simples Nacional.')); campos.ALIQUOTA_ISS.focus(); return; }
-      enviar(salvar, erroForm, 'Salvando…', async () => {
-        const basesEnvio = {}; Object.keys(bases).forEach(k => { if (k !== 'CSRF' && !(k === 'ISS' && ehSimples()) && String(bases[k]).trim() !== '') basesEnvio[k] = bases[k]; });
-        const extra = ehSimples() ? { aliquotaIss: aliqIss } : {};
-        const r = novo ? await chamar('notas.criar', Object.assign({ dados: envio, bases: basesEnvio }, extra)) : await chamar('notas.atualizar', Object.assign({ ID: id, dados: envio, bases: basesEnvio }, extra));
-        toque(novo ? 'Nota registrada.' : 'Alterações salvas.');
-        ir('notas/' + r.registro.ID);
-      });
+      const rotulosObrig = { PROCESSO_SEI: 'Processo SEI', NUMERO_NF: 'Número da NF', FORNECEDOR_ID: 'Fornecedor', SERVICO_ID: 'Serviço', VALOR_BRUTO: 'Valor bruto', CENTRO_CUSTO_ID: 'Centro de custo', COMPETENCIA: 'Competência', DATA_EMISSAO: 'Data de emissão' };
+      const faltam = Object.keys(rotulosObrig).filter(n => !envio[n]).map(n => rotulosObrig[n]);
+      if (faltam.length) { erroForm.append(caixaAviso('Preencha: ' + faltam.join(', ') + '.')); return; }
+      if (soDigitos(envio.PROCESSO_SEI).length !== 19) { erroForm.append(caixaAviso('O processo SEI está incompleto. Use o formato 00000-00000000/0000-00.')); campos.PROCESSO_SEI.focus(); return; }
+      const basesEnvio = {}; Object.keys(bases).forEach(k => { if (k !== 'CSRF' && !(k === 'ISS' && ehSimples()) && String(bases[k]).trim() !== '') basesEnvio[k] = bases[k]; });
+      const extra = ehSimples() ? { aliquotaIss: aliqIss } : {};
+      const rascunho = { id: id || '', dados: envio, bases: Object.assign({}, bases), aliquotaIss: aliqIss };
+      const rotuloNota = 'nota ' + (envio.NUMERO_NF || '');
+      const envioNota = {
+        titulo: (novo ? 'Registrar ' : 'Salvar alterações da ') + rotuloNota,
+        executar: () => novo ? chamar('notas.criar', Object.assign({ dados: envio, bases: basesEnvio }, extra)) : chamar('notas.atualizar', Object.assign({ ID: id, dados: envio, bases: basesEnvio }, extra)),
+        confirmar: r => {
+          toque(novo ? 'Nota registrada.' : 'Alterações salvas.');
+          const rota = rotaAtual();
+          if (novo && rota === 'notas') ir('notas/' + r.registro.ID);   // a pessoa ainda está esperando: abre a nota
+          else if (rota.startsWith('notas')) desenharRota();
+        },
+        devolver: () => { rascunhoNota = Object.assign({ erro: envioNota.erro }, rascunho); ir(novo ? 'notas/nova' : 'notas/' + id + '/editar'); }
+      };
+      enviarEmSegundoPlano(envioNota);
+      ir(novo ? 'notas' : 'notas/' + id);   // sai do formulário na hora; o envio segue por trás
     } },
       h('div', { class: 'painel' }, h('div', { class: 'painel-corpo' }, h('h2', { texto: 'Dados da nota' }), erroForm, grade)),
       h('div', { class: 'painel' }, painelConta),
@@ -2389,6 +2504,12 @@ function telaDiario() {
     const prox = lista.find(c => c.PROXIMO);
     dicaFila.textContent = prox ? 'Em "Automático", o próximo processo vai para ' + prox.NOME + '.' : 'Marque pelo menos um colaborador em "Quem recebe hoje".';
   }
+  function aplicarRascunhoDiario() {
+    if (!rascunhoDiario || !campoSei) return;
+    const r = rascunhoDiario; rascunhoDiario = null;
+    campoSei.value = r.sei; campoData.value = r.data; campoForn.value = r.fornecedor; campoColab.value = r.colaborador || '';
+    erroRegistro.replaceChildren(caixaAviso((r.erro || 'Este registro não foi salvo.') + ' Corrija e tente de novo.')); campoSei.focus();
+  }
   function montarRegistro() {
     campoSei = h('input', { type: 'text', id: 'd-PROCESSO_SEI', inputmode: 'numeric', maxlength: '22', autocomplete: 'off', placeholder: '04016-00130700/2026-57' });
     campoSei.addEventListener('input', () => { const p = mascaraSei(campoSei.value); if (p !== campoSei.value) campoSei.value = p; });
@@ -2403,14 +2524,29 @@ function telaDiario() {
       ev.preventDefault();
       const fornecedor = campoForn.value;
       if (!fornecedor && campoForn.entrada.value.trim()) { erroRegistro.replaceChildren(caixaAviso('Escolha o fornecedor na lista que aparece ao digitar.')); campoForn.entrada.focus(); return; }
-      enviar(salvar, erroRegistro, 'Registrando…', async () => {
-        const r = await chamar('diario.criar', { dados: { PROCESSO_SEI: campoSei.value.trim(), DATA: campoData.value, FORNECEDOR_ID: fornecedor, COLABORADOR_ID: campoColab.value }, presentes: [...presentes] });
-        const data = r.registro.DATA;
-        if ((filtro.de && data < filtro.de) || (filtro.ate && data > filtro.ate)) { filtro.de = data; filtro.ate = data; }
-        toque('Processo enviado para ' + r.colaborador + (r.automatico ? ' (distribuição automática).' : '.') + (r.registro.NOTAS.length ? ' Já há nota registrada com este SEI.' : ''), 5000);
-        campoSei.value = ''; campoForn.value = ''; campoColab.value = '';
-        pag.inicio(); await recarregar(); campoSei.focus();
-      });
+      const faltam = [];
+      if (!campoSei.value.trim()) faltam.push('Nº do SEI');
+      if (!campoData.value) faltam.push('Data do processo');
+      if (!fornecedor) faltam.push('Fornecedor');
+      if (faltam.length) { erroRegistro.replaceChildren(caixaAviso('Preencha: ' + faltam.join(', ') + '.')); return; }
+      if (soDigitos(campoSei.value).length !== 19) { erroRegistro.replaceChildren(caixaAviso('O Nº do SEI está incompleto. Use o formato 00000-00000000/0000-00.')); campoSei.focus(); return; }
+      erroRegistro.replaceChildren();
+      const valores = { sei: campoSei.value.trim(), data: campoData.value, fornecedor, colaborador: campoColab.value };
+      const quemRecebe = [...presentes];
+      campoSei.value = ''; campoForn.value = ''; campoColab.value = ''; campoSei.focus();   // a tela já fica livre para o próximo
+      const envio = {
+        titulo: 'Diário, SEI ' + valores.sei,
+        executar: () => chamar('diario.criar', { dados: { PROCESSO_SEI: valores.sei, DATA: valores.data, FORNECEDOR_ID: valores.fornecedor, COLABORADOR_ID: valores.colaborador }, presentes: quemRecebe }),
+        confirmar: r => {
+          toque('Processo enviado para ' + r.colaborador + (r.automatico ? ' (distribuição automática).' : '.') + (r.registro.NOTAS.length ? ' Já há nota registrada com este SEI.' : ''), 5000);
+          if (!campoSei.isConnected) return;   // a pessoa saiu da tela: a próxima abertura já lê os dados novos
+          const data = r.registro.DATA;
+          if ((filtro.de && data < filtro.de) || (filtro.ate && data > filtro.ate)) { filtro.de = data; filtro.ate = data; }
+          pag.inicio(); recarregar();
+        },
+        devolver: () => { rascunhoDiario = Object.assign({ erro: envio.erro }, valores); if (campoSei.isConnected) aplicarRascunhoDiario(); else ir('diario'); }
+      };
+      enviarEmSegundoPlano(envio);
     } },
       h('div', { class: 'grade-campos' },
         campoDe('d-PROCESSO_SEI', 'Nº do SEI (obrigatório)', campoSei),
@@ -2561,9 +2697,13 @@ function telaDiario() {
     caixaLista.replaceChildren(montarFiltros(), h('div', { class: 'filtros', style: 'border-top:1px solid var(--linha)' }, contagem), resumo, tabela, vazio, pag.el);
     montada = true;
   }
+  let seqRecarga = 0;
   async function recarregar() {
     // As duas consultas saem juntas: o tempo de espera é o de uma só.
+    // Se outra recarga começou depois, a resposta desta (mais velha) é descartada.
+    const minha = ++seqRecarga;
     const [lista] = await Promise.all([chamar('diario.listar', {}), atualizarCargas()]);
+    if (minha !== seqRecarga) return;
     dados = lista;
     desenharLinhas();
   }
@@ -2572,6 +2712,7 @@ function telaDiario() {
       [dados, cargas] = await Promise.all([chamar('diario.listar', {}), chamar('diario.cargas', { data: hojeIso() })]);
       cargas.colaboradores.forEach(c => { if (c.RECEBE) presentes.add(c.ID); });
       montarTela(); desenharQuem(); desenharLinhas();
+      if (rascunhoDiario && pode('OPERADOR')) aplicarRascunhoDiario();
     } catch (e) {
       caixaLista.replaceChildren(h('div', { class: 'painel-corpo' }, caixaAviso(e.message), h('button', { type: 'button', class: 'botao claro', texto: 'Tentar de novo', onclick: () => ir('diario') })));
     }
