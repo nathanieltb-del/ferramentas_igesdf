@@ -477,7 +477,7 @@ body.ocupado::before { opacity: 1; animation: carregando 1s linear infinite; }
    Exemplo: 'https://script.google.com/macros/s/AKfycb.../exec'
    Veja o passo a passo no GUIA_INSTALACAO.md.
    ===================================================================== */
-const ENDERECO_DO_SISTEMA = 'https://script.google.com/macros/s/AKfycbyR76tZGwi2w9-KkARxzpcMZ3_yAfP4ODj8_O38XQr4DZw_lcWQjFG1XYltWDp_vnwBpQ/exec';
+const ENDERECO_DO_SISTEMA = 'https://script.google.com/macros/s/AKfycby0X3UPJzuR2FFvh5q9nJ7jouqJ9RTGyIzSjAXI-Sep3hcqpbqyLQpTgqzJLCgkj-S73w/exec';
 
 const PADRAO_ENDERECO = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
 const CHAVE_SESSAO = 'nf_sessao';
@@ -537,7 +537,7 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_TELA = 'Etapa 8 — com planilha';
+const VERSAO_TELA = 'Etapa 9b — com planilha';
 
 class ErroApi extends Error {
   constructor(mensagem, codigo) { super(mensagem); this.codigo = codigo || 'ERRO'; }
@@ -613,7 +613,9 @@ async function viajar(acao, dados, opcoes, depois) {
 
 async function chamarDireto(acao, dados, opcoes) {
   opcoes = opcoes || {};
-  return abrirResposta(await viajar(acao, dados, opcoes), opcoes);
+  const json = await viajar(acao, dados, opcoes);
+  if (opcoes.aoReceber) opcoes.aoReceber(json && typeof json.ms === 'number' ? json.ms : null);
+  return abrirResposta(json, opcoes);
 }
 
 /* ---------------------------------------------------------------------
@@ -637,8 +639,8 @@ let geracao = 0;                // muda a cada gravação: respostas pedidas ant
 let semLote = false;            // vira true se o Code.gs for antigo e não conhecer o "lote"
 estado.tempos = [];
 
-function registrarTempo(acao, ms, origem) {
-  estado.tempos.unshift({ acao, ms: Math.round(ms), origem, hora: new Date() });
+function registrarTempo(acao, ms, origem, servidor) {
+  estado.tempos.unshift({ acao, ms: Math.round(ms), origem, servidor: typeof servidor === 'number' ? servidor : null, hora: new Date() });
   if (estado.tempos.length > 40) estado.tempos.length = 40;
 }
 function chaveDe(acao, dados) {
@@ -649,21 +651,25 @@ function chaveDe(acao, dados) {
 const fila = [];
 let relogioFila = null;
 function pedirEmLote(acao, dados, discreto) {
-  return new Promise((resolver, rejeitar) => {
-    fila.push({ acao, dados: dados || {}, discreto, resolver, rejeitar });
+  const pedido = { acao, dados: dados || {}, discreto, servidor: null };
+  const promessa = new Promise((resolver, rejeitar) => {
+    pedido.resolver = resolver; pedido.rejeitar = rejeitar;
+    fila.push(pedido);
     if (!relogioFila) relogioFila = setTimeout(despacharFila, 15);
   });
+  promessa.pedido = pedido;
+  return promessa;
 }
 async function despacharFila() {
   relogioFila = null;
   const itens = fila.splice(0, MAX_LOTE);
   if (fila.length) relogioFila = setTimeout(despacharFila, 0);
-  const umPorUm = () => itens.forEach(i => chamarDireto(i.acao, i.dados, { discreto: i.discreto }).then(i.resolver, i.rejeitar));
+  const umPorUm = () => itens.forEach(i => chamarDireto(i.acao, i.dados, { discreto: i.discreto, aoReceber: ms => { i.servidor = ms; } }).then(i.resolver, i.rejeitar));
   if (itens.length === 1 || semLote) return umPorUm();
   const discreto = itens.every(i => i.discreto);
   let lista;
   try {
-    lista = await chamarDireto('lote', { pedidos: itens.map(i => ({ acao: i.acao, dados: i.dados })) }, { discreto });
+    lista = await chamarDireto('lote', { pedidos: itens.map(i => ({ acao: i.acao, dados: i.dados })) }, { discreto, aoReceber: ms => itens.forEach(i => { i.servidor = ms; }) });
   } catch (e) {
     if (e.codigo === 'VALIDACAO' && /desconhecida/i.test(e.message)) { semLote = true; return umPorUm(); }   // Code.gs antigo
     return itens.forEach(i => i.rejeitar(e));
@@ -732,7 +738,7 @@ async function chamar(acao, dados, opcoes) {
     if (!item) { origem = 'planilha'; item = guardar(chave, acao, dados, pedirEmLote(acao, dados, !!opcoes.aquecendo)); }
     try {
       const r = await entregar(item);
-      if (!opcoes.aquecendo) registrarTempo(acao, performance.now() - inicio, origem);
+      if (!opcoes.aquecendo) registrarTempo(acao, performance.now() - inicio, origem, origem === 'planilha' && item.promessa.pedido ? item.promessa.pedido.servidor : null);
       return r;
     } catch (e) {
       if (!opcoes.aquecendo) registrarTempo(acao, performance.now() - inicio, 'erro');
@@ -756,7 +762,7 @@ async function chamar(acao, dados, opcoes) {
         });
       }
     }
-    registrarTempo(acao, performance.now() - inicio, 'planilha');
+    registrarTempo(acao, performance.now() - inicio, 'planilha', json && json.ms);
     return r;
   } catch (e) {
     if (escreve && acao !== 'sair') { geracao++; memoria.clear(); }   // na dúvida, lê tudo de novo
@@ -991,8 +997,8 @@ function janelaVelocidade() {
     historico.replaceChildren(
       h('h3', { texto: 'Últimas ações desta aba' }),
       lista.length
-        ? h('div', { class: 'tabela-caixa' }, h('table', {}, h('thead', {}, h('tr', {}, ['Ação', 'Tempo', 'De onde veio'].map(t => h('th', { scope: 'col', texto: t })))),
-            h('tbody', {}, lista.map(t => h('tr', {}, h('td', { texto: t.acao }), h('td', { texto: seg(t.ms) }), h('td', { texto: t.origem }))))))
+        ? h('div', { class: 'tabela-caixa' }, h('table', {}, h('thead', {}, h('tr', {}, ['Ação', 'Tempo total', 'Só no Google', 'De onde veio'].map(t => h('th', { scope: 'col', texto: t })))),
+            h('tbody', {}, lista.map(t => h('tr', {}, h('td', { texto: t.acao }), h('td', { texto: seg(t.ms) }), h('td', { texto: t.servidor === null || t.servidor === undefined ? '—' : seg(t.servidor) }), h('td', { texto: t.origem }))))))
         : h('p', { texto: 'Ainda não há ações.' }));
   }
   medir.addEventListener('click', async () => {
@@ -1009,10 +1015,11 @@ function janelaVelocidade() {
     for (const [nome, acao, dados, semToken] of testes) {
       const t0 = performance.now(); let ok = true;
       try { await chamar(acao, dados, { semToken, semCache: true }); } catch (e) { ok = false; }
-      linhas.push([nome, ok ? seg(performance.now() - t0) : 'erro']);
+      const srv = estado.tempos[0] && estado.tempos[0].servidor;
+      linhas.push([nome, ok ? seg(performance.now() - t0) + (typeof srv === 'number' ? '  (no Google: ' + seg(srv) + ')' : '') : 'erro']);
       resultado.replaceChildren(h('div', { class: 'tabela-caixa' }, h('table', {}, h('tbody', {}, linhas.map(l => h('tr', {}, h('td', { texto: l[0] }), h('td', { texto: l[1] })))))));
     }
-    resultado.append(h('p', { class: 'ajuda', style: 'margin-top:8px', texto: 'A 1ª linha é o tempo que o Google leva só para responder. O que passar disso é a leitura da planilha e o cálculo.' }));
+    resultado.append(h('p', { class: 'ajuda', style: 'margin-top:8px', texto: 'A 1ª linha é o tempo que o Google leva só para responder. "No Google" é o tempo que o sistema gastou trabalhando; o resto da conta é a viagem pela internet.' }));
     medir.disabled = false; medir.textContent = 'Medir de novo'; desenharHistorico();
   });
   desenharHistorico();
