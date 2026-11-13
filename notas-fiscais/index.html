@@ -464,6 +464,20 @@ body.ocupado::before { opacity: 1; animation: carregando 1s linear infinite; }
 @keyframes carregando { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 @media (prefers-reduced-motion: reduce) { body.ocupado::before { animation: none; background-size: 100% 100%; } }
 @media (max-width: 860px) { .entrada-corpo { padding: 24px 20px 20px; } .entrada-rodape { padding: 12px 20px; } }
+
+/* ---------- importar planilha ---------- */
+.imp-passo { margin-bottom: 16px; }
+.imp-passo h2 { font-size: 19px; margin-bottom: 10px; }
+.imp-bloco { margin-top: 20px; }
+.imp-bloco h3 { font-size: 17px; margin-bottom: 8px; }
+.imp-bloco .tabela-caixa { border: 1px solid var(--linha); border-radius: var(--raio); }
+.imp-lista { margin: 8px 0 0; padding-left: 20px; }
+.imp-lista li { margin: 6px 0; overflow-wrap: anywhere; }
+.imp-acoes { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+.tabela-imp td.texto-livre { white-space: normal; min-width: 260px; }
+.tabela-imp td.com-erro { color: var(--erro-texto); font-weight: 700; }
+.tabela-imp tfoot td { font-weight: 700; background: #F8FAFB; border-top: 1px solid var(--linha-forte); border-bottom: 0; }
+#arquivo-importacao { padding: 8px; border: 1px dashed var(--linha-forte); border-radius: var(--raio); background: #F8FAFB; max-width: 100%; }
 </style>
 </head>
 <body>
@@ -482,7 +496,7 @@ body.ocupado::before { opacity: 1; animation: carregando 1s linear infinite; }
    Exemplo: 'https://script.google.com/macros/s/AKfycb.../exec'
    Veja o passo a passo no GUIA_INSTALACAO.md.
    ===================================================================== */
-const ENDERECO_DO_SISTEMA = 'https://script.google.com/macros/s/AKfycbwUaDxq4OLalX3RenLyJzfIoeJYYSNjsuwOFim4_PKGlJuEge-OHiCwkdB1SCKtfgrFtQ/exec';
+const ENDERECO_DO_SISTEMA = 'https://script.google.com/macros/s/AKfycbyESqe9KIvXQMhSQS8wODus2WluhhqQltuyq0vzYxo6LwAFVJQGB64d-RuDcgILxTOrfA/exec';
 
 const PADRAO_ENDERECO = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
 const CHAVE_SESSAO = 'nf_sessao';
@@ -514,6 +528,7 @@ const ICONES = {
   manutencao: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
   admin: '<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9.5 12l2 2 3.5-4"/>',
   sair: '<path d="M10 4H5v16h5M15 8l4 4-4 4M19 12H9"/>',
+  importar: '<path d="M12 16V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>'
 };
 function icone(nome) {
@@ -542,7 +557,7 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_TELA = 'Etapa 11 — ações rápidas, com planilha';
+const VERSAO_TELA = 'Etapa 12 — importação por planilha';
 
 class ErroApi extends Error {
   constructor(mensagem, codigo) { super(mensagem); this.codigo = codigo || 'ERRO'; }
@@ -559,11 +574,11 @@ function marcarOcupado(delta) {
 }
 
 // Consultas podem ser repetidas sem risco. Gravações nunca são repetidas sozinhas (para não duplicar).
-const SO_LEITURA = /^(ping|eu|lote|[a-z]+\.(listar|obter|calcular|cargas|resumo|mv))$/;
+const SO_LEITURA = /^(ping|eu|lote|[a-z]+\.(listar|obter|calcular|cargas|resumo|mv|modelo))$/;
 
-async function enviarPedido(url, corpo) {
+async function enviarPedido(url, corpo, limiteMs) {
   const controle = new AbortController();
-  const limite = setTimeout(() => controle.abort(), 60000);
+  const limite = setTimeout(() => controle.abort(), limiteMs || 60000);
   let resposta;
   try {
     resposta = await fetch(url, {
@@ -606,10 +621,10 @@ async function viajar(acao, dados, opcoes, depois) {
   if (!opcoes.discreto) marcarOcupado(1);
   try {
     try {
-      return await enviarPedido(ENDERECO_DO_SISTEMA, corpo);
+      return await enviarPedido(ENDERECO_DO_SISTEMA, corpo, opcoes.limiteMs);
     } catch (e) {
       if (!SO_LEITURA.test(acao) || (e.codigo !== 'REDE' && e.codigo !== 'RESPOSTA')) throw e;
-      return await enviarPedido(ENDERECO_DO_SISTEMA, corpo);   // uma segunda tentativa, só para consultas
+      return await enviarPedido(ENDERECO_DO_SISTEMA, corpo, opcoes.limiteMs);   // uma segunda tentativa, só para consultas
     }
   } finally {
     if (!opcoes.discreto) marcarOcupado(-1);
@@ -1165,6 +1180,412 @@ function telaUso() {
 }
 
 /* =====================================================================
+   IMPORTAR PLANILHA (só o administrador)
+   1) A pessoa baixa o modelo (.xlsx, uma aba para cada assunto).
+   2) Preenche e escolhe o arquivo. A tela lê o .xlsx aqui mesmo, no navegador.
+   3) O sistema CONFERE tudo, sem gravar nada, e mostra os erros por aba e por linha.
+   4) Só se não houver erro, a pessoa confirma e o sistema grava.
+   O modelo (abas e colunas) vem do Code.gs ("importacao.modelo"): ele é a fonte única.
+   ===================================================================== */
+const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const importar = { modelo: null };
+
+function normalizarNomeAba(t) {
+  return semAcento(t).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();   // igual ao Code.gs (impNorm_)
+}
+
+/* ---------- modelo para baixar ---------- */
+const DICA_TIPO = {
+  cnpj: 'CNPJ, com ou sem pontos.', pct: 'Porcentagem, sem o sinal de %. Exemplo: 4,65.', moeda: 'Valor em reais. Exemplo: 1234,56.',
+  numero: 'Número.', data: 'Data no formato dd/mm/aaaa.', mes: 'Mês e ano: mm/aaaa.', sn: 'Sim ou Não.', lista: '', texto: ''
+};
+const PADRAO_LEGIVEL = { NAO: 'Não', SIM: 'Sim', PENDENTE: 'Pendente', PERCENTUAL: 'Percentual', BRUTO: 'Bruto' };
+
+// Estilos: 0 normal, 1 título, 2 cabeçalho, 3 texto com quebra, 4 exemplo (cinza), 5 texto (formato Texto), 6 negrito com quebra, 7 grupo (faixa azul clara)
+function xmlPlanilhaModelo(o) {
+  const linhasXml = [], mesclas = [];
+  const celula = (r, c, t, s) => '<c r="' + letraColuna(c) + r + '" t="inlineStr" s="' + s + '"><is><t xml:space="preserve">' + xmlTexto(t) + '</t></is></c>';
+  o.linhas.forEach((l, i) => {
+    const r = i + 1;
+    const altura = l.altura ? ' ht="' + l.altura + '" customHeight="1"' : '';
+    linhasXml.push('<row r="' + r + '"' + altura + '>' + l.celulas.map((c, j) => (c === null || c === undefined || c === '' ? '' : celula(r, j, c, l.estilos[j] === undefined ? l.estilos[0] : l.estilos[j]))).join('') + '</row>');
+    if (l.mesclar) mesclas.push('<mergeCell ref="A' + r + ':' + letraColuna(l.mesclar - 1) + r + '"/>');
+  });
+  const cols = o.larguras.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"' + (o.estiloColuna !== undefined ? ' style="' + o.estiloColuna + '"' : '') + '/>').join('');
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<sheetViews><sheetView workbookViewId="0"' + (o.congelar ? '' : ' showGridLines="0"') + '>' + (o.congelar ? '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>' : '') + '</sheetView></sheetViews>' +
+    '<sheetFormatPr defaultRowHeight="15"/><cols>' + cols + '</cols><sheetData>' + linhasXml.join('') + '</sheetData>' +
+    (mesclas.length ? '<mergeCells count="' + mesclas.length + '">' + mesclas.join('') + '</mergeCells>' : '') +
+    '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/></worksheet>';
+}
+
+function gerarModeloXlsx(modelo) {
+  const abas = modelo.abas;
+  // ---- aba "Leia-me" ----
+  const instrucoes = [
+    'Preencha só as abas de que precisa. Cada aba é um assunto. A primeira linha de cada aba tem os títulos das colunas: não mude os títulos.',
+    'Na tela "Importar planilha", escolha este arquivo. O sistema confere tudo antes de gravar. Se achar algum erro, NADA é gravado e você vê a aba, a linha e o que corrigir.',
+    'O que já existe no sistema é pulado, com aviso. Nada que já existe é alterado. Para mudar um cadastro que já existe, use a tela de Manutenção.',
+    'A linha 2 de cada aba (em cinza) é só um exemplo. Pode apagar. O sistema ignora linhas em branco e linhas que começam com EXEMPLO.',
+    'Ordem de gravação: ' + abas.map(a => a.aba).join(', ') + '. Uma aba aponta para outra pelo CNPJ do fornecedor, pela sigla do imposto ou pelo código. Por isso o CNPJ, a sigla ou o código precisa estar na aba correspondente desta planilha ou já cadastrado no sistema.',
+    'Porcentagens: digite sem o sinal de %. Exemplo: 4,65. Valores em reais: 1234,56. Datas: dd/mm/aaaa. Competência da nota: mm/aaaa.',
+    'As colunas estão no formato Texto, para o Excel não mudar o que você digitar (por exemplo, tirar zeros à esquerda de códigos).',
+    'Notas fiscais: o sistema calcula os impostos pela tributação do fornecedor, igual à tela de nova nota. O fornecedor precisa ter a tributação cadastrada (aba Tributação ou já no sistema).',
+    'Importe fora do horário de uso. Durante a gravação, outras pessoas podem ver a mensagem "sistema ocupado" por alguns instantes.'
+  ];
+  const lei = [{ celulas: ['Modelo de importação — Sistema de Notas Fiscais de Serviços (IGESDF)'], estilos: [1], altura: 24 }, { celulas: [''], estilos: [0] }];
+  lei.push({ celulas: ['Como usar'], estilos: [6] });
+  instrucoes.forEach((t, i) => lei.push({ celulas: [(i + 1) + '. ' + t], estilos: [3], mesclar: 5, altura: Math.max(18, Math.ceil(t.length / 120) * 16 + 4) }));
+  lei.push({ celulas: [''], estilos: [0] });
+  lei.push({ celulas: ['Abas e colunas'], estilos: [6] });
+  lei.push({ celulas: ['Aba', 'Coluna', 'Obrigatória?', 'Como preencher', 'Exemplo'], estilos: [2], altura: 22 });
+  abas.forEach(ab => {
+    lei.push({ celulas: [ab.aba + ' — ' + ab.texto], estilos: [7], mesclar: 5, altura: Math.max(20, Math.ceil(ab.texto.length / 110) * 16 + 6) });
+    ab.colunas.forEach(c => {
+      const partes = [];
+      if (c.ajuda) partes.push(c.ajuda);
+      else if (DICA_TIPO[c.tipo]) partes.push(DICA_TIPO[c.tipo]);
+      if (c.padrao !== '' && c.padrao !== undefined && !c.obrigatorio) partes.push('Em branco = ' + (PADRAO_LEGIVEL[c.padrao] || c.padrao) + '.');
+      lei.push({ celulas: [ab.aba, c.rotulo, c.obrigatorio ? 'Sim' : 'Não', partes.join(' '), c.exemplo || ''], estilos: [3, 6, 3, 3, 3], altura: Math.max(18, Math.ceil(partes.join(' ').length / 70) * 16 + 4) });
+    });
+  });
+  const folhas = [{ nome: 'Leia-me', xml: xmlPlanilhaModelo({ linhas: lei, larguras: [20, 34, 13, 78, 30], congelar: false }) }];
+
+  // ---- uma aba por assunto: cabeçalho na linha 1 e um exemplo em cinza na linha 2 ----
+  abas.forEach(ab => {
+    const cab = { celulas: ab.colunas.map(c => c.rotulo), estilos: [2], altura: 34 };
+    const ex = { celulas: ab.colunas.map((c, i) => (i === 0 ? 'EXEMPLO — ' : '') + (c.exemplo || '')), estilos: [4] };
+    const larg = ab.colunas.map(c => Math.min(46, Math.max(14, Math.ceil(c.rotulo.length * 0.95) + 2, String(c.exemplo || '').length + 4)));
+    larg[0] = Math.max(larg[0], 26);
+    folhas.push({ nome: ab.aba, xml: xmlPlanilhaModelo({ linhas: [cab, ex], larguras: larg, congelar: true, estiloColuna: 5 }) });
+  });
+
+  const estilos = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<fonts count="5"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="14"/><color rgb="FF153F58"/><name val="Calibri"/></font>' +
+    '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><i/><sz val="10"/><color rgb="FF5B6B76"/><name val="Calibri"/></font></fonts>' +
+    '<fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FF1E5B7B"/><bgColor indexed="64"/></patternFill></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFEEF2F5"/><bgColor indexed="64"/></patternFill></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFE3F0F8"/><bgColor indexed="64"/></patternFill></fill></fills>' +
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="8"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+    '<xf numFmtId="49" fontId="3" fillId="2" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' +
+    '<xf numFmtId="49" fontId="4" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1"/>' +
+    '<xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+    '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' +
+    '<xf numFmtId="0" fontId="1" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf></cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  const RNS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const cab = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const arquivos = [
+    { nome: '[Content_Types].xml', texto: cab + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      folhas.map((f, i) => '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('') +
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
+    { nome: '_rels/.rels', texto: cab + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' + RNS + '/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+    { nome: 'xl/workbook.xml', texto: cab + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="' + RNS + '"><sheets>' +
+      folhas.map((f, i) => '<sheet name="' + xmlTexto(f.nome) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>').join('') + '</sheets></workbook>' },
+    { nome: 'xl/_rels/workbook.xml.rels', texto: cab + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      folhas.map((f, i) => '<Relationship Id="rId' + (i + 1) + '" Type="' + RNS + '/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>').join('') +
+      '<Relationship Id="rId' + (folhas.length + 1) + '" Type="' + RNS + '/styles" Target="styles.xml"/></Relationships>' },
+    { nome: 'xl/styles.xml', texto: estilos }
+  ].concat(folhas.map((f, i) => ({ nome: 'xl/worksheets/sheet' + (i + 1) + '.xml', texto: f.xml })));
+  return zipSemCompressao(arquivos);
+}
+
+/* ---------- leitura de um arquivo .xlsx (zip + XML), sem biblioteca ---------- */
+function lerDiretorioZip(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let fim = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { fim = i; break; }
+  if (fim < 0) throw new Error('Este arquivo não parece ser uma planilha do Excel (.xlsx). Abra no Excel e use "Salvar como" > "Pasta de Trabalho do Excel (.xlsx)".');
+  const total = dv.getUint16(fim + 10, true);
+  let p = dv.getUint32(fim + 16, true);
+  const dec = new TextDecoder(), mapa = {};
+  for (let i = 0; i < total; i++) {
+    if (p + 46 > bytes.length || dv.getUint32(p, true) !== 0x02014b50) throw new Error('O arquivo está danificado. Salve a planilha de novo no Excel e tente outra vez.');
+    const nlen = dv.getUint16(p + 28, true), elen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    mapa[dec.decode(bytes.subarray(p + 46, p + 46 + nlen))] = { metodo: dv.getUint16(p + 10, true), tamanho: dv.getUint32(p + 20, true), deslocamento: dv.getUint32(p + 42, true) };
+    p += 46 + nlen + elen + clen;
+  }
+  return mapa;
+}
+async function extrairDoZip(bytes, mapa, nome) {
+  const e = mapa[nome];
+  if (!e) return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const inicio = e.deslocamento + 30 + dv.getUint16(e.deslocamento + 26, true) + dv.getUint16(e.deslocamento + 28, true);
+  const dados = bytes.subarray(inicio, inicio + e.tamanho);
+  if (e.metodo === 0) return new TextDecoder().decode(dados);
+  if (e.metodo !== 8) throw new Error('O arquivo usa um formato de compactação que a tela não lê. Salve a planilha de novo no Excel.');
+  if (typeof DecompressionStream === 'undefined') throw new Error('Este navegador é antigo demais para ler a planilha. Use uma versão atual do Chrome, Edge ou Firefox.');
+  const fluxo = new Blob([dados]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new TextDecoder().decode(await new Response(fluxo).arrayBuffer());
+}
+function lerXml(texto) {
+  const doc = new DOMParser().parseFromString(texto, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('O arquivo está danificado. Salve a planilha de novo no Excel e tente outra vez.');
+  return doc;
+}
+const filhosPorNome = (no, nome) => [...no.children].filter(x => x.localName === nome);
+function textoDeSi(si) {
+  let t = '';
+  [...si.children].forEach(f => {
+    if (f.localName === 't') t += f.textContent;
+    else if (f.localName === 'r') filhosPorNome(f, 't').forEach(x => { t += x.textContent; });
+  });
+  return t;
+}
+function colunaDaReferencia(ref) {
+  let n = 0;
+  for (const ch of String(ref).replace(/[^A-Za-z]/g, '').toUpperCase()) n = n * 26 + ch.charCodeAt(0) - 64;
+  return n - 1;
+}
+
+// Devolve [{ nome, linhas: [[...], ...] }]. Célula de porcentagem (ex.: 4,65%) vira o texto "4,65%". Datas ficam como número de série do Excel (o Code.gs entende).
+async function lerXlsx(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const zip = lerDiretorioZip(bytes);
+  const pegar = async nome => { const t = await extrairDoZip(bytes, zip, nome); return t === null ? null : lerXml(t); };
+  const livro = await pegar('xl/workbook.xml');
+  if (!livro) throw new Error('Este arquivo não parece ser uma planilha do Excel (.xlsx).');
+  const rels = await pegar('xl/_rels/workbook.xml.rels');
+  const alvos = {};
+  if (rels) [...rels.getElementsByTagName('Relationship')].forEach(r => { alvos[r.getAttribute('Id')] = r.getAttribute('Target'); });
+  const textos = [];
+  const sst = await pegar('xl/sharedStrings.xml');
+  if (sst) [...sst.getElementsByTagName('si')].forEach(si => textos.push(textoDeSi(si)));
+  // estilos que formam porcentagem
+  const ehPct = {};
+  const est = await pegar('xl/styles.xml');
+  if (est) {
+    const formatos = {};
+    [...est.getElementsByTagName('numFmt')].forEach(f => { formatos[f.getAttribute('numFmtId')] = f.getAttribute('formatCode') || ''; });
+    const xfs = est.getElementsByTagName('cellXfs')[0];
+    if (xfs) filhosPorNome(xfs, 'xf').forEach((xf, i) => {
+      const id = xf.getAttribute('numFmtId');
+      if (id === '9' || id === '10' || /%/.test((formatos[id] || '').replace(/"[^"]*"/g, ''))) ehPct[i] = true;
+    });
+  }
+  const saida = [];
+  for (const folha of [...livro.getElementsByTagName('sheet')]) {
+    const nome = folha.getAttribute('name');
+    const rid = folha.getAttribute('r:id') || folha.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+    let alvo = alvos[rid];
+    if (!alvo) continue;
+    alvo = alvo.charAt(0) === '/' ? alvo.slice(1) : 'xl/' + alvo;
+    const doc = await pegar(alvo);
+    if (!doc) continue;
+    const linhas = [];
+    const dados = doc.getElementsByTagName('sheetData')[0];
+    if (dados) filhosPorNome(dados, 'row').forEach((row, k) => {
+      const nl = Number(row.getAttribute('r')) || (k + 1);
+      const lin = [];
+      let seq = 0;
+      filhosPorNome(row, 'c').forEach(c => {
+        const ref = c.getAttribute('r');
+        const col = ref ? colunaDaReferencia(ref) : seq;
+        seq = col + 1;
+        const tipo = c.getAttribute('t');
+        const v = filhosPorNome(c, 'v')[0];
+        let valor = '';
+        if (tipo === 'inlineStr') valor = filhosPorNome(c, 'is').map(textoDeSi).join('');
+        else if (v) {
+          const bruto = v.textContent;
+          if (tipo === 's') valor = textos[Number(bruto)] !== undefined ? textos[Number(bruto)] : '';
+          else if (tipo === 'str') valor = bruto;
+          else if (tipo === 'b') valor = bruto === '1' ? 'SIM' : 'NAO';
+          else if (tipo === 'e') valor = '';
+          else {
+            const n = Number(bruto);
+            if (bruto === '' || !isFinite(n)) valor = '';
+            else if (ehPct[Number(c.getAttribute('s') || 0)]) valor = String(Number((n * 100).toFixed(8))).replace('.', ',') + '%';
+            else valor = n;
+          }
+        }
+        lin[col] = valor;
+      });
+      for (let i = 0; i < lin.length; i++) if (lin[i] === undefined) lin[i] = '';
+      while (lin.length && lin[lin.length - 1] === '') lin.pop();
+      while (linhas.length < nl - 1) linhas.push([]);
+      linhas[nl - 1] = lin;
+    });
+    saida.push({ nome, linhas });
+  }
+  return saida;
+}
+
+/* ---------- a tela ---------- */
+function textoLinhas(a) {
+  if (!a.linhas || !a.linhas.length) return a.total > 1 ? ' (' + a.total + ' vezes)' : '';
+  const resto = a.total - a.linhas.length;
+  return ' (linha' + (a.linhas.length > 1 ? 's ' : ' ') + a.linhas.join(', ') + (resto > 0 ? ' e mais ' + resto : '') + ')';
+}
+const inteiroBr = n => Number(n).toLocaleString('pt-BR');
+
+async function obterModeloImportacao() {
+  if (!importar.modelo) importar.modelo = await chamar('importacao.modelo', {}, { semCache: true });
+  return importar.modelo;
+}
+
+function telaImportar() {
+  const resultado = h('div', { 'aria-live': 'polite' });
+  const status = h('p', { class: 'ajuda', role: 'status', style: 'margin-top:10px' });
+  const erroModelo = h('div');
+  const entrada = h('input', { type: 'file', id: 'arquivo-importacao', accept: '.xlsx,' + MIME_XLSX });
+  let dadosLidos = null, ignoradas = [], nomeArquivo = '';
+
+  const botaoModelo = h('button', { type: 'button', class: 'botao', texto: 'Baixar o modelo (.xlsx)' });
+  botaoModelo.addEventListener('click', () => enviar(botaoModelo, erroModelo, 'Preparando…', async () => {
+    const modelo = await obterModeloImportacao();
+    baixarBinario('modelo-importacao-notas-fiscais.xlsx', gerarModeloXlsx(modelo), MIME_XLSX);
+    toque('Modelo baixado. Abra a aba "Leia-me" primeiro.');
+  }));
+
+  function mostrarErroGeral(texto) { resultado.replaceChildren(caixaAviso(texto)); status.textContent = ''; }
+
+  entrada.addEventListener('change', async () => {
+    const arquivo = entrada.files && entrada.files[0];
+    if (!arquivo) return;
+    resultado.replaceChildren(); dadosLidos = null;
+    nomeArquivo = arquivo.name;
+    if (!/\.xlsx$/i.test(arquivo.name)) { entrada.value = ''; mostrarErroGeral('Escolha um arquivo .xlsx (Excel). Se o seu arquivo é .xls ou .csv, abra no Excel e use "Salvar como" > "Pasta de Trabalho do Excel (.xlsx)".'); return; }
+    if (arquivo.size > 20e6) { entrada.value = ''; mostrarErroGeral('O arquivo é grande demais (mais de 20 MB). Divida os dados em arquivos menores.'); return; }
+    status.textContent = 'Lendo o arquivo…';
+    marcarOcupado(1);
+    try {
+      const [modelo, planilhas] = await Promise.all([obterModeloImportacao(), arquivo.arrayBuffer().then(lerXlsx)]);
+      const conhecidos = new Set(); modelo.abas.forEach(a => { conhecidos.add(normalizarNomeAba(a.aba)); conhecidos.add(normalizarNomeAba(a.titulo)); });
+      const abas = {}; ignoradas = [];
+      planilhas.forEach(pl => {
+        const n = normalizarNomeAba(pl.nome);
+        if (conhecidos.has(n)) abas[pl.nome] = pl.linhas;
+        else if (n !== 'LEIA ME' && n !== 'LEIAME') ignoradas.push(pl.nome);
+      });
+      if (!Object.keys(abas).length) { mostrarErroGeral('Não encontrei nenhuma aba do modelo neste arquivo. As abas esperadas são: ' + modelo.abas.map(a => a.aba).join(', ') + '. Baixe o modelo e preencha nele.'); return; }
+      if (JSON.stringify(abas).length > 3800000) { mostrarErroGeral('O arquivo tem dados demais para enviar de uma vez. Divida em arquivos menores (por exemplo, até 1.000 notas cada) e envie um de cada vez.'); return; }
+      dadosLidos = abas;
+      await conferir();
+    } catch (e) {
+      mostrarErroGeral(e.message);
+    } finally {
+      marcarOcupado(-1);
+      entrada.value = '';   // permite escolher o mesmo arquivo de novo depois de corrigir
+    }
+  });
+
+  async function conferir() {
+    status.textContent = 'Conferindo “' + nomeArquivo + '”. Em planilhas grandes isso pode levar 1 ou 2 minutos. Não feche esta tela.';
+    resultado.replaceChildren();
+    try {
+      const r = await chamar('importacao.conferir', { abas: dadosLidos }, { semCache: true, limiteMs: 300000 });
+      status.textContent = 'Arquivo conferido: ' + nomeArquivo + '.';
+      desenharConferencia(r, false);
+    } catch (e) {
+      status.textContent = '';
+      resultado.replaceChildren(caixaAviso(e.codigo === 'REDE' ? 'Não recebi a resposta da planilha. Nada foi gravado pela conferência. Tente de novo; se for um arquivo grande, divida-o em partes.' : e.message));
+    }
+  }
+
+  function tabelaResumo(r, gravado) {
+    const linhas = r.resumo.filter(x => x.enviada);
+    const soma = k => linhas.reduce((s, x) => s + x[k], 0);
+    const cab = gravado ? ['Aba', 'Linhas lidas', 'Gravados', 'Já existiam (pulados)'] : ['Aba', 'Linhas lidas', 'Novos', 'Já existem (serão pulados)', 'Com erro'];
+    return h('div', { class: 'tabela-caixa' }, h('table', { class: 'tabela-imp' },
+      h('thead', {}, h('tr', {}, cab.map((t, i) => h('th', { scope: 'col', class: i ? 'num' : '', texto: t })))),
+      h('tbody', {}, linhas.map(x => h('tr', {},
+        h('td', { class: 'principal', texto: x.aba }),
+        h('td', { class: 'num', 'data-rotulo': 'Linhas lidas', texto: inteiroBr(x.linhas) }),
+        h('td', { class: 'num', 'data-rotulo': gravado ? 'Gravados' : 'Novos', texto: inteiroBr(x.novos) }),
+        h('td', { class: 'num', 'data-rotulo': 'Já existem', texto: inteiroBr(x.jaExistem) }),
+        gravado ? null : h('td', { class: 'num' + (x.comErro ? ' com-erro' : ''), 'data-rotulo': 'Com erro', texto: inteiroBr(x.comErro) })))),
+      h('tfoot', {}, h('tr', {},
+        h('td', { class: 'principal', texto: 'Total' }),
+        h('td', { class: 'num', 'data-rotulo': 'Linhas lidas', texto: inteiroBr(soma('linhas')) }),
+        h('td', { class: 'num', 'data-rotulo': gravado ? 'Gravados' : 'Novos', texto: inteiroBr(soma('novos')) }),
+        h('td', { class: 'num', 'data-rotulo': 'Já existem', texto: inteiroBr(soma('jaExistem')) }),
+        gravado ? null : h('td', { class: 'num', 'data-rotulo': 'Com erro', texto: inteiroBr(soma('comErro')) })))));
+  }
+
+  function listaAvisos(r) {
+    if (!r.avisos.length && !ignoradas.length) return null;
+    return h('div', { class: 'imp-bloco' }, h('h3', { texto: 'Avisos' }), h('p', { class: 'ajuda', texto: 'Avisos não impedem a gravação. Leia com atenção.' }),
+      h('ul', { class: 'imp-lista' },
+        r.avisos.map(a => h('li', {}, h('strong', { texto: a.aba + ': ' }), a.texto + textoLinhas(a))),
+        ignoradas.length ? h('li', {}, h('strong', { texto: 'Abas ignoradas: ' }), ignoradas.join(', ') + '. O sistema não usa estas abas.') : null));
+  }
+
+  function tabelaErros(r) {
+    const ordem = {}; (importar.modelo ? importar.modelo.abas : []).forEach((a, i) => { ordem[a.aba] = i; });
+    const lista = r.erros.map((e, i) => ({ e, i })).sort((x, y) => ((ordem[x.e.aba] === undefined ? 99 : ordem[x.e.aba]) - (ordem[y.e.aba] === undefined ? 99 : ordem[y.e.aba])) || ((x.e.linha || 0) - (y.e.linha || 0)) || (x.i - y.i)).map(x => x.e);
+    return h('div', { class: 'imp-bloco' }, h('h3', { texto: 'Erros a corrigir' }),
+      h('div', { class: 'tabela-caixa' }, h('table', { class: 'tabela-imp' },
+        h('thead', {}, h('tr', {}, ['Aba', 'Linha', 'Coluna', 'O que fazer'].map((t, i) => h('th', { scope: 'col', class: i === 1 ? 'num' : '', texto: t })))),
+        h('tbody', {}, lista.map(e => h('tr', {},
+          h('td', { class: 'principal', 'data-rotulo': 'Aba', texto: e.aba }),
+          h('td', { class: 'num', 'data-rotulo': 'Linha', texto: e.linha ? String(e.linha) : '—' }),
+          h('td', { 'data-rotulo': 'Coluna', texto: e.coluna || '—' }),
+          h('td', { class: 'texto-livre', 'data-rotulo': 'O que fazer', texto: e.texto })))))),
+      r.errosOmitidos > 0 ? h('p', { class: 'ajuda', style: 'margin-top:8px', texto: 'Mostrando os ' + inteiroBr(r.erros.length) + ' primeiros erros. Há mais ' + inteiroBr(r.errosOmitidos) + '. Corrija estes e envie o arquivo de novo.' }) : null);
+  }
+
+  function desenharConferencia(r, depoisDeGravar) {
+    const novos = r.resumo.reduce((s, x) => s + x.novos, 0);
+    const blocos = [];
+    if (r.totalErros > 0) {
+      blocos.push(caixaAviso('Encontrei ' + inteiroBr(r.totalErros) + (r.totalErros === 1 ? ' erro' : ' erros') + '. NADA foi gravado. Corrija a planilha e escolha o arquivo de novo.'));
+    } else if (r.gravado) {
+      blocos.push(caixaAviso('Pronto! Gravei ' + inteiroBr(novos) + (novos === 1 ? ' registro novo.' : ' registros novos.') + (r.impostosDasNotas ? ' Foram calculadas ' + inteiroBr(r.impostosDasNotas) + ' linhas de impostos das notas.' : ''), 'ok'));
+    } else if (!r.algoNovo) {
+      blocos.push(caixaAviso('Não há nada novo para gravar: tudo o que está na planilha já existe no sistema.', 'info'));
+    } else {
+      blocos.push(caixaAviso('Tudo certo: nenhum erro. Se você gravar, entram ' + inteiroBr(novos) + (novos === 1 ? ' registro novo' : ' registros novos') + (r.impostosDasNotas ? ', com ' + inteiroBr(r.impostosDasNotas) + ' linhas de impostos das notas' : '') + '. Confira o resumo e os avisos antes.', 'ok'));
+    }
+    blocos.push(h('div', { class: 'imp-bloco' }, h('h3', { texto: r.gravado ? 'O que foi gravado' : 'Resumo da conferência' }), tabelaResumo(r, !!r.gravado)));
+    if (r.totalErros > 0) blocos.push(tabelaErros(r));
+    const av = listaAvisos(r); if (av) blocos.push(av);
+    const acoes = h('div', { class: 'imp-acoes' });
+    if (r.podeImportar && r.algoNovo && !r.gravado) {
+      acoes.append(h('button', { type: 'button', class: 'botao', texto: 'Gravar na planilha…', onclick: () => confirmarGravacao(r, novos) }));
+    }
+    acoes.append(h('button', { type: 'button', class: 'botao claro', texto: r.gravado ? 'Importar outro arquivo' : 'Escolher o arquivo de novo', onclick: () => { resultado.replaceChildren(); status.textContent = ''; entrada.click(); } }));
+    blocos.push(acoes);
+    resultado.replaceChildren(...blocos);
+    resultado.scrollIntoView({ block: 'nearest' });
+  }
+
+  function confirmarGravacao(r, novos) {
+    janelaConfirmar('Gravar os dados na planilha?',
+      'Vão entrar ' + inteiroBr(novos) + ' registros novos. O que já existe será pulado. Para desfazer depois, é preciso inativar os registros um a um nas telas do sistema. Enquanto o sistema grava, outras pessoas podem ver "sistema ocupado" por alguns instantes. Em planilhas grandes, isso pode levar alguns minutos: não feche esta tela.',
+      'Gravar agora', false, async () => {
+        let g;
+        try {
+          g = await chamar('importacao.gravar', { abas: dadosLidos }, { semCache: true, limiteMs: 330000 });
+        } catch (e) {
+          if (e.codigo === 'REDE') throw new ErroApi('Não recebi a resposta da planilha. A gravação PODE ter terminado mesmo assim. Não envie de novo agora: espere 2 minutos, escolha o mesmo arquivo e confira. Se tudo aparecer como "já existe", a gravação terminou.', 'REDE');
+          throw e;
+        }
+        esquecerMemoria();
+        dadosLidos = g.gravado ? null : dadosLidos;
+        status.textContent = g.gravado ? 'Importação concluída.' : 'Nada foi gravado.';
+        desenharConferencia(g, true);
+      });
+  }
+
+  const passo = (titulo, ...corpo) => h('section', { class: 'painel imp-passo' }, h('div', { class: 'painel-corpo' }, h('h2', { texto: titulo }), ...corpo));
+  return h('div', {},
+    cabecalho('Importar planilha', 'Traga dados de uma planilha do Excel para o sistema. O sistema confere tudo antes. Só grava se não houver nenhum erro.'),
+    passo('1. Baixe o modelo', h('p', { texto: 'O modelo tem uma aba para cada assunto: impostos, fornecedores, serviços, oficinas, centros de custo, colaboradores, contratos, tributação e notas fiscais. A aba "Leia-me" explica cada coluna. Preencha só o que precisa.' }),
+      h('div', { style: 'margin-top:14px' }, erroModelo, botaoModelo)),
+    passo('2. Escolha a planilha preenchida',
+      h('div', { class: 'campo' }, h('label', { for: 'arquivo-importacao', texto: 'Arquivo do Excel (.xlsx)' }), entrada,
+        h('p', { class: 'ajuda', texto: 'Ao escolher o arquivo, o sistema lê e confere tudo. Nada é gravado nesta etapa.' })),
+      status, resultado));
+}
+
+/* =====================================================================
    USUÁRIOS (só o administrador)
    ===================================================================== */
 let listaUsuarios = [];
@@ -1313,7 +1734,7 @@ const MENU = [
     { rota: 'manutencao/colaboradores', nome: 'Colaboradores', texto: 'Quem recebe os processos do Diário.', cadastro: 'colaboradores' },
   ] },
   { rota: 'admin', nome: MODO_LOCAL ? 'Administração' : 'Usuários', icone: 'admin', so: 'ADMIN' }
-].concat(MODO_LOCAL ? [] : [{ rota: 'uso', nome: 'Uso do sistema', icone: 'relatorios', so: 'ADMIN' }]);
+].concat(MODO_LOCAL ? [] : [{ rota: 'importar', nome: 'Importar planilha', icone: 'importar', so: 'ADMIN' }, { rota: 'uso', nome: 'Uso do sistema', icone: 'relatorios', so: 'ADMIN' }]);
 
 function rotaAtual() {
   return location.hash.replace(/^#\/?/, '') || 'dashboard';
@@ -1404,6 +1825,8 @@ function desenharRota() {
     conteudo = telaCadastro(itemMenu.cadastro);
   } else if (rota === 'admin') {
     conteudo = MODO_LOCAL ? telaAdministracaoLocal() : (pode('ADMIN') ? telaUsuarios() : semPermissao());
+  } else if (rota === 'importar') {
+    conteudo = MODO_LOCAL ? semPermissao() : (pode('ADMIN') ? telaImportar() : semPermissao());
   } else if (rota === 'uso') {
     conteudo = MODO_LOCAL ? semPermissao() : (pode('ADMIN') ? telaUso() : semPermissao());
   } else if (rota === 'relatorios') {
