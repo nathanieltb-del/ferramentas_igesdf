@@ -542,7 +542,7 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_TELA = 'Etapa 10 — com planilha';
+const VERSAO_TELA = 'Etapa 11 — ações rápidas, com planilha';
 
 class ErroApi extends Error {
   constructor(mensagem, codigo) { super(mensagem); this.codigo = codigo || 'ERRO'; }
@@ -633,7 +633,7 @@ async function chamarDireto(acao, dados, opcoes) {
    4. AQUECIMENTO: logo depois de entrar, as listas principais são lidas por trás.
    Qualquer gravação sua apaga a memória, então você nunca vê o valor antigo do que acabou de mudar.
    --------------------------------------------------------------------- */
-const CACHEAVEIS = /^(cadastros\.listar|notas\.listar|notas\.obter|diario\.listar|diario\.cargas|tributacao\.listar|tributacao\.resumo)$/;
+const CACHEAVEIS = /^(cadastros\.listar|notas\.listar|notas\.obter|notas\.mv|diario\.listar|diario\.cargas|tributacao\.listar|tributacao\.resumo)$/;
 const GRAVACOES_COM_CARONA = /\.(criar|atualizar|inativar|reativar|situacao)$/;
 const FRESCO_MS = 30000;        // até aqui, nem confere de novo
 const VALIDADE_MS = 600000;     // depois disso, não mostra mais o que está na memória
@@ -742,7 +742,7 @@ async function chamar(acao, dados, opcoes) {
     if (item && item.texto !== null && Date.now() - item.quando > FRESCO_MS) conferirPorTras(chave, item);
     if (!item) { origem = 'planilha'; item = guardar(chave, acao, dados, pedirEmLote(acao, dados, !!opcoes.aquecendo)); }
     try {
-      const r = await entregar(item);
+      const r = sobrepor(acao, await entregar(item));
       if (!opcoes.aquecendo) registrarTempo(acao, performance.now() - inicio, origem, origem === 'planilha' && item.promessa.pedido ? item.promessa.pedido.servidor : null);
       return r;
     } catch (e) {
@@ -842,10 +842,53 @@ function desenharEnvios() {
       item.incerto ? h('span', { style: 'display:block;margin-top:4px', texto: 'A conexão caiu. O registro pode ter sido salvo. Confira a lista antes de tentar de novo.' }) : null,
       h('div', { class: 'acoes' },
         h('button', { type: 'button', class: 'botao pequeno', texto: 'Tentar de novo', onclick: () => { item.estado = 'esperando'; desenharEnvios(); processarEnvios(); } }),
-        h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Devolver ao formulário', onclick: () => { envios.splice(envios.indexOf(item), 1); desenharEnvios(); item.devolver(); } })));
+        h('button', { type: 'button', class: 'botao claro pequeno', texto: item.rotuloDevolver || 'Devolver ao formulário', onclick: () => { envios.splice(envios.indexOf(item), 1); desenharEnvios(); item.devolver(); } })));
   }));
 }
 window.addEventListener('beforeunload', ev => { if (envios.length) { ev.preventDefault(); ev.returnValue = ''; } });
+
+/* =====================================================================
+   AÇÕES RÁPIDAS (valem na hora na tela, e a planilha confirma por trás)
+   Vale para mudanças que quase nunca são recusadas: marcar lançada/pendente, excluir e restaurar.
+   - A tela muda na hora e o aviso "Enviando…" fica à vista até a planilha confirmar.
+   - Enquanto isso, qualquer lista ou nota que a tela ler já vem com a mudança aplicada ("sobreposição").
+   - Se a planilha recusar, aparece o motivo e o botão "Desfazer na tela" devolve a tela ao que estava salvo.
+   ===================================================================== */
+const sobreposicoes = [];   // { id, patch, dono }
+function patchDe(id) {
+  let p = null;
+  for (const s of sobreposicoes) if (s.id === id) p = Object.assign(p || {}, s.patch);
+  return p;
+}
+// Aplica as mudanças ainda não confirmadas sobre o que a consulta devolveu (a cópia da memória não é alterada).
+function sobrepor(acao, r) {
+  if (!sobreposicoes.length || !r || typeof r !== 'object') return r;
+  const ap = o => { const p = o && o.ID && patchDe(o.ID); if (p) Object.assign(o, p); };
+  if (acao === 'notas.listar' || acao === 'cadastros.listar') (r.registros || []).forEach(ap);
+  else if (acao === 'diario.listar') (r.registros || []).forEach(x => { ap(x); (x.NOTAS || []).forEach(ap); });
+  else if (acao === 'notas.obter' || acao === 'notas.mv') ap(r.nota);
+  else if (acao === 'tributacao.listar') (r.impostos || []).forEach(ap);
+  return r;
+}
+function acaoRapida(o) {
+  const dono = {};
+  [{ id: o.id, patch: o.patch }].concat(o.tambem || []).forEach(m => sobreposicoes.push({ id: m.id, patch: m.patch, dono }));
+  const tirar = () => { for (let i = sobreposicoes.length - 1; i >= 0; i--) if (sobreposicoes[i].dono === dono) sobreposicoes.splice(i, 1); };
+  const redesenhar = () => { try { const x = o.redesenhar && o.redesenhar(); if (x && x.catch) x.catch(() => {}); } catch (e) { /* a tela mudou */ } };
+  redesenhar();
+  if (o.aviso) toque(o.aviso);
+  enviarEmSegundoPlano({
+    titulo: o.titulo, rotuloDevolver: 'Desfazer na tela', executar: o.executar,
+    confirmar: resposta => { tirar(); redesenhar(); if (o.aoConfirmar) o.aoConfirmar(resposta); },
+    devolver: () => { tirar(); redesenhar(); toque('Alteração desfeita na tela. Nada foi salvo.', 5000); }
+  });
+}
+// Quando o mouse chega perto (ou o dedo toca), lê por trás a nota, para ela abrir na hora.
+function preaquecer(acao, dados) {
+  if (!estado.sessao || !estado.usuario) return;
+  if (memoria.has(chaveDe(acao, dados))) return;
+  chamar(acao, dados, { aquecendo: true }).catch(() => { /* só aquecimento */ });
+}
 
 /* ---------- peças de formulário ---------- */
 function campo(id, rotulo, atributos, ajuda) {
@@ -1683,13 +1726,14 @@ function telaCadastro(chave) {
   function nomeDe(r) { return mostrarValor(dados.definicao.campos.find(c => c.n === dados.definicao.lista[0]), r[dados.definicao.lista[0]], dados.referencias); }
 
   function confirmarInativar(r) {
-    janelaConfirmar('Inativar ' + nomeDe(r) + '?', 'Ele sai das listas de escolha. Os dados e as notas que já usam este cadastro continuam guardados. Você pode reativar depois.', 'Inativar', true, async () => {
-      await chamar('cadastros.inativar', { cadastro: chave, ID: r.ID }); await carregar(); toque('Inativado.');
-    });
+    const nome = nomeDe(r);
+    janelaConfirmar('Inativar ' + nome + '?', 'Ele sai das listas de escolha. Os dados e as notas que já usam este cadastro continuam guardados. Você pode reativar depois.', 'Inativar', true,
+      async () => acaoRapida({ titulo: 'Inativar ' + nome, id: r.ID, patch: { STATUS: 'INATIVO' }, aviso: 'Inativado.',
+        executar: () => chamar('cadastros.inativar', { cadastro: chave, ID: r.ID }), redesenhar: carregar }));
   }
-  async function reativar(r) {
-    try { await chamar('cadastros.reativar', { cadastro: chave, ID: r.ID }); await carregar(); toque('Reativado.'); }
-    catch (e) { toque(e.message); }
+  function reativar(r) {
+    acaoRapida({ titulo: 'Reativar ' + nomeDe(r), id: r.ID, patch: { STATUS: 'ATIVO' }, aviso: 'Reativado.',
+      executar: () => chamar('cadastros.reativar', { cadastro: chave, ID: r.ID }), redesenhar: carregar });
   }
 
   function janelaCadastro(r) {
@@ -1750,10 +1794,12 @@ function telaTributacao(fid) {
   }
   function inativar(id) {
     janelaConfirmar('Inativar este imposto?', 'Ele deixa de ser usado nas notas novas. As notas já registradas não mudam. Você pode reativar depois.', 'Inativar', true,
-      async () => { await chamar('cadastros.inativar', { cadastro: 'fornecedor_impostos', ID: id }); await carregar(); toque('Inativado.'); });
+      async () => acaoRapida({ titulo: 'Inativar imposto do fornecedor', id, patch: { STATUS: 'INATIVO' }, aviso: 'Inativado.',
+        executar: () => chamar('cadastros.inativar', { cadastro: 'fornecedor_impostos', ID: id }), redesenhar: carregar }));
   }
-  async function reativar(id) {
-    try { await chamar('cadastros.reativar', { cadastro: 'fornecedor_impostos', ID: id }); await carregar(); toque('Reativado.'); } catch (e) { toque(e.message, 5000); }
+  function reativar(id) {
+    acaoRapida({ titulo: 'Reativar imposto do fornecedor', id, patch: { STATUS: 'ATIVO' }, aviso: 'Reativado.',
+      executar: () => chamar('cadastros.reativar', { cadastro: 'fornecedor_impostos', ID: id }), redesenhar: carregar });
   }
 
   function painelCprb() {
@@ -2008,10 +2054,12 @@ function telaNotas() {
   // "Excluir" tira a nota da lista e dos relatórios, mas guarda o registro. Dá para restaurar em "Mostrar inativas".
   function excluir(n) {
     janelaConfirmar('Excluir a nota ' + n.NUMERO_NF + '?', 'A nota sai da lista e dos relatórios, mas continua guardada. Para vê-la ou restaurá-la, marque "Mostrar inativas".', 'Excluir', true,
-      async () => { await chamar('notas.inativar', { ID: n.ID }); await carregar(); toque('Nota excluída.'); });
+      async () => acaoRapida({ titulo: 'Excluir a nota ' + n.NUMERO_NF, id: n.ID, patch: { STATUS: 'INATIVO' }, aviso: 'Nota excluída.',
+        executar: () => chamar('notas.inativar', { ID: n.ID }), redesenhar: carregar }));
   }
-  async function restaurar(n) {
-    try { await chamar('notas.reativar', { ID: n.ID }); await carregar(); toque('Nota restaurada.'); } catch (e) { toque(e.message, 5000); }
+  function restaurar(n) {
+    acaoRapida({ titulo: 'Restaurar a nota ' + n.NUMERO_NF, id: n.ID, patch: { STATUS: 'ATIVO' }, aviso: 'Nota restaurada.',
+      executar: () => chamar('notas.reativar', { ID: n.ID }), redesenhar: carregar });
   }
 
   function desenharLinhas() {
@@ -2022,7 +2070,7 @@ function telaNotas() {
       const imp = sigla => { const i = (n.impostos || []).find(x => x.SIGLA === sigla); return i ? moedaBr(i.VALOR_IMPOSTO) : '—'; };
       const detalhe = (n.impostos || []).length ? (n.impostos || []).map(i => i.SIGLA + ' ' + moedaBr(i.VALOR_IMPOSTO)).join(' · ') : 'Sem retenção';
       return h('tr', { class: n.STATUS === 'ATIVO' ? '' : 'linha-inativa' },
-        h('td', { class: 'principal data' }, h('a', { href: '#/notas/' + n.ID, class: 'ligacao', 'aria-label': 'Ver a nota ' + n.NUMERO_NF + ' de ' + forn, texto: n.NUMERO_NF })),
+        h('td', { class: 'principal data' }, h('a', { href: '#/notas/' + n.ID, class: 'ligacao', 'aria-label': 'Ver a nota ' + n.NUMERO_NF + ' de ' + forn, texto: n.NUMERO_NF, onmouseenter: () => preaquecer('notas.obter', { ID: n.ID }), onfocus: () => preaquecer('notas.obter', { ID: n.ID }), ontouchstart: () => preaquecer('notas.obter', { ID: n.ID }) })),
         h('td', { 'data-rotulo': 'Processo SEI', class: 'data sei', texto: n.PROCESSO_SEI || '—' }),
         h('td', { 'data-rotulo': 'Fornecedor', class: 'forn', title: forn, texto: forn }),
         h('td', { 'data-rotulo': 'Competência', class: 'data', texto: competenciaBr(n.COMPETENCIA) }),
@@ -2032,8 +2080,8 @@ function telaNotas() {
         h('td', { 'data-rotulo': 'Valor líquido', class: 'num liq', texto: moedaBr(n.VALOR_LIQUIDO) }),
         h('td', { 'data-rotulo': 'Situação' }, seloNota(n)),
         h('td', { class: 'acoes' },
-          h('button', { type: 'button', class: 'botao claro pequeno', texto: 'MV', title: 'Dados para lançar no MV', 'aria-label': 'Dados do MV da nota ' + n.NUMERO_NF, onclick: () => abrirDadosMv(n.ID, carregar) }),
-          !pode('OPERADOR') ? null : [n.STATUS === 'ATIVO' ? h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Editar', 'aria-label': 'Editar a nota ' + n.NUMERO_NF, onclick: () => ir('notas/' + n.ID + '/editar') }) : null,
+          h('button', { type: 'button', class: 'botao claro pequeno', texto: 'MV', title: 'Dados para lançar no MV', 'aria-label': 'Dados do MV da nota ' + n.NUMERO_NF, onmouseenter: () => preaquecer('notas.mv', { ID: n.ID }), onfocus: () => preaquecer('notas.mv', { ID: n.ID }), ontouchstart: () => preaquecer('notas.mv', { ID: n.ID }), onclick: () => abrirDadosMv(n.ID, carregar) }),
+          !pode('OPERADOR') ? null : [n.STATUS === 'ATIVO' ? h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Editar', 'aria-label': 'Editar a nota ' + n.NUMERO_NF, onmouseenter: () => preaquecer('notas.obter', { ID: n.ID }), onfocus: () => preaquecer('notas.obter', { ID: n.ID }), ontouchstart: () => preaquecer('notas.obter', { ID: n.ID }), onclick: () => ir('notas/' + n.ID + '/editar') }) : null,
           n.STATUS === 'ATIVO'
             ? h('button', { type: 'button', class: 'botao perigo pequeno', texto: 'Excluir', 'aria-label': 'Excluir a nota ' + n.NUMERO_NF, onclick: () => excluir(n) })
             : h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Restaurar', 'aria-label': 'Restaurar a nota ' + n.NUMERO_NF, onclick: () => restaurar(n) })]));
@@ -2100,9 +2148,11 @@ async function abrirDadosMv(id, depois) {
   tudo.addEventListener('click', () => copiarEste(d.campos.map(c => c.rotulo + '\t' + c.valor).join('\n'), tudo));
   const lancar = d.nota.SITUACAO === 'PENDENTE' && pode('OPERADOR') ? h('button', { type: 'button', class: 'botao claro', texto: 'Marcar como lançada' }) : null;
   let janela;
-  if (lancar) lancar.addEventListener('click', () => enviar(lancar, erro, 'Salvando…', async () => {
-    await chamar('notas.situacao', { ID: id, situacao: 'LANCADA' }); janela.close(); toque('Nota marcada como lançada.'); if (depois) await depois();
-  }));
+  if (lancar) lancar.addEventListener('click', () => {
+    janela.close();
+    acaoRapida({ titulo: 'Situação da nota ' + d.nota.NUMERO_NF, id, patch: { SITUACAO: 'LANCADA' }, aviso: 'Nota marcada como lançada.',
+      executar: () => chamar('notas.situacao', { ID: id, situacao: 'LANCADA' }), redesenhar: depois });
+  });
   janela = abrirJanela(h('div', {},
     h('div', { class: 'jan-corpo' }, h('h2', { texto: 'Dados para lançar no MV — NF ' + d.nota.NUMERO_NF }),
       h('p', { class: 'ajuda-janela', texto: 'Copie cada campo e cole no SoulMV, na ordem em que aparecem aqui. Nos códigos, o botão copia só o número; a descrição fica ao lado só para conferir.' }), erro,
@@ -2133,15 +2183,19 @@ function telaNotaDetalhe(id) {
     try { dados = await chamar('notas.obter', { ID: id }); desenhar(); }
     catch (e) { bloco.replaceChildren(voltar, h('div', { class: 'painel' }, h('div', { class: 'painel-corpo' }, caixaAviso(e.message), h('button', { type: 'button', class: 'botao claro', texto: 'Tentar de novo', onclick: carregar })))); }
   }
-  async function situacao(nova) {
-    try { await chamar('notas.situacao', { ID: id, situacao: nova }); await carregar(); toque(nova === 'LANCADA' ? 'Nota marcada como lançada.' : 'Nota voltou para pendente.'); }
-    catch (e) { toque(e.message, 5000); }
+  function situacao(nova) {
+    acaoRapida({ titulo: 'Situação da nota ' + dados.nota.NUMERO_NF, id, patch: { SITUACAO: nova }, aviso: nova === 'LANCADA' ? 'Nota marcada como lançada.' : 'Nota voltou para pendente.',
+      executar: () => chamar('notas.situacao', { ID: id, situacao: nova }), redesenhar: carregar });
   }
   function inativar() {
     janelaConfirmar('Excluir a nota ' + dados.nota.NUMERO_NF + '?', 'Ela sai da lista e dos relatórios, mas continua guardada. Você pode restaurar depois.', 'Excluir', true,
-      async () => { await chamar('notas.inativar', { ID: id }); await carregar(); toque('Nota excluída.'); });
+      async () => acaoRapida({ titulo: 'Excluir a nota ' + dados.nota.NUMERO_NF, id, patch: { STATUS: 'INATIVO' }, aviso: 'Nota excluída.',
+        executar: () => chamar('notas.inativar', { ID: id }), redesenhar: carregar }));
   }
-  async function reativar() { try { await chamar('notas.reativar', { ID: id }); await carregar(); toque('Nota restaurada.'); } catch (e) { toque(e.message, 5000); } }
+  function reativar() {
+    acaoRapida({ titulo: 'Restaurar a nota ' + dados.nota.NUMERO_NF, id, patch: { STATUS: 'ATIVO' }, aviso: 'Nota restaurada.',
+      executar: () => chamar('notas.reativar', { ID: id }), redesenhar: carregar });
+  }
 
   // Uma linha por informação: nome à esquerda, valor à direita.
   const linha = (nome, valor, opc) => h('div', { class: 'linha' + (opc && opc.classe ? ' ' + opc.classe : '') },
@@ -2571,20 +2625,21 @@ function telaDiario() {
     const alvo = [r.PROCESSO_SEI, nomeForn(r.FORNECEDOR_ID), nomeColab(r.COLABORADOR_ID), r.NOTAS.map(n => n.NUMERO_NF).join(' ')].join(' ');
     return semAcento(alvo).includes(q) || (qd.length >= 3 && soDigitos(r.PROCESSO_SEI).includes(qd));
   }
-  async function mudarSituacao(r) {
+  function mudarSituacao(r) {
     const nova = r.SITUACAO === 'LANCADA' ? 'PENDENTE' : 'LANCADA';
-    try {
-      const x = await chamar('diario.situacao', { ID: r.ID, situacao: nova });
-      await recarregar();
-      toque(x.notasAtualizadas > 0 ? 'Situação alterada no Diário e em ' + x.notasAtualizadas + (x.notasAtualizadas === 1 ? ' nota' : ' notas') + ' com o mesmo SEI.' : 'Situação alterada.', 4500);
-    } catch (e) { toque(e.message, 5000); }
+    acaoRapida({ titulo: 'Situação do processo ' + r.PROCESSO_SEI, id: r.ID, patch: { SITUACAO: nova }, aviso: 'Situação alterada.',
+      tambem: (r.NOTAS || []).map(n => ({ id: n.ID, patch: { SITUACAO: nova } })),
+      executar: () => chamar('diario.situacao', { ID: r.ID, situacao: nova }), redesenhar: recarregarRapido,
+      aoConfirmar: x => { if (x && x.notasAtualizadas > 0) toque('Situação alterada no Diário e em ' + x.notasAtualizadas + (x.notasAtualizadas === 1 ? ' nota' : ' notas') + ' com o mesmo SEI.', 4500); } });
   }
   function excluir(r) {
     janelaConfirmar('Excluir o processo ' + r.PROCESSO_SEI + '?', 'O processo sai da lista, mas continua guardado. Para vê-lo ou restaurá-lo, marque "Mostrar excluídos".', 'Excluir', true,
-      async () => { await chamar('diario.inativar', { ID: r.ID }); await recarregar(); toque('Processo excluído.'); });
+      async () => acaoRapida({ titulo: 'Excluir o processo ' + r.PROCESSO_SEI, id: r.ID, patch: { STATUS: 'INATIVO' }, aviso: 'Processo excluído.',
+        executar: () => chamar('diario.inativar', { ID: r.ID }), redesenhar: recarregarRapido }));
   }
-  async function restaurar(r) {
-    try { await chamar('diario.reativar', { ID: r.ID }); await recarregar(); toque('Processo restaurado.'); } catch (e) { toque(e.message, 5000); }
+  function restaurar(r) {
+    acaoRapida({ titulo: 'Restaurar o processo ' + r.PROCESSO_SEI, id: r.ID, patch: { STATUS: 'ATIVO' }, aviso: 'Processo restaurado.',
+      executar: () => chamar('diario.reativar', { ID: r.ID }), redesenhar: recarregarRapido });
   }
   function editar(r) {
     const erro = h('div');
@@ -2706,6 +2761,15 @@ function telaDiario() {
     if (minha !== seqRecarga) return;
     dados = lista;
     desenharLinhas();
+  }
+  // Só a lista, já com as mudanças pendentes. As cargas dos colaboradores atualizam por trás.
+  async function recarregarRapido() {
+    const minha = ++seqRecarga;
+    const lista = await chamar('diario.listar', {});
+    if (minha !== seqRecarga) return;
+    dados = lista;
+    desenharLinhas();
+    atualizarCargas();
   }
   (async function iniciar() {
     try {
