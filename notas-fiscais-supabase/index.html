@@ -2094,7 +2094,8 @@ async function aoClicarTestarPush() {
     const r = await chamarDireto('push.testar', {}, { discreto: true });
     const lista = r.resultados || [];
     const bons = lista.filter(x => x.status >= 200 && x.status < 300).length;
-    if (lista.length && bons === lista.length) toque('Aviso de teste enviado. Em poucos segundos ele aparece no canto da tela. Se não aparecer, veja se o Windows está em "Não incomodar".', 9000);
+    const velhos = lista.filter(x => x.status === 404 || x.status === 410).length;
+    if (bons > 0) toque('Aviso de teste enviado. Em poucos segundos ele aparece no canto da tela. Se não aparecer, veja se o Windows está em "Não incomodar".' + (velhos ? ' ' + (velhos === 1 ? 'Um registro antigo deste usuário já tinha vencido e foi retirado.' : velhos + ' registros antigos deste usuário já tinham vencido e foram retirados.') : ''), 10000);
     else toque('O serviço do navegador não aceitou o aviso (' + (lista.filter(x => x.status < 200 || x.status >= 300).map(x => x.status + ' em ' + x.servico).join('; ') || 'sem resposta') + '). Avise o administrador do sistema.', 12000);
   } catch (e) {
     toque(e && e.message ? e.message : 'Não consegui testar agora. Tente de novo.', 8000);
