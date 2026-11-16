@@ -203,7 +203,12 @@ td.principal { font-weight: 600; white-space: nowrap; }
 .atalhos-data { min-width: 0; }
 .atalhos-data .rotulo-falso { display: block; font-weight: 600; margin-bottom: 6px; }
 .atalhos-botoes { display: flex; gap: 6px; flex-wrap: wrap; }
-.tabela-diario td.acoes .botao { margin-left: 3px; }
+.tabela-diario td.acoes .botao { margin-left: 3px; padding: 0 8px; }
+.sei-linha { display: inline-flex; align-items: center; gap: 4px; }
+.botao-copiar { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--linha-forte); border-radius: 6px; background: var(--branco); color: var(--azul-escuro); cursor: pointer; flex: none; }
+.botao-copiar svg { width: 16px; height: 16px; }
+.botao-copiar:hover { background: var(--papel); }
+.botao-copiar:focus-visible { outline: 2px solid var(--azul-escuro); outline-offset: 2px; }
 .num { text-align: right; white-space: nowrap; }
 th.num { text-align: right; }
 .forte { font-weight: 600; }
@@ -543,7 +548,9 @@ const ICONES = {
   sair: '<path d="M10 4H5v16h5M15 8l4 4-4 4M19 12H9"/>',
   backup: '<path d="M12 4v12M7.5 11.5L12 16l4.5-4.5"/><path d="M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/>',
   importar: '<path d="M12 16V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/>',
-  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>'
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  copiar: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/>',
+  certo: '<path d="M5 12.5l4.5 4.5L19 7.5"/>'
 };
 function icone(nome) {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -2894,6 +2901,18 @@ async function copiarTexto(texto) {
   }
 }
 
+// Botão pequeno ao lado do número do SEI: copia o número como aparece na tela.
+function botaoCopiarSei(sei) {
+  const b = h('button', { type: 'button', class: 'botao-copiar', title: 'Copiar o número do SEI', 'aria-label': 'Copiar o número do SEI ' + sei }, icone('copiar'));
+  b.addEventListener('click', async ev => {
+    ev.stopPropagation();
+    const feito = await copiarTexto(sei);
+    toque(feito ? 'Número do SEI copiado: ' + sei : 'Não consegui copiar. Selecione o número e copie.', 3500);
+    if (feito) { b.replaceChildren(icone('certo')); b.setAttribute('aria-label', 'Número do SEI copiado'); setTimeout(() => { b.replaceChildren(icone('copiar')); b.setAttribute('aria-label', 'Copiar o número do SEI ' + sei); }, 1500); }
+  });
+  return b;
+}
+
 /* ---------- campo com busca: a pessoa digita e escolhe na lista ---------- */
 function comboBusca(o) {
   let escolhido = o.valor || '';
@@ -3628,7 +3647,7 @@ function telaDiario() {
     const pagina = pag.fatiar(visiveis);
     corpo.replaceChildren(...pagina.map(r => h('tr', { class: r.STATUS === 'ATIVO' ? '' : 'linha-inativa' },
       h('td', { class: 'principal data', texto: dataBr(r.DATA) }),
-      h('td', { 'data-rotulo': 'Nº do SEI', class: 'data sei', texto: r.PROCESSO_SEI }),
+      h('td', { 'data-rotulo': 'Nº do SEI', class: 'data sei' }, h('span', { class: 'sei-linha' }, h('span', { texto: r.PROCESSO_SEI }), botaoCopiarSei(r.PROCESSO_SEI))),
       h('td', { 'data-rotulo': 'Fornecedor', class: 'forn', title: nomeForn(r.FORNECEDOR_ID), texto: nomeForn(r.FORNECEDOR_ID) }),
       h('td', { 'data-rotulo': 'Colaborador', class: 'data', texto: nomeColab(r.COLABORADOR_ID) }),
       h('td', { 'data-rotulo': 'Registrado por', class: 'data', title: r.REGISTRADO_POR || 'Ainda sem nota registrada', texto: r.REGISTRADO_POR || '—' }),
