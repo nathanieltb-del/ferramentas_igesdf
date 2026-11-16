@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src https://*.supabase.co; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; worker-src 'self'; connect-src https://*.supabase.co; base-uri 'none'; form-action 'none'">
 <title>Notas Fiscais de Serviços — IGESDF</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='16' height='16' fill='%234491C1'/%3E%3Crect x='16' width='16' height='16' fill='%2355B4C6'/%3E%3Crect y='16' width='16' height='16' fill='%23E17611'/%3E%3Crect x='16' y='16' width='16' height='16' fill='%23C3CF00'/%3E%3C/svg%3E">
 <style>
@@ -1972,6 +1972,7 @@ const CHAVE_CONVITE_AVISO = 'igesdf.convite-aviso';
 function iniciarAvisos() {
   if (AVISOS.ativo) return;
   AVISOS.ativo = true; AVISOS.primeira = true;
+  pushOuvirRecados();
   consultarAvisos();
   AVISOS.relogio = setInterval(consultarAvisos, INTERVALO_AVISOS_MS);
   document.addEventListener('visibilitychange', aoVoltarParaAba);
@@ -1981,6 +1982,7 @@ function pararAvisos() {
   AVISOS.vistos.clear(); AVISOS.lista = []; AVISOS.primeira = true;
   document.removeEventListener('visibilitychange', aoVoltarParaAba);
   fecharAvisoProcessos();
+  AVISOS.colaborador = ''; PUSH.ativo = false; atualizarBotaoPush();
 }
 function aoVoltarParaAba() { if (!document.hidden) consultarAvisos(); }
 function fecharAvisoProcessos() { const a = document.getElementById('aviso-processos'); if (a) a.remove(); }
@@ -1999,6 +2001,7 @@ async function consultarAvisos() {
     if (!r.vinculado) { pararAvisos(); return; }
     AVISOS.colaborador = r.colaborador || '';
     const eraPrimeira = AVISOS.primeira; AVISOS.primeira = false;
+    if (eraPrimeira) { atualizarBotaoPush(); pushSincronizarEmSilencio(); }
     const novos = r.novos.filter(x => !AVISOS.vistos.has(x.ID + ':' + x.SEQ));
     if (novos.length) {
       novos.forEach(x => AVISOS.vistos.add(x.ID + ':' + x.SEQ));
@@ -2014,6 +2017,88 @@ async function consultarAvisos() {
   } catch (e) {
     /* sem internet ou servidor ocupado: fica quieto e tenta no próximo minuto */
   } finally { AVISOS.consultando = false; }
+}
+
+/* ---------- Aviso no computador (push) ----------
+   O navegador recebe o aviso mesmo com o sistema fechado (o navegador precisa estar aberto no computador).
+   O aviso vai sem dado de processo: a mensagem fixa é escrita pelo arquivo sw.js.
+   O endereço de entrega é guardado no servidor, ligado ao usuário. */
+const PUSH = { ativo: false, trabalhando: false };
+const pushSuportado = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext;
+function pushBytes(b64url) {
+  const p = (b64url + '='.repeat((4 - b64url.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  const t = atob(p); const v = new Uint8Array(t.length);
+  for (let i = 0; i < t.length; i++) v[i] = t.charCodeAt(i);
+  return v;
+}
+function pushTexto(bytes) {
+  let t = ''; const v = new Uint8Array(bytes);
+  for (let i = 0; i < v.length; i++) t += String.fromCharCode(v[i]);
+  return btoa(t).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+// Resultado: 'ligado' | 'negado' | 'pendente' | 'sem-suporte' | 'erro'
+async function pushLigar(perguntar) {
+  if (!pushSuportado()) return 'sem-suporte';
+  if (Notification.permission === 'default' && perguntar) { try { await Notification.requestPermission(); } catch (e) { /* segue */ } }
+  if (Notification.permission !== 'granted') return Notification.permission === 'denied' ? 'negado' : 'pendente';
+  if (PUSH.trabalhando) return PUSH.ativo ? 'ligado' : 'erro';
+  PUSH.trabalhando = true;
+  try {
+    const reg = await navigator.serviceWorker.register('sw.js');
+    await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    const info = await chamarDireto('push.obter', { endpoint: sub ? sub.endpoint : '' }, { discreto: true });
+    if (!info.chave) return 'erro';
+    if (sub && sub.options && sub.options.applicationServerKey && pushTexto(sub.options.applicationServerKey) !== info.chave) { await sub.unsubscribe(); sub = null; }
+    let criou = false;
+    if (!sub) { sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushBytes(info.chave) }); criou = true; }
+    if (criou || !info.registrado) await chamarDireto('push.inscrever', { endpoint: sub.endpoint }, { discreto: true });
+    PUSH.ativo = true; atualizarBotaoPush();
+    return 'ligado';
+  } catch (e) {
+    return 'erro';
+  } finally { PUSH.trabalhando = false; }
+}
+async function pushDesligar() {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration('sw.js') || await navigator.serviceWorker.getRegistration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (sub) { try { await chamarDireto('push.cancelar', { endpoint: sub.endpoint }, { discreto: true }); } catch (e) { /* sai do aparelho mesmo assim */ } await sub.unsubscribe(); }
+    PUSH.ativo = false; atualizarBotaoPush();
+    return true;
+  } catch (e) { return false; }
+}
+const MENSAGEM_PUSH = {
+  ligado: 'Pronto. Este computador vai avisar quando chegar processo, mesmo com o sistema fechado.',
+  negado: 'O navegador bloqueou os avisos. Libere no cadeado ao lado do endereço e tente de novo.',
+  pendente: 'Os avisos continuam desligados. Clique em "Permitir" quando o navegador perguntar.',
+  'sem-suporte': 'Este navegador não permite aviso com o sistema fechado. Você ainda vê o aviso aqui na tela.',
+  erro: 'Não consegui ligar agora. Tente de novo em instantes.'
+};
+function atualizarBotaoPush() {
+  const b = document.getElementById('botao-push'); if (!b) return;
+  b.hidden = !(AVISOS.ativo && AVISOS.colaborador && pushSuportado());
+  b.textContent = PUSH.ativo ? 'Avisos neste computador: ligados' : 'Ligar avisos neste computador';
+  b.setAttribute('aria-pressed', String(PUSH.ativo));
+}
+async function aoClicarBotaoPush() {
+  if (PUSH.ativo) { toque((await pushDesligar()) ? 'Avisos desligados neste computador.' : 'Não consegui desligar agora. Tente de novo.', 5000); return; }
+  toque(MENSAGEM_PUSH[await pushLigar(true)], 6000);
+}
+// Quando o navegador já deixou (permissão dada antes), liga sozinho e em silêncio.
+function pushSincronizarEmSilencio() {
+  try { if (pushSuportado() && Notification.permission === 'granted') pushLigar(false).then(atualizarBotaoPush); } catch (e) { /* segue */ }
+}
+// Recados do sw.js: "chegou processo" (consulta na hora) e "clicaram no aviso" (abre o Diário).
+function pushOuvirRecados() {
+  try {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.onmessage = ev => {
+      const t = ev && ev.data && ev.data.tipo;
+      if (t === 'push-diario') consultarAvisos();
+      else if (t === 'abrir-diario') { consultarAvisos(); abrirDiarioDoAviso(); }
+    };
+  } catch (e) { /* segue */ }
 }
 
 function mostrarAvisoProcessos(desdeOUltimo) {
@@ -2051,11 +2136,13 @@ function convidarParaAvisoDoNavegador() {
   if (document.getElementById('convite-aviso')) return;
   const fechar = lembrar => { try { if (lembrar) localStorage.setItem(CHAVE_CONVITE_AVISO, 'nao'); } catch (e) { /* segue */ } const c = document.getElementById('convite-aviso'); if (c) c.remove(); };
   const convite = h('div', { id: 'convite-aviso', class: 'aviso-toque', role: 'status', style: 'font-weight:500' },
-    h('p', { style: 'margin:0 0 8px', texto: 'Quer receber um aviso do navegador quando chegar processo para você, mesmo com outra aba aberta?' }),
+    h('p', { style: 'margin:0 0 8px', texto: 'Quer receber um aviso neste computador quando chegar processo para você, mesmo com o sistema fechado?' }),
     h('div', { class: 'acoes', style: 'display:flex;gap:8px;flex-wrap:wrap' },
       h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Ativar o aviso', onclick: async () => {
+        fechar(false);
+        if (pushSuportado()) { toque(MENSAGEM_PUSH[await pushLigar(true)], 6000); return; }
         try { await Notification.requestPermission(); } catch (e) { /* segue */ }
-        fechar(false); toque(Notification.permission === 'granted' ? 'Pronto. O navegador vai avisar quando chegar processo.' : 'Sem o aviso do navegador. Você ainda vê o aviso aqui na tela.', 5000);
+        toque(Notification.permission === 'granted' ? 'Pronto. O navegador vai avisar quando chegar processo, com o sistema aberto em outra aba.' : 'Sem o aviso do navegador. Você ainda vê o aviso aqui na tela.', 6000);
       } }),
       h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Agora não', onclick: () => fechar(false) }),
       h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Não perguntar mais', onclick: () => fechar(true) })));
@@ -2095,7 +2182,8 @@ function telaSistema() {
         h('div', { class: 'linha-botoes' },
           h('button', { type: 'button', class: 'botao pequeno', texto: 'Trocar senha', onclick: () => { fecharMenu(); telaTrocaSenha({ obrigatoria: false }); } }),
           h('button', { type: 'button', class: 'botao pequeno', texto: 'Velocidade', onclick: () => { fecharMenu(); janelaVelocidade(); } }),
-          h('button', { type: 'button', class: 'botao pequeno', onclick: sair }, icone('sair'), 'Sair'))));
+          h('button', { type: 'button', class: 'botao pequeno', onclick: sair }, icone('sair'), 'Sair')),
+        h('button', { type: 'button', class: 'botao pequeno', id: 'botao-push', hidden: true, 'aria-pressed': 'false', style: 'margin-top:8px', texto: 'Ligar avisos neste computador', onclick: aoClicarBotaoPush })));
 
   const celular = h('div', { class: 'barra-celular' },
     h('img', { src: LOGO, alt: 'IGESDF' }),
