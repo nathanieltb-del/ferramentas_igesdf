@@ -557,7 +557,7 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_TELA = 'Etapa 12 — importação por planilha';
+const VERSAO_TELA = 'Etapa 13 — menus sem espera';
 
 class ErroApi extends Error {
   constructor(mensagem, codigo) { super(mensagem); this.codigo = codigo || 'ERRO'; }
@@ -641,17 +641,19 @@ async function chamarDireto(acao, dados, opcoes) {
 /* ---------------------------------------------------------------------
    MENOS VIAGENS AO GOOGLE
    Cada ida ao Google custa mais de 1 segundo, mesmo sem ler nada. Por isso:
-   1. MEMÓRIA: o que a tela já leu fica guardado por até 10 minutos. Ao abrir um menu, a tela mostra
+   1. MEMÓRIA: o que a tela já leu fica guardado por até 2 horas. Ao abrir um menu, a tela mostra
       na hora o que tem. Se o dado tiver mais de 30 segundos, ela busca de novo por trás e avisa se mudou.
    2. LOTE: as consultas que uma tela faz juntas vão em UMA viagem só.
    3. CARONA: toda gravação já volta com as listas da tela atualizadas, sem uma segunda viagem.
    4. AQUECIMENTO: logo depois de entrar, as listas principais são lidas por trás.
    Qualquer gravação sua apaga a memória, então você nunca vê o valor antigo do que acabou de mudar.
+   Logo depois de gravar, as listas principais são lidas de novo por trás (uma viagem só),
+   para os menus continuarem abrindo na hora.
    --------------------------------------------------------------------- */
-const CACHEAVEIS = /^(cadastros\.listar|notas\.listar|notas\.obter|notas\.mv|diario\.listar|diario\.cargas|tributacao\.listar|tributacao\.resumo)$/;
+const CACHEAVEIS = /^(usuarios\.listar|cadastros\.listar|notas\.listar|notas\.obter|notas\.mv|diario\.listar|diario\.cargas|tributacao\.listar|tributacao\.resumo)$/;
 const GRAVACOES_COM_CARONA = /\.(criar|atualizar|inativar|reativar|situacao)$/;
 const FRESCO_MS = 30000;        // até aqui, nem confere de novo
-const VALIDADE_MS = 600000;     // depois disso, não mostra mais o que está na memória
+const VALIDADE_MS = 7200000;    // depois disso, não mostra mais o que está na memória (2 horas; acima de 30 s ela confere por trás)
 const MAX_LOTE = 12;
 const memoria = new Map();      // chave -> { quando, promessa, texto, acao, dados }
 const emUso = new Map();        // consultas que a tela de agora fez (para a carona e para o aviso de dado novo)
@@ -781,27 +783,30 @@ async function chamar(acao, dados, opcoes) {
           if (d && d.ok === true) guardar(c[0], c[1].acao, c[1].dados, Promise.resolve(d.dados));
         });
       }
+      aquecerMemoria(600);   // relê por trás o que a gravação apagou, para os outros menus abrirem na hora
     }
     registrarTempo(acao, performance.now() - inicio, 'planilha', json && json.ms);
     return r;
   } catch (e) {
-    if (escreve && acao !== 'sair') { geracao++; memoria.clear(); }   // na dúvida, lê tudo de novo
+    if (escreve && acao !== 'sair') { geracao++; memoria.clear(); aquecerMemoria(600); }   // na dúvida, lê tudo de novo
     registrarTempo(acao, performance.now() - inicio, 'erro');
     throw e;
   }
 }
 function esquecerMemoria() { geracao++; memoria.clear(); emUso.clear(); tirarAvisoDadoNovo(); }
 
-// Logo depois de entrar: lê por trás as listas principais, para os menus abrirem na hora.
+// Logo depois de entrar (e logo depois de cada gravação): lê por trás as listas principais,
+// para os menus abrirem na hora. O que já está na memória não é lido de novo.
 let relogioAquecer = null;
-function aquecerMemoria() {
+function aquecerMemoria(esperaMs) {
   clearTimeout(relogioAquecer);
   relogioAquecer = setTimeout(() => {
     if (!estado.sessao || !estado.usuario) return;
     const lista = [['notas.listar', {}], ['diario.listar', {}], ['diario.cargas', { data: hojeIso() }], ['tributacao.resumo', {}]]
       .concat(['fornecedores', 'servicos', 'centros', 'oficinas', 'colaboradores'].map(c => ['cadastros.listar', { cadastro: c }]));
+    if (pode('ADMIN')) lista.push(['usuarios.listar', {}]);
     lista.forEach(p => { if (!memoria.has(chaveDe(p[0], p[1]))) chamar(p[0], p[1], { aquecendo: true }).catch(() => { /* só aquecimento */ }); });
-  }, 1200);
+  }, esperaMs === undefined ? 150 : esperaMs);
 }
 
 function atualizarEstadoDados() { /* os dados ficam na planilha: não há o que mostrar */ }
