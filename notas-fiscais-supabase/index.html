@@ -2095,11 +2095,34 @@ async function aoClicarTestarPush() {
     const lista = r.resultados || [];
     const bons = lista.filter(x => x.status >= 200 && x.status < 300).length;
     const velhos = lista.filter(x => x.status === 404 || x.status === 410).length;
-    if (bons > 0) toque('Aviso de teste enviado. Em poucos segundos ele aparece no canto da tela. Se não aparecer, veja se o Windows está em "Não incomodar".' + (velhos ? ' ' + (velhos === 1 ? 'Um registro antigo deste usuário já tinha vencido e foi retirado.' : velhos + ' registros antigos deste usuário já tinham vencido e foram retirados.') : ''), 10000);
+    if (bons > 0) {
+      const quem = lista[0].servico.indexOf('windows') >= 0 ? 'ao Windows' : lista[0].servico.indexOf('googleapis') >= 0 ? 'ao Google' : 'ao serviço do navegador';
+      const velhosTxt = velhos ? ' ' + (velhos === 1 ? 'Um registro antigo deste usuário já tinha vencido e foi retirado.' : velhos + ' registros antigos deste usuário já tinham vencido e foram retirados.') : '';
+      toque('Aviso de teste entregue ' + quem + '. Conferindo o navegador…', 5000);
+      toque('Aviso de teste entregue ' + quem + '. ' + await diagnosticoDoAviso() + velhosTxt, 25000);
+    }
     else toque('O serviço do navegador não aceitou o aviso (' + (lista.filter(x => x.status < 200 || x.status >= 300).map(x => x.status + ' em ' + x.servico).join('; ') || 'sem resposta') + '). Avise o administrador do sistema.', 12000);
   } catch (e) {
     toque(e && e.message ? e.message : 'Não consegui testar agora. Tente de novo.', 8000);
   } finally { b.disabled = false; }
+}
+// Depois do teste, confere dentro do navegador onde o aviso pode ter parado.
+const VERSAO_SW_ESPERADA = '3';
+async function diagnosticoDoAviso() {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg || !reg.active) return 'O arquivo do aviso (sw.js) não está ativo neste navegador. Feche todas as abas do sistema e abra de novo.';
+    const versao = await new Promise(resolve => {
+      const canal = new MessageChannel(); const t = setTimeout(() => resolve(''), 1500);
+      canal.port1.onmessage = ev => { clearTimeout(t); resolve(String((ev.data && ev.data.versao) || '')); };
+      reg.active.postMessage({ tipo: 'versao' }, [canal.port2]);
+    });
+    if (versao !== VERSAO_SW_ESPERADA) return 'O navegador ainda usa uma versão antiga do arquivo do aviso (sw.js). Feche TODAS as abas do sistema, abra de novo (Ctrl+F5) e teste outra vez.';
+    await new Promise(r => setTimeout(r, 3500));
+    const abertos = await reg.getNotifications({ tag: 'diario-igesdf' });
+    if (abertos.length) return 'O navegador criou o aviso. Se ele não apareceu na tela, abra Configurações do Windows > Sistema > Notificações e ligue o seu navegador. Veja também o modo "Foco" ou "Não incomodar".';
+    return 'O navegador não tem nenhum aviso aberto. Se você já viu e fechou, está tudo certo. Se não viu, me envie esta mensagem e o nome do navegador.';
+  } catch (e) { return 'Não consegui conferir o aviso agora.'; }
 }
 // Quando o navegador já deixou (permissão dada antes), liga sozinho e em silêncio.
 function pushSincronizarEmSilencio() {

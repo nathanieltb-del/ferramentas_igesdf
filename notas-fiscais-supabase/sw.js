@@ -7,6 +7,8 @@
  * ========================================================================== */
 'use strict';
 
+const VERSAO_SW = '3';       // sobe a cada mudança deste arquivo; a tela confere se o navegador já está com a versão nova
+
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', ev => ev.waitUntil(self.clients.claim()));
 
@@ -34,3 +36,8 @@ async function abrir() {
 
 self.addEventListener('push', ev => ev.waitUntil(avisar()));
 self.addEventListener('notificationclick', ev => { ev.notification.close(); ev.waitUntil(abrir()); });
+
+// A tela pergunta a versão (diagnóstico do botão "Testar aviso").
+self.addEventListener('message', ev => {
+  if (ev.data && ev.data.tipo === 'versao' && ev.ports && ev.ports[0]) ev.ports[0].postMessage({ versao: VERSAO_SW });
+});
