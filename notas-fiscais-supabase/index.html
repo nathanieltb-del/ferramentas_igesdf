@@ -528,6 +528,7 @@ const ICONES = {
   manutencao: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
   admin: '<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9.5 12l2 2 3.5-4"/>',
   sair: '<path d="M10 4H5v16h5M15 8l4 4-4 4M19 12H9"/>',
+  backup: '<path d="M12 4v12M7.5 11.5L12 16l4.5-4.5"/><path d="M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/>',
   importar: '<path d="M12 16V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>'
 };
@@ -1184,6 +1185,202 @@ function telaUso() {
 }
 
 /* =====================================================================
+   BACKUP (só o administrador)
+   1) "Baixar agora": o sistema envia todos os dados e esta tela monta o Excel (uma aba por assunto) ou o JSON.
+   2) "Rotina automática": o script do Google Drive busca os dados toda semana, com uma chave própria.
+   O backup NÃO leva senhas.
+   ===================================================================== */
+const BACKUP_AVISO_DIAS = 7;
+
+function backupNomeArquivo(ext) {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return 'backup-notas-fiscais-' + d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + '.' + ext;
+}
+
+// Nome de aba do Excel: até 31 letras, sem [ ] : * ? / \ e sem repetir.
+function backupNomeAba(nome, usados) {
+  let base = String(nome).replace(/[\[\]:*?\/\\]/g, ' ').trim().slice(0, 31) || 'Aba';
+  let n = base, i = 2;
+  while (usados.has(n.toLowerCase())) { n = base.slice(0, 31 - String(i).length - 1) + '_' + i; i++; }
+  usados.add(n.toLowerCase());
+  return n;
+}
+
+// Estilos: 0 normal, 1 título, 2 cabeçalho, 3 negrito
+function xmlFolhaBackup(colunas, linhas, cortes) {
+  const LIM = 32000;                                      // o Excel aceita no máximo 32.767 letras por célula
+  const larg = colunas.map(c => String(c).length + 2);
+  const txt = (r, c, t, s) => '<c r="' + letraColuna(c) + r + '" t="inlineStr"' + (s ? ' s="' + s + '"' : '') + '><is><t xml:space="preserve">' + xmlTexto(t) + '</t></is></c>';
+  const linhasXml = ['<row r="1" ht="30" customHeight="1">' + colunas.map((c, i) => txt(1, i, c, 2)).join('') + '</row>'];
+  linhas.forEach((l, k) => {
+    const r = k + 2;
+    linhasXml.push('<row r="' + r + '">' + l.map((v, i) => {
+      if (v === '' || v === null || v === undefined) return '';
+      if (typeof v === 'number' && isFinite(v)) { if (k < 300) larg[i] = Math.max(larg[i], String(v).length + 2); return '<c r="' + letraColuna(i) + r + '"><v>' + String(v) + '</v></c>'; }
+      let t = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      if (t.length > LIM) { t = t.slice(0, LIM) + '… [cortado]'; cortes.n++; }
+      if (k < 300) larg[i] = Math.max(larg[i], Math.min(50, t.length + 2));
+      return txt(r, i, t, 0);                             // sempre como TEXTO: o Excel nunca lê "=..." como fórmula nem tira zeros à esquerda
+    }).join('') + '</row>');
+  });
+  const cols = larg.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + Math.min(50, Math.max(10, w)) + '" customWidth="1"/>').join('');
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+    '<sheetFormatPr defaultRowHeight="15"/><cols>' + cols + '</cols><sheetData>' + linhasXml.join('') + '</sheetData>' +
+    '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/></worksheet>';
+}
+
+function gerarBackupXlsx(b) {
+  const cortes = { n: 0 }, usados = new Set(['resumo']);
+  const folhas = b.tabelas.map(t => ({ nome: backupNomeAba(t.nome, usados), xml: xmlFolhaBackup(t.colunas, t.linhas, cortes) }));
+  const resumoLinhas = [
+    ['Backup do Sistema de Notas Fiscais de Serviços (IGESDF)', ''],
+    ['Gerado em', dataHoraBr(b.geradoEm) || b.geradoEm],
+    ['Versão do sistema', b.versaoSistema],
+    ['Senhas', 'Não fazem parte do backup.'],
+    ['', ''],
+    ['Aba (assunto)', 'Linhas']
+  ].concat(b.tabelas.map((t, i) => [folhas[i].nome, t.linhas.length]));
+  if (cortes.n) resumoLinhas.push(['', ''], ['Atenção', cortes.n + ' célula(s) com texto longo demais para o Excel foram cortadas aqui. O arquivo JSON tem o texto inteiro.']);
+  const txt = (r, c, t, s) => '<c r="' + letraColuna(c) + r + '" t="inlineStr"' + (s ? ' s="' + s + '"' : '') + '><is><t xml:space="preserve">' + xmlTexto(t) + '</t></is></c>';
+  const resumoXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/>' +
+    '<cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="2" width="60" customWidth="1"/></cols><sheetData>' +
+    resumoLinhas.map((l, i) => {
+      const r = i + 1, est = i === 0 ? 1 : (i === 5 ? 2 : (l[0] && i < 4 ? 3 : 0));
+      const a = l[0] === '' ? '' : txt(r, 0, l[0], est);
+      const c = l[1] === '' ? '' : (typeof l[1] === 'number' ? '<c r="B' + r + '"><v>' + l[1] + '</v></c>' : txt(r, 1, l[1], i === 5 ? 2 : 0));
+      return '<row r="' + r + '">' + a + c + '</row>';
+    }).join('') + '</sheetData></worksheet>';
+  folhas.unshift({ nome: 'Resumo', xml: resumoXml });
+
+  const estilos = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="14"/><color rgb="FF153F58"/><name val="Calibri"/></font>' +
+    '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>' +
+    '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FF1E5B7B"/><bgColor indexed="64"/></patternFill></fill></fills>' +
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+    '<xf numFmtId="0" fontId="3" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+    '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  const RNS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const cab = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const arquivos = [
+    { nome: '[Content_Types].xml', texto: cab + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      folhas.map((f, i) => '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('') +
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
+    { nome: '_rels/.rels', texto: cab + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' + RNS + '/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+    { nome: 'xl/workbook.xml', texto: cab + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="' + RNS + '"><sheets>' +
+      folhas.map((f, i) => '<sheet name="' + xmlTexto(f.nome) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>').join('') + '</sheets></workbook>' },
+    { nome: 'xl/_rels/workbook.xml.rels', texto: cab + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      folhas.map((f, i) => '<Relationship Id="rId' + (i + 1) + '" Type="' + RNS + '/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>').join('') +
+      '<Relationship Id="rId' + (folhas.length + 1) + '" Type="' + RNS + '/styles" Target="styles.xml"/></Relationships>' },
+    { nome: 'xl/styles.xml', texto: estilos }
+  ].concat(folhas.map((f, i) => ({ nome: 'xl/worksheets/sheet' + (i + 1) + '.xml', texto: f.xml })));
+  return zipSemCompressao(arquivos);
+}
+
+// JSON legível: cada linha de dados fica em uma linha do arquivo.
+function gerarBackupJson(b) {
+  const tabelas = b.tabelas.map(t => '  {"nome":' + JSON.stringify(t.nome) + ',"colunas":' + JSON.stringify(t.colunas) + ',"linhas":[\n' +
+    t.linhas.map(l => '   ' + JSON.stringify(l)).join(',\n') + '\n  ]}');
+  return '{\n "geradoEm":' + JSON.stringify(b.geradoEm) + ',\n "versaoSistema":' + JSON.stringify(b.versaoSistema) + ',\n "totais":' + JSON.stringify(b.totais) + ',\n "tabelas":[\n' + tabelas.join(',\n') + '\n ]\n}\n';
+}
+
+function backupDiasDesde(texto, agora) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(texto || '');
+  const n = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(agora || '');
+  if (!m || !n) return null;
+  const a = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]), b = Date.UTC(+n[1], +n[2] - 1, +n[3], +n[4], +n[5]);
+  return Math.floor((b - a) / 86400000);
+}
+
+function janelaChaveBackup(chave, aviso) {
+  let janela;
+  const copiar = h('button', { type: 'button', class: 'botao claro', texto: 'Copiar chave', onclick: async () => {
+    try { await navigator.clipboard.writeText(chave); toque('Chave copiada.'); } catch (e) { toque('Não consegui copiar. Selecione a chave e copie.'); }
+  } });
+  janela = abrirJanela(h('div', {},
+    h('div', { class: 'jan-corpo' }, h('h2', { texto: 'Chave da rotina automática' }),
+      h('p', { texto: 'Cole esta chave no script do Google Drive (guia de instalação do backup):' }),
+      h('output', { class: 'senha-temp', style: 'word-break:break-all', texto: chave }),
+      caixaAviso(aviso || 'Anote agora. Esta chave aparece uma única vez.', 'info'),
+      h('p', { class: 'ajuda', style: 'margin-top:8px', texto: 'Não envie esta chave por e-mail nem por mensagem. Quem tiver a chave consegue baixar os dados.' })),
+    h('div', { class: 'jan-pe' }, copiar, h('button', { type: 'button', class: 'botao', texto: 'Concluir', onclick: () => janela.close() }))));
+}
+
+function telaBackup() {
+  const estadoArea = h('div', {});
+  const erro = h('div');
+  const botaoXlsx = h('button', { type: 'button', class: 'botao', texto: 'Baixar backup (Excel)' });
+  const botaoJson = h('button', { type: 'button', class: 'botao claro', texto: 'Baixar backup (JSON)' });
+  const chaveArea = h('div', {});
+  const erroChave = h('div');
+
+  async function atualizarResumo() {
+    try {
+      const r = await chamar('backup.resumo', {}, { semCache: true });
+      const ultimo = [r.ultimoManual, r.ultimoAutomatico].filter(Boolean).sort().pop() || '';
+      const dias = ultimo ? backupDiasDesde(ultimo, r.agora) : null;
+      const linhas = [
+        h('li', {}, 'Último backup baixado por você ou por outro administrador: ', h('strong', { texto: r.ultimoManual ? dataHoraBr(r.ultimoManual) : 'nunca' })),
+        h('li', {}, 'Último backup automático (Google Drive): ', h('strong', { texto: r.ultimoAutomatico ? dataHoraBr(r.ultimoAutomatico) : 'nunca' }))
+      ];
+      let aviso = null;
+      if (!ultimo) aviso = caixaAviso('Ainda não existe nenhum backup. Baixe um agora.');
+      else if (dias !== null && dias >= BACKUP_AVISO_DIAS) aviso = caixaAviso('O último backup tem ' + dias + ' dias. Baixe um agora e confira se a rotina automática está funcionando.');
+      estadoArea.replaceChildren(aviso || caixaAviso('Backup em dia.', 'ok'), h('ul', { class: 'lista-simples', style: 'margin:10px 0 0 18px' }, linhas));
+      desenharChave(r.temChave);
+    } catch (e) { estadoArea.replaceChildren(caixaAviso(e.message)); }
+  }
+
+  function desenharChave(temChave) {
+    const botao = h('button', { type: 'button', class: 'botao claro', texto: temChave ? 'Trocar a chave' : 'Criar a chave' });
+    const gerar = async () => {
+      const r = await chamar('backup.chave', {}, { semCache: true });
+      janelaChaveBackup(r.chave, r.aviso);
+      await atualizarResumo();
+    };
+    botao.addEventListener('click', () => {
+      if (!temChave) { enviar(botao, erroChave, 'Aguarde…', gerar); return; }
+      janelaConfirmar('Trocar a chave da rotina?', 'A chave atual deixa de valer na hora. O script do Google Drive só volta a funcionar depois que você colar a chave nova nele.', 'Trocar a chave', true, gerar);
+    });
+    chaveArea.replaceChildren(
+      h('p', { texto: temChave ? 'A rotina automática tem uma chave criada.' : 'A rotina automática ainda não tem chave.' }),
+      h('p', { class: 'ajuda', style: 'margin:6px 0 10px', texto: 'A chave aparece uma única vez, na hora em que você a cria. O sistema guarda só uma impressão digital dela.' }),
+      erroChave, botao);
+  }
+
+  async function baixar(botao, rotuloOcupado, montar) {
+    await enviar(botao, erro, rotuloOcupado, async () => {
+      const b = await chamar('backup.exportar', {}, { semCache: true });
+      montar(b);
+      toque('Backup baixado.');
+      await atualizarResumo();
+    });
+  }
+  botaoXlsx.addEventListener('click', () => baixar(botaoXlsx, 'Montando o Excel…', b => baixarBinario(backupNomeArquivo('xlsx'), gerarBackupXlsx(b), MIME_XLSX)));
+  botaoJson.addEventListener('click', () => baixar(botaoJson, 'Montando o JSON…', b => baixarBinario(backupNomeArquivo('json'), new TextEncoder().encode(gerarBackupJson(b)), 'application/json')));
+
+  atualizarResumo();
+  return h('div', {},
+    cabecalho('Backup', 'Guarde uma cópia de todos os dados do sistema fora do servidor.'),
+    h('div', { class: 'painel' }, h('div', { class: 'painel-corpo' }, h('h2', { texto: 'Situação' }), estadoArea)),
+    h('div', { class: 'painel' }, h('div', { class: 'painel-corpo' },
+      h('h2', { texto: 'Baixar agora' }),
+      h('p', { texto: 'O Excel tem uma aba para cada assunto. O JSON serve para restaurar os dados com ajuda da equipe técnica. Os dois levam os mesmos dados.' }),
+      h('p', { class: 'ajuda', style: 'margin:6px 0 10px', texto: 'Não entram senhas. O arquivo tem dados de fornecedores e de notas fiscais: guarde em local protegido.' }),
+      erro, h('div', { class: 'acoes', style: 'display:flex;gap:10px;flex-wrap:wrap' }, botaoXlsx, botaoJson))),
+    h('div', { class: 'painel' }, h('div', { class: 'painel-corpo' },
+      h('h2', { texto: 'Rotina automática (Google Drive)' }),
+      h('p', { texto: 'Uma vez por semana, um script do Google Drive busca os dados e salva uma cópia em uma pasta. Ele guarda as 12 últimas cópias.' }),
+      h('div', { style: 'margin-top:10px' }, chaveArea))));
+}
+
+/* =====================================================================
    IMPORTAR PLANILHA (só o administrador)
    1) A pessoa baixa o modelo (.xlsx, uma aba para cada assunto).
    2) Preenche e escolhe o arquivo. A tela lê o .xlsx aqui mesmo, no navegador.
@@ -1738,7 +1935,7 @@ const MENU = [
     { rota: 'manutencao/colaboradores', nome: 'Colaboradores', texto: 'Quem recebe os processos do Diário.', cadastro: 'colaboradores' },
   ] },
   { rota: 'admin', nome: MODO_LOCAL ? 'Administração' : 'Usuários', icone: 'admin', so: 'ADMIN' }
-].concat(MODO_LOCAL ? [] : [{ rota: 'importar', nome: 'Importar planilha', icone: 'importar', so: 'ADMIN' }, { rota: 'uso', nome: 'Uso do sistema', icone: 'relatorios', so: 'ADMIN' }]);
+].concat(MODO_LOCAL ? [] : [{ rota: 'importar', nome: 'Importar planilha', icone: 'importar', so: 'ADMIN' }, { rota: 'backup', nome: 'Backup', icone: 'backup', so: 'ADMIN' }, { rota: 'uso', nome: 'Uso do sistema', icone: 'relatorios', so: 'ADMIN' }]);
 
 function rotaAtual() {
   return location.hash.replace(/^#\/?/, '') || 'dashboard';
@@ -1831,6 +2028,8 @@ function desenharRota() {
     conteudo = MODO_LOCAL ? telaAdministracaoLocal() : (pode('ADMIN') ? telaUsuarios() : semPermissao());
   } else if (rota === 'importar') {
     conteudo = MODO_LOCAL ? semPermissao() : (pode('ADMIN') ? telaImportar() : semPermissao());
+  } else if (rota === 'backup') {
+    conteudo = MODO_LOCAL ? semPermissao() : (pode('ADMIN') ? telaBackup() : semPermissao());
   } else if (rota === 'uso') {
     conteudo = MODO_LOCAL ? semPermissao() : (pode('ADMIN') ? telaUso() : semPermissao());
   } else if (rota === 'relatorios') {
