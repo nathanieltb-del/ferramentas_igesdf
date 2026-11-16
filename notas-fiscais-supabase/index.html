@@ -300,6 +300,8 @@ th.num { text-align: right; }
 .menu .rodape { padding: 12px 14px 16px; border-top: 1px solid rgba(255,255,255,.16); font-size: 14px; }
 .menu .rodape strong { display: block; font-size: 15px; overflow-wrap: anywhere; }
 .menu .rodape span { color: #B5CAD6; display: block; margin-bottom: 8px; overflow-wrap: anywhere; }
+.menu .rodape .versao-sistema { font-size: 12px; margin: -4px 0 8px; opacity: .85; }
+.menu .rodape .versao-alerta { display: block; margin-top: 2px; font-style: normal; font-weight: 600; color: #FFD27A; }
 .menu .rodape .linha-botoes { display: flex; gap: 8px; flex-wrap: wrap; }
 .menu .rodape .botao { border-color: rgba(255,255,255,.35); background: transparent; color: #fff; }
 .menu .rodape .botao:hover { background: rgba(255,255,255,.1); }
@@ -578,7 +580,9 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_TELA = 'Supabase 2 — banco de dados';
+const VERSAO_NUMERO = '1.6';          // vem de fonte/versao.json (um lugar só)
+const VERSAO_DATA = '16/11/2026';
+const VERSAO_TELA = 'Versão ' + VERSAO_NUMERO;
 
 class ErroApi extends Error {
   constructor(mensagem, codigo) { super(mensagem); this.codigo = codigo || 'ERRO'; }
@@ -1065,7 +1069,7 @@ function telaLogin(opcoes) {
     enviar(botao, erro, 'Entrando…', async () => {
       const r = await chamar('entrar', dados, { semToken: true });
       guardarSessao(r.token, r.expiraEm);
-      estado.usuario = r.usuario;
+      estado.usuario = r.usuario; estado.versaoFuncao = r.versao || '';
       if (r.trocarSenha) telaTrocaSenha({ obrigatoria: true }); else telaSistema();
     });
   } },
@@ -1095,7 +1099,7 @@ function telaTrocaSenha(opcoes) {
     enviar(botao, erro, 'Salvando…', async () => {
       const r = await chamar('trocarSenha', { senhaAtual: atual, novaSenha: nova });
       guardarSessao(r.token, r.expiraEm);
-      estado.usuario = r.usuario;
+      estado.usuario = r.usuario; estado.versaoFuncao = r.versao || estado.versaoFuncao || '';
       telaSistema();
       toque('Senha alterada.');
     });
@@ -1120,7 +1124,7 @@ function telaTrocaSenha(opcoes) {
 async function carregarUsuario() {
   try {
     const r = await chamar('eu');
-    estado.usuario = r.usuario;
+    estado.usuario = r.usuario; estado.versaoFuncao = r.versao || '';
     if (r.trocarSenha) telaTrocaSenha({ obrigatoria: true }); else telaSistema();
   } catch (e) {
     if (e.codigo === 'NAO_AUTENTICADO' || e.codigo === 'TROCAR_SENHA') return;   // chamar() já abriu a tela certa
@@ -2195,6 +2199,13 @@ function convidarParaAvisoDoNavegador() {
   document.body.append(convite);
 }
 
+// Linha extra no rodapé só quando a função do Supabase está numa versão diferente da tela (ex.: a tela foi publicada e a função ainda não foi colada).
+function textoVersaoFuncao() {
+  const f = estado.versaoFuncao;
+  if (f === VERSAO_NUMERO) return null;
+  return h('em', { class: 'versao-alerta', texto: f ? 'Função no Supabase: versão ' + f + '. Atualize a função.' : 'Função no Supabase: versão antiga. Atualize a função.' });
+}
+
 function telaSistema() {
   const raiz = document.getElementById('raiz');
 
@@ -2225,6 +2236,7 @@ function telaSistema() {
       : h('div', { class: 'rodape' },
         h('strong', { id: 'usuario-nome', texto: u.NOME }),
         h('span', { id: 'usuario-perfil', texto: nomePerfil(u.PERFIL) }),
+        h('span', { id: 'versao-sistema', class: 'versao-sistema' }, 'Versão ' + VERSAO_NUMERO + ' • ' + VERSAO_DATA, textoVersaoFuncao()),
         h('div', { class: 'linha-botoes' },
           h('button', { type: 'button', class: 'botao pequeno', texto: 'Trocar senha', onclick: () => { fecharMenu(); telaTrocaSenha({ obrigatoria: false }); } }),
           h('button', { type: 'button', class: 'botao pequeno', texto: 'Velocidade', onclick: () => { fecharMenu(); janelaVelocidade(); } }),
