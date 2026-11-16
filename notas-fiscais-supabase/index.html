@@ -2077,13 +2077,28 @@ const MENSAGEM_PUSH = {
 };
 function atualizarBotaoPush() {
   const b = document.getElementById('botao-push'); if (!b) return;
-  b.hidden = !(AVISOS.ativo && AVISOS.colaborador && pushSuportado());
+  document.getElementById('area-push').hidden = !(AVISOS.ativo && AVISOS.colaborador && pushSuportado());
   b.textContent = PUSH.ativo ? 'Avisos neste computador: ligados' : 'Ligar avisos neste computador';
   b.setAttribute('aria-pressed', String(PUSH.ativo));
+  document.getElementById('botao-push-teste').hidden = !PUSH.ativo;
 }
 async function aoClicarBotaoPush() {
   if (PUSH.ativo) { toque((await pushDesligar()) ? 'Avisos desligados neste computador.' : 'Não consegui desligar agora. Tente de novo.', 5000); return; }
   toque(MENSAGEM_PUSH[await pushLigar(true)], 6000);
+}
+// Manda um aviso de teste para os computadores da própria pessoa e mostra o que o serviço do navegador respondeu.
+async function aoClicarTestarPush() {
+  const b = document.getElementById('botao-push-teste'); if (b.disabled) return;
+  b.disabled = true;
+  try {
+    const r = await chamarDireto('push.testar', {}, { discreto: true });
+    const lista = r.resultados || [];
+    const bons = lista.filter(x => x.status >= 200 && x.status < 300).length;
+    if (lista.length && bons === lista.length) toque('Aviso de teste enviado. Em poucos segundos ele aparece no canto da tela. Se não aparecer, veja se o Windows está em "Não incomodar".', 9000);
+    else toque('O serviço do navegador não aceitou o aviso (' + (lista.filter(x => x.status < 200 || x.status >= 300).map(x => x.status + ' em ' + x.servico).join('; ') || 'sem resposta') + '). Avise o administrador do sistema.', 12000);
+  } catch (e) {
+    toque(e && e.message ? e.message : 'Não consegui testar agora. Tente de novo.', 8000);
+  } finally { b.disabled = false; }
 }
 // Quando o navegador já deixou (permissão dada antes), liga sozinho e em silêncio.
 function pushSincronizarEmSilencio() {
@@ -2183,7 +2198,9 @@ function telaSistema() {
           h('button', { type: 'button', class: 'botao pequeno', texto: 'Trocar senha', onclick: () => { fecharMenu(); telaTrocaSenha({ obrigatoria: false }); } }),
           h('button', { type: 'button', class: 'botao pequeno', texto: 'Velocidade', onclick: () => { fecharMenu(); janelaVelocidade(); } }),
           h('button', { type: 'button', class: 'botao pequeno', onclick: sair }, icone('sair'), 'Sair')),
-        h('button', { type: 'button', class: 'botao pequeno', id: 'botao-push', hidden: true, 'aria-pressed': 'false', style: 'margin-top:8px', texto: 'Ligar avisos neste computador', onclick: aoClicarBotaoPush })));
+        h('div', { id: 'area-push', hidden: true, style: 'margin-top:8px;display:flex;flex-direction:column;gap:6px' },
+          h('button', { type: 'button', class: 'botao pequeno', id: 'botao-push', 'aria-pressed': 'false', texto: 'Ligar avisos neste computador', onclick: aoClicarBotaoPush }),
+          h('button', { type: 'button', class: 'botao claro pequeno', id: 'botao-push-teste', hidden: true, texto: 'Testar aviso', onclick: aoClicarTestarPush }))));
 
   const celular = h('div', { class: 'barra-celular' },
     h('img', { src: LOGO, alt: 'IGESDF' }),
