@@ -138,6 +138,10 @@ dialog.larga { width: min(660px, calc(100vw - 24px)); }
 .grade-campos .campo.inteiro { grid-column: 1 / -1; }
 td.principal { font-weight: 600; white-space: nowrap; }
 .selos { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.chips { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--linha-forte); border-radius: 999px; background: var(--branco); font-size: .9rem; }
+.chip button { border: 0; background: transparent; cursor: pointer; font: inherit; line-height: 1; padding: 2px 7px; border-radius: 999px; color: var(--erro-texto); }
+.chip button:hover, .chip button:focus-visible { background: var(--erro-fundo); }
 .selo.alerta { background: var(--erro-fundo); border-color: #E2B27E; color: var(--erro-texto); }
 .rodape-lista { padding: 12px 16px; color: var(--tinta-2); font-size: 14px; border-top: 1px solid var(--linha); }
 
@@ -350,6 +354,15 @@ dialog .jan-pe { display: flex; justify-content: flex-end; gap: 10px; flex-wrap:
 #envios .envio.falhou { border-left-color: #b3261e; }
 #envios .envio strong { display: block; }
 #envios .envio .acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+#aviso-processos { position: fixed; top: 16px; right: 16px; z-index: 60; width: min(420px, calc(100vw - 24px)); max-height: calc(100vh - 32px); overflow: auto; padding: 16px; border-radius: var(--raio); background: var(--branco); border: 2px solid var(--azul-profundo); box-shadow: 0 12px 36px rgba(10,30,45,.35); }
+#aviso-processos h2 { margin: 0 0 6px; font-size: 1.05rem; }
+#aviso-processos p { margin: 0 0 10px; }
+#aviso-processos ul { list-style: none; margin: 0 0 12px; padding: 0; max-height: 220px; overflow: auto; border: 1px solid var(--linha); border-radius: var(--raio); }
+#aviso-processos li { padding: 8px 10px; border-bottom: 1px solid var(--linha); }
+#aviso-processos li:last-child { border-bottom: 0; }
+#aviso-processos li strong { display: block; }
+#aviso-processos .acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (prefers-reduced-motion: no-preference) { #aviso-processos { animation: entrar-aviso .25s ease-out; } @keyframes entrar-aviso { from { transform: translateY(-12px); opacity: 0; } to { transform: none; opacity: 1; } } }
 .aviso-toque { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 50; max-width: min(520px, calc(100vw - 24px)); padding: 12px 16px; border-radius: var(--raio); background: var(--azul-profundo); color: #fff; font-weight: 600; box-shadow: 0 8px 28px rgba(10,30,45,.3); }
 
 /* ---------- celular ---------- */
@@ -575,7 +588,7 @@ function marcarOcupado(delta) {
 }
 
 // Consultas podem ser repetidas sem risco. Gravações nunca são repetidas sozinhas (para não duplicar).
-const SO_LEITURA = /^(ping|eu|lote|[a-z]+\.(listar|obter|calcular|cargas|resumo|mv|modelo))$/;
+const SO_LEITURA = /^(ping|eu|lote|[a-z]+\.(listar|obter|calcular|cargas|resumo|mv|modelo|meus))$/;
 
 async function enviarPedido(url, corpo, limiteMs) {
   const controle = new AbortController();
@@ -978,6 +991,7 @@ function guardarSessao(token, expiraEm) {
   estado.temporizador = setTimeout(() => encerrar('Sua sessão terminou. Entre de novo.'), Math.min(ms, 2147000000));
 }
 function limparSessao() {
+  pararAvisos();
   esquecerMemoria();
   estado.sessao = null; estado.usuario = null;
   clearTimeout(estado.temporizador);
@@ -1942,12 +1956,119 @@ function rotaAtual() {
 }
 function ir(rota) { location.hash = '#/' + rota; }
 
+
+/* =====================================================================
+   AVISO DE PROCESSO NOVO NO DIÁRIO
+   Quem tem um colaborador ligado ao seu usuário recebe um aviso na tela quando um processo
+   é enviado para esse colaborador. O sistema pergunta ao servidor a cada minuto (consulta leve)
+   enquanto a página está aberta. Se a pessoa permitir, o navegador também mostra o aviso do
+   sistema quando a aba está em segundo plano. Ao entrar, o aviso conta o que chegou desde o
+   último aviso visto. Quem não tem colaborador ligado não faz essa consulta.
+   ===================================================================== */
+const AVISOS = { ativo: false, relogio: null, vistos: new Set(), lista: [], primeira: true, colaborador: '', consultando: false };
+const INTERVALO_AVISOS_MS = 60000;
+const CHAVE_CONVITE_AVISO = 'igesdf.convite-aviso';
+
+function iniciarAvisos() {
+  if (AVISOS.ativo) return;
+  AVISOS.ativo = true; AVISOS.primeira = true;
+  consultarAvisos();
+  AVISOS.relogio = setInterval(consultarAvisos, INTERVALO_AVISOS_MS);
+  document.addEventListener('visibilitychange', aoVoltarParaAba);
+}
+function pararAvisos() {
+  AVISOS.ativo = false; clearInterval(AVISOS.relogio); AVISOS.relogio = null;
+  AVISOS.vistos.clear(); AVISOS.lista = []; AVISOS.primeira = true;
+  document.removeEventListener('visibilitychange', aoVoltarParaAba);
+  fecharAvisoProcessos();
+}
+function aoVoltarParaAba() { if (!document.hidden) consultarAvisos(); }
+function fecharAvisoProcessos() { const a = document.getElementById('aviso-processos'); if (a) a.remove(); }
+// Abre o Diário já com os processos novos (se já estava nele, lê de novo).
+function abrirDiarioDoAviso() {
+  if (rotaAtual() === 'diario') { esquecerMemoria(); desenharRota(); } else ir('diario');
+}
+const textoProcessos = n => n === 1 ? '1 processo' : n + ' processos';
+
+async function consultarAvisos() {
+  if (!AVISOS.ativo || !estado.sessao || AVISOS.consultando) return;
+  AVISOS.consultando = true;
+  try {
+    const r = await chamarDireto('avisos.meus', {}, { discreto: true });
+    if (!AVISOS.ativo) return;
+    if (!r.vinculado) { pararAvisos(); return; }
+    AVISOS.colaborador = r.colaborador || '';
+    const eraPrimeira = AVISOS.primeira; AVISOS.primeira = false;
+    const novos = r.novos.filter(x => !AVISOS.vistos.has(x.ID + ':' + x.SEQ));
+    if (novos.length) {
+      novos.forEach(x => AVISOS.vistos.add(x.ID + ':' + x.SEQ));
+      AVISOS.lista = AVISOS.lista.concat(novos);
+      AVISOS.total = (AVISOS.total || 0) + Math.max(novos.length, eraPrimeira ? r.total : novos.length);
+      mostrarAvisoProcessos(eraPrimeira);
+      avisoDoNavegador(novos, r.total);
+      try { await chamarDireto('avisos.visto', { ate: r.ate }, { discreto: true }); } catch (e) { /* o aviso já foi mostrado; na próxima volta o sistema não repete */ }
+    } else if (r.total > 0) {
+      try { await chamarDireto('avisos.visto', { ate: r.ate }, { discreto: true }); } catch (e) { /* tenta de novo na próxima volta */ }
+    }
+    if (eraPrimeira) convidarParaAvisoDoNavegador();
+  } catch (e) {
+    /* sem internet ou servidor ocupado: fica quieto e tenta no próximo minuto */
+  } finally { AVISOS.consultando = false; }
+}
+
+function mostrarAvisoProcessos(desdeOUltimo) {
+  fecharAvisoProcessos();
+  const n = AVISOS.total || AVISOS.lista.length;
+  const titulo = desdeOUltimo ? 'Desde o último aviso, ' + (n === 1 ? 'chegou 1 processo para você' : 'chegaram ' + n + ' processos para você') : (n === 1 ? 'Chegou 1 processo para você' : 'Chegaram ' + n + ' processos para você');
+  const itens = AVISOS.lista.slice().reverse();
+  const caixa = h('section', { id: 'aviso-processos', role: 'alert', 'aria-live': 'assertive', 'aria-labelledby': 'aviso-processos-titulo' },
+    h('h2', { id: 'aviso-processos-titulo', texto: titulo }),
+    h('p', { class: 'ajuda', texto: 'No Diário, em nome de ' + (AVISOS.colaborador || 'você') + '.' }),
+    h('ul', { 'aria-label': 'Processos novos' }, itens.map(x => h('li', {}, h('strong', { texto: x.PROCESSO_SEI }), (x.FORNECEDOR || 'Fornecedor não informado') + ' • ' + dataBr(x.DATA)))),
+    itens.length < n ? h('p', { class: 'ajuda', texto: 'Mostrando os ' + itens.length + ' mais recentes. Veja todos no Diário.' }) : null,
+    h('div', { class: 'acoes' },
+      h('button', { type: 'button', class: 'botao', texto: 'Ver no Diário', onclick: () => { AVISOS.lista = []; AVISOS.total = 0; fecharAvisoProcessos(); abrirDiarioDoAviso(); } }),
+      h('button', { type: 'button', class: 'botao claro', texto: 'Fechar', onclick: () => { AVISOS.lista = []; AVISOS.total = 0; fecharAvisoProcessos(); } })));
+  document.body.append(caixa);
+}
+
+// Aviso do sistema (fora da página). Só aparece se a pessoa permitiu e a aba não está à vista.
+function avisoDoNavegador(novos, total) {
+  try {
+    if (!('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
+    const corpo = novos.length === 1 && total <= 1 ? 'O processo ' + novos[0].PROCESSO_SEI + ' foi para você.' : textoProcessos(Math.max(total, novos.length)) + ' novos foram para você.';
+    const aviso = new Notification('IGESDF • Diário de processos', { body: corpo, tag: 'diario-igesdf' });
+    aviso.onclick = () => { window.focus(); abrirDiarioDoAviso(); aviso.close(); };
+  } catch (e) { /* o navegador não deixou: a tela já avisou */ }
+}
+
+// Pergunta uma vez (por navegador) se a pessoa quer o aviso do navegador. A resposta vale para sempre, até ela mudar nas configurações.
+function convidarParaAvisoDoNavegador() {
+  try {
+    if (!('Notification' in window) || Notification.permission !== 'default') return;
+    if (localStorage.getItem(CHAVE_CONVITE_AVISO) === 'nao') return;
+  } catch (e) { return; }
+  if (document.getElementById('convite-aviso')) return;
+  const fechar = lembrar => { try { if (lembrar) localStorage.setItem(CHAVE_CONVITE_AVISO, 'nao'); } catch (e) { /* segue */ } const c = document.getElementById('convite-aviso'); if (c) c.remove(); };
+  const convite = h('div', { id: 'convite-aviso', class: 'aviso-toque', role: 'status', style: 'font-weight:500' },
+    h('p', { style: 'margin:0 0 8px', texto: 'Quer receber um aviso do navegador quando chegar processo para você, mesmo com outra aba aberta?' }),
+    h('div', { class: 'acoes', style: 'display:flex;gap:8px;flex-wrap:wrap' },
+      h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Ativar o aviso', onclick: async () => {
+        try { await Notification.requestPermission(); } catch (e) { /* segue */ }
+        fechar(false); toque(Notification.permission === 'granted' ? 'Pronto. O navegador vai avisar quando chegar processo.' : 'Sem o aviso do navegador. Você ainda vê o aviso aqui na tela.', 5000);
+      } }),
+      h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Agora não', onclick: () => fechar(false) }),
+      h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Não perguntar mais', onclick: () => fechar(true) })));
+  document.body.append(convite);
+}
+
 function telaSistema() {
   const raiz = document.getElementById('raiz');
 
   if (!estado.usuario) { carregarUsuario(); return; }
   const u = estado.usuario;
   aquecerMemoria();
+  if (!MODO_LOCAL) iniciarAvisos();
   const lista = h('ul');
   MENU.filter(m => !m.so || pode(m.so)).forEach(m => {
     const filhos = m.filhos ? h('ul', { class: 'sub', 'data-grupo': m.rota }, m.filhos.map(f =>
@@ -2175,6 +2296,32 @@ function paginador(aoMudar, padrao) {
   };
 }
 
+/* ---------- escolha de vários itens (serviços do fornecedor) ---------- */
+function campoVarios(o) {
+  const escolhidos = new Set(o.valores || []);
+  const disponiveis = [];
+  const chips = h('ul', { class: 'chips', 'aria-label': o.nomeLista || 'Escolhidos' });
+  const rotuloDe = id => { const x = o.opcoes.find(y => y.id === id); return x ? x.rotulo + (x.ativo ? '' : ' (inativo)') : id; };
+  function atualizar() {
+    disponiveis.splice(0, disponiveis.length, ...o.opcoes.filter(x => !escolhidos.has(x.id)));
+    chips.replaceChildren(...[...escolhidos].map(id => h('li', { class: 'chip' }, h('span', { texto: rotuloDe(id) }),
+      h('button', { type: 'button', 'aria-label': 'Tirar ' + rotuloDe(id), texto: '×', onclick: () => { escolhidos.delete(id); atualizar(); } }))));
+    chips.hidden = escolhidos.size === 0;
+  }
+  const combo = comboBusca({ id: o.id, opcoes: disponiveis, valor: '', placeholder: o.placeholder, aoEscolher: id => {
+    if (!id) return;
+    escolhidos.add(id); atualizar(); combo.value = ''; combo.entrada.value = ''; combo.entrada.focus();
+  } });
+  atualizar();
+  const caixa = h('div', {}, combo, chips);
+  caixa.valores = () => [...escolhidos];
+  caixa.entrada = combo.entrada;
+  return caixa;
+}
+
+// "Novo fornecedor", mas "Nova oficina".
+const novoDe = def => (def.singular === 'oficina' ? 'Nova ' : 'Novo ') + def.singular;
+
 /* =====================================================================
    FORMULÁRIO EM JANELA (serve para qualquer cadastro, a partir da "definição")
    Campos com "mostrarSe" só aparecem quando outro campo tem certo valor.
@@ -2219,6 +2366,16 @@ function abrirFormulario(o) {
     return caixa;
   });
 
+  // Fornecedor: um ou mais serviços, obrigatório.
+  let servicosCampo = null;
+  if (def.chave === 'fornecedores') {
+    servicosCampo = campoVarios({ id: 'c-SERVICOS', opcoes: (o.referencias || {}).SERVICOS || [], valores: novo ? [] : (r.SERVICOS || []),
+      placeholder: 'Digite o código ou a descrição do serviço…', nomeLista: 'Serviços do fornecedor' });
+    grupos.push(h('div', { class: 'campo inteiro' },
+      h('label', { for: 'c-SERVICOS' }, 'Serviços do fornecedor', h('span', { class: 'obrig', texto: ' (obrigatório)' })),
+      servicosCampo, h('p', { class: 'ajuda', texto: 'Escolha um ou mais. Ao registrar a nota, só dá para usar estes serviços.' })));
+  }
+
   // Mostra ou esconde os campos que dependem de outro.
   function ajustarCampos() {
     def.campos.forEach(c => {
@@ -2247,6 +2404,10 @@ function abrirFormulario(o) {
       }
       if (c.obrigatorio && bruto === '') { erro.append(caixaAviso('Preencha o campo "' + c.rotulo + '".')); entradas[c.n].focus(); return; }
     }
+    if (servicosCampo) {
+      envio.SERVICOS = servicosCampo.valores();
+      if (!envio.SERVICOS.length) { erro.append(caixaAviso('Escolha pelo menos um serviço para o fornecedor.')); servicosCampo.entrada.focus(); return; }
+    }
     enviar(salvar, erro, 'Salvando…', async () => {
       await o.salvar(envio);
       janela.close();
@@ -2254,7 +2415,7 @@ function abrirFormulario(o) {
       toque(novo ? 'Incluído.' : 'Alterações salvas.');
     });
   } },
-    h('div', { class: 'jan-corpo' }, h('h2', { texto: o.titulo || (novo ? 'Novo ' + def.singular : 'Editar ' + def.singular) }), o.texto ? h('p', { class: 'ajuda-janela', texto: o.texto }) : null, erro, h('div', { class: 'grade-campos' }, grupos)),
+    h('div', { class: 'jan-corpo' }, h('h2', { texto: o.titulo || (novo ? novoDe(def) : 'Editar ' + def.singular) }), o.texto ? h('p', { class: 'ajuda-janela', texto: o.texto }) : null, erro, h('div', { class: 'grade-campos' }, grupos)),
     h('div', { class: 'jan-pe' }, h('button', { type: 'button', class: 'botao claro', texto: 'Cancelar', onclick: () => janela.close() }), salvar));
   janela = abrirJanela(form, 'larga');
   const primeiro = form.querySelector('input, select'); if (primeiro) primeiro.focus();
@@ -2298,8 +2459,9 @@ function telaCadastro(chave) {
     const lista = [h('span', { class: 'selo ' + (r.STATUS === 'ATIVO' ? 'ativo' : 'inativo'), texto: r.STATUS === 'ATIVO' ? 'Ativo' : 'Inativo' })];
     def.avisos.forEach(a => {
       const v = r[a.campo];
-      if ((a.igual !== undefined && v === a.igual) || (a.naoVazio && v)) lista.push(h('span', { class: 'selo alerta', texto: a.texto, title: a.naoVazio ? String(v) : '' }));
+      if ((a.igual !== undefined && v === a.igual) || (a.naoVazio && v) || (a.vazio && !v)) lista.push(h('span', { class: 'selo alerta', texto: a.texto, title: a.naoVazio ? String(v) : '' }));
     });
+    if (chave === 'fornecedores' && !(r.SERVICOS || []).length) lista.push(h('span', { class: 'selo alerta', texto: 'Falta o serviço', title: 'Edite o fornecedor e escolha pelo menos um serviço.' }));
     return h('span', { class: 'selos' }, lista);
   }
 
@@ -2307,9 +2469,9 @@ function telaCadastro(chave) {
     const def = dados.definicao;
     const gravar = pode('GESTOR');
     topo.replaceChildren(h('div', {}, h('h1', { texto: def.titulo }), h('p', { texto: gravar ? 'Consulte, inclua, altere e inative. Nada é apagado.' : 'Consulta. Quem altera os cadastros é o gestor ou o administrador.' })),
-      gravar ? h('button', { type: 'button', class: 'botao', texto: 'Novo ' + def.singular, onclick: () => janelaCadastro(null) }) : null);
+      gravar ? h('button', { type: 'button', class: 'botao', texto: novoDe(def), onclick: () => janelaCadastro(null) }) : null);
     const campoPorNome = {}; def.campos.forEach(c => { campoPorNome[c.n] = c; });
-    const colunas = def.lista.map(n => campoPorNome[n]);
+    const colunas = def.lista.map(n => campoPorNome[n]).filter(c => !(chave === 'colaboradores' && c.n === 'USUARIO_ID' && !gravar));
 
     const busca = h('input', { type: 'search', id: 'busca-cad', placeholder: 'Pesquisar…', autocomplete: 'off', 'aria-label': 'Pesquisar em ' + def.titulo, value: filtro.texto });
     const situacao = h('select', { 'aria-label': 'Situação', onchange: ev => { filtro.situacao = ev.target.value; pag.inicio(); atualizarLinhas(); } },
@@ -2319,7 +2481,7 @@ function telaCadastro(chave) {
     const corpoTabela = h('tbody');
     const vazio = h('div', { class: 'vazio', hidden: true });
     const tabela = h('div', { class: 'tabela-caixa' }, h('table', {},
-      h('thead', {}, h('tr', {}, colunas.map(c => h('th', { scope: 'col', texto: c.rotulo })), h('th', { scope: 'col', texto: 'Situação' }), h('th', { scope: 'col' }, h('span', { class: 'so-leitor', texto: 'Ações' })))),
+      h('thead', {}, h('tr', {}, colunas.map(c => h('th', { scope: 'col', texto: c.rotulo })), chave === 'fornecedores' ? h('th', { scope: 'col', texto: 'Serviços' }) : null, h('th', { scope: 'col', texto: 'Situação' }), h('th', { scope: 'col' }, h('span', { class: 'so-leitor', texto: 'Ações' })))),
       corpoTabela));
 
     atualizarLinhas = function () {
@@ -2329,6 +2491,7 @@ function telaCadastro(chave) {
         const nome = mostrarValor(colunas[0], r[colunas[0].n], dados.referencias);
         return h('tr', {},
           colunas.map((c, i) => h('td', { class: i === 0 ? 'principal' : '', 'data-rotulo': i === 0 ? null : c.rotulo, texto: mostrarValor(c, r[c.n], dados.referencias) })),
+          chave === 'fornecedores' ? h('td', { 'data-rotulo': 'Serviços', texto: (r.SERVICOS || []).map(id => { const x = (dados.referencias.SERVICOS || []).find(y => y.id === id); return x ? String(x.rotulo).split(' — ')[0] : id; }).join(', ') || '—' }) : null,
           h('td', { 'data-rotulo': 'Situação' }, selosDe(r)),
           h('td', { class: 'acoes' },
             chave === 'fornecedores' ? h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Tributação', 'aria-label': 'Tributação de ' + nome, onclick: () => ir('manutencao/fornecedores/' + r.ID) }) : null,
@@ -2365,7 +2528,11 @@ function telaCadastro(chave) {
   function janelaCadastro(r) {
     abrirFormulario({
       def: dados.definicao, referencias: dados.referencias, registro: r,
-      salvar: envio => r ? chamar('cadastros.atualizar', { cadastro: chave, ID: r.ID, dados: envio }) : chamar('cadastros.criar', { cadastro: chave, dados: envio }),
+      salvar: envio => {
+        const servicos = envio.SERVICOS; delete envio.SERVICOS;
+        const extra = servicos ? { servicos } : {};
+        return r ? chamar('cadastros.atualizar', Object.assign({ cadastro: chave, ID: r.ID, dados: envio }, extra)) : chamar('cadastros.criar', Object.assign({ cadastro: chave, dados: envio }, extra));
+      },
       depois: carregar
     });
   }
@@ -2879,7 +3046,7 @@ function telaNotaForm(id) {
   const voltarPara = novo ? '#/notas' : '#/notas/' + id;
   const voltar = h('a', { class: 'voltar', href: voltarPara, texto: novo ? '‹ Voltar às notas' : '‹ Voltar à nota' });
   const campos = {};
-  const erroForm = h('div'), semImposto = h('div'), painelConta = h('div', { class: 'painel-corpo', 'aria-live': 'polite' });
+  const erroForm = h('div'), semImposto = h('div'), semServico = h('div'), semOficina = h('div'), painelConta = h('div', { class: 'painel-corpo', 'aria-live': 'polite' });
 
   async function carregar() {
     try {
@@ -2923,20 +3090,50 @@ function telaNotaForm(id) {
         h('a', { class: 'botao claro pequeno', href: '#/manutencao/fornecedores/' + trib.fornecedor.ID, texto: 'Abrir a tributação do fornecedor' }));
     }
   }
-  // O serviço e a oficina que o fornecedor costuma ter servem só de sugestão: nada é trocado se já estiver preenchido.
-  function sugerirServicoEOficina(servicoEscolhido) {
-    if (!trib || !trib.vinculos.length) return;
-    if (!servicoEscolhido) {
-      if (!campos.SERVICO_ID.value && trib.vinculos.length === 1) campos.SERVICO_ID.value = trib.vinculos[0].SERVICO_ID;
+  // Serviço e oficina: só aparecem os serviços cadastrados no fornecedor e as oficinas do serviço escolhido.
+  const servOpcoes = [];
+  function servicosPermitidos() {
+    const ids = (trib && trib.servicos) || [];
+    const atual = v('SERVICO_ID');
+    return (ref.SERVICO_ID || []).filter(o => ids.includes(o.id) || (!novo && o.id === atual));
+  }
+  function refrescarServicos() {
+    servOpcoes.splice(0, servOpcoes.length, ...servicosPermitidos());
+    const caixaServico = campos.SERVICO_ID;
+    if (!caixaServico) return;
+    const temForn = !!campos.FORNECEDOR_ID.value;
+    caixaServico.disabled = !temForn;
+    caixaServico.entrada.placeholder = !temForn ? 'Escolha primeiro o fornecedor' : (servOpcoes.length ? 'Digite o código ou a descrição do serviço…' : 'Este fornecedor não tem serviço cadastrado');
+    if (caixaServico.value && !servOpcoes.some(o => o.id === caixaServico.value)) caixaServico.value = '';
+    if (!caixaServico.value && servOpcoes.length === 1) caixaServico.value = servOpcoes[0].id;
+    avisarSemServico();
+  }
+  function avisarSemServico() {
+    semServico.replaceChildren();
+    if (campos.FORNECEDOR_ID && campos.FORNECEDOR_ID.value && trib && !(trib.servicos || []).length) {
+      semServico.append(caixaAviso('Este fornecedor não tem serviço cadastrado. Cadastre ao menos um serviço no fornecedor para registrar a nota.'),
+        h('a', { class: 'botao claro pequeno', href: '#/manutencao/fornecedores', texto: 'Abrir o cadastro de fornecedores' }));
     }
-    const sid = campos.SERVICO_ID.value;
-    const meus = trib.vinculos.filter(x => x.SERVICO_ID === sid && x.OFICINA_ID);
-    if (!campos.OFICINA_ID.value && meus.length === 1) campos.OFICINA_ID.value = meus[0].OFICINA_ID;
+  }
+  function refrescarOficinas() {
+    const sel = campos.OFICINA_ID; if (!sel) return;
+    const sid = campos.SERVICO_ID.value, atual = sel.value || sel.dataset.pref || '';
+    sel.dataset.pref = '';
+    const lista = (ref.OFICINA_ID || []).filter(o => sid && o.servico === sid && (o.ativo || o.id === atual));
+    sel.replaceChildren(...[h('option', { value: '', texto: !sid ? '— escolha primeiro o serviço —' : (lista.length ? '— escolha —' : '— este serviço não tem oficina —') })]
+      .concat(lista.map(o => h('option', { value: o.id, texto: o.rotulo + (o.ativo ? '' : ' (inativo)') }))));
+    sel.disabled = !sid;
+    sel.value = lista.some(o => o.id === atual) ? atual : (lista.filter(o => o.ativo).length === 1 ? lista.find(o => o.ativo).id : '');
+    avisarSemOficina(sid, lista.length);
+  }
+  function avisarSemOficina(sid, qtd) {
+    semOficina.replaceChildren();
+    if (sid && qtd === 0) semOficina.append(caixaAviso('Este serviço não tem oficina cadastrada. Cadastre a oficina em Manutenção > Oficinas.'));
   }
   async function aoEscolherFornecedor(fid) {
     trib = null; bases = {}; aliqIss = '';
     if (fid) { try { trib = await chamar('tributacao.listar', { fornecedorId: fid }); } catch (e) { erroForm.replaceChildren(caixaAviso(e.message)); } }
-    if (novo) sugerirServicoEOficina(false);
+    refrescarServicos(); refrescarOficinas();
     avisarSemImposto(); atualizarSimples(); calcular(0);
   }
 
@@ -3045,7 +3242,8 @@ function telaNotaForm(id) {
     const fornecedores = (ref.FORNECEDOR_ID || []).map(o => ({ id: o.id, ativo: o.ativo, rotulo: razaoDe(o.rotulo) + ' — ' + String(o.rotulo).split(' — ')[0] }));
     const forn = comboBusca({ id: 'n-FORNECEDOR_ID', opcoes: fornecedores, valor: v('FORNECEDOR_ID'), placeholder: 'Digite o nome ou o CNPJ do fornecedor…', aoEscolher: aoEscolherFornecedor });
     const centro = comboBusca({ id: 'n-CENTRO_CUSTO_ID', opcoes: ref.CENTRO_CUSTO_ID || [], valor: v('CENTRO_CUSTO_ID'), placeholder: 'Digite o código ou o nome do centro de custo…' });
-    const servico = comboBusca({ id: 'n-SERVICO_ID', opcoes: ref.SERVICO_ID || [], valor: v('SERVICO_ID'), placeholder: 'Digite o código ou a descrição do serviço…', aoEscolher: sid => { if (novo && sid) sugerirServicoEOficina(true); } });
+    servOpcoes.splice(0, servOpcoes.length, ...servicosPermitidos());
+    const servico = comboBusca({ id: 'n-SERVICO_ID', opcoes: servOpcoes, valor: v('SERVICO_ID'), placeholder: 'Digite o código ou a descrição do serviço…', aoEscolher: () => refrescarOficinas() });
     const sei = texto('PROCESSO_SEI', { inputmode: 'numeric', maxlength: '22', placeholder: '04016-00130700/2026-57' });
     sei.addEventListener('input', () => { const p = mascaraSei(sei.value); if (p !== sei.value) sei.value = p; atualizarHistorico(); });
     const grade = h('div', { class: 'grade-campos' },
@@ -3053,13 +3251,15 @@ function telaNotaForm(id) {
       campo('NUMERO_NF', 'Número da NF', texto('NUMERO_NF'), { obrig: true }),
       campo('FORNECEDOR_ID', 'Fornecedor', forn, { obrig: true, inteiro: true, ajuda: novo ? 'Digite parte do nome ou do CNPJ e escolha na lista. Os impostos vêm da tributação do fornecedor.' : 'O fornecedor não pode ser trocado. Para outro fornecedor, inative esta nota e registre uma nova.' }),
       h('div', { class: 'inteiro', style: 'grid-column:1/-1' }, semImposto),
-      campo('SERVICO_ID', 'Serviço', servico, { obrig: true, inteiro: true, ajuda: 'Digite o código ou a descrição e escolha na lista. O serviço vai para o lançamento no MV e não muda os impostos.' }),
+      h('div', { class: 'inteiro', style: 'grid-column:1/-1' }, semServico),
+      campo('SERVICO_ID', 'Serviço', servico, { obrig: true, inteiro: true, ajuda: 'Só aparecem os serviços cadastrados no fornecedor. O serviço vai para o lançamento no MV e não muda os impostos.' }),
       campo('VALOR_BRUTO', 'Valor bruto (R$)', dinheiroEntrada('VALOR_BRUTO'), { obrig: true }),
       campo('DEDUCOES_INSS', 'Deduções do INSS (R$)', dinheiroEntrada('DEDUCOES_INSS'), { ajuda: 'Se houver, reduzem só a base do INSS.' }),
       ...BASES_TELA.map(campoDeBase),
       campoAliquotaIss(),
       campo('CONTRATO', 'Contrato', texto('CONTRATO', { placeholder: 'Ex.: 161/2021' }), { ajuda: 'Digite só o número do contrato. Vai para o histórico do MV.' }),
-      campo('OFICINA_ID', 'Oficina', h('select', {}, ...opcoes(ref.OFICINA_ID, v('OFICINA_ID'), '— escolha —'))),
+      campo('OFICINA_ID', 'Oficina', h('select', {}, h('option', { value: '', texto: '— escolha —' })), { obrig: true, ajuda: 'Só aparecem as oficinas do serviço escolhido.' }),
+      h('div', { class: 'inteiro', style: 'grid-column:1/-1' }, semOficina),
       campo('CENTRO_CUSTO_ID', 'Centro de custo', centro, { obrig: true, ajuda: 'Digite para procurar.' }),
       campo('COMPETENCIA', 'Competência do serviço', h('input', { type: 'month', value: v('COMPETENCIA'), placeholder: 'aaaa-mm' }), { obrig: true, ajuda: 'Mês em que o serviço foi prestado.' }),
       campo('DATA_EMISSAO', 'Data de emissão', h('input', { type: 'date', value: v('DATA_EMISSAO') }), { obrig: true }),
@@ -3087,6 +3287,7 @@ function telaNotaForm(id) {
       if (!envio.CENTRO_CUSTO_ID && campos.CENTRO_CUSTO_ID.entrada.value.trim()) { erroForm.append(caixaAviso('Escolha o centro de custo na lista que aparece ao digitar.')); campos.CENTRO_CUSTO_ID.entrada.focus(); return; }
       if (ehSimples() && !aliqIss) { erroForm.append(caixaAviso('Informe a alíquota do ISS. O fornecedor é optante pelo Simples Nacional.')); campos.ALIQUOTA_ISS.focus(); return; }
       const rotulosObrig = { PROCESSO_SEI: 'Processo SEI', NUMERO_NF: 'Número da NF', FORNECEDOR_ID: 'Fornecedor', SERVICO_ID: 'Serviço', VALOR_BRUTO: 'Valor bruto', CENTRO_CUSTO_ID: 'Centro de custo', COMPETENCIA: 'Competência', DATA_EMISSAO: 'Data de emissão' };
+      if (novo || envio.SERVICO_ID !== v('SERVICO_ID') || envio.OFICINA_ID !== v('OFICINA_ID')) rotulosObrig.OFICINA_ID = 'Oficina';
       const faltam = Object.keys(rotulosObrig).filter(n => !envio[n]).map(n => rotulosObrig[n]);
       if (faltam.length) { erroForm.append(caixaAviso('Preencha: ' + faltam.join(', ') + '.')); return; }
       if (soDigitos(envio.PROCESSO_SEI).length !== 19) { erroForm.append(caixaAviso('O processo SEI está incompleto. Use o formato 00000-00000000/0000-00.')); campos.PROCESSO_SEI.focus(); return; }
@@ -3114,7 +3315,9 @@ function telaNotaForm(id) {
     bloco.replaceChildren(voltar, cabecalho(novo ? 'Nova nota fiscal' : 'Editar a nota ' + nota.NUMERO_NF, novo ? 'Escolha o fornecedor e o serviço. Os impostos são calculados pela tributação do fornecedor.' : null), form);
     if (!novo) campos.FORNECEDOR_ID.disabled = true;
     avisarSemImposto(); atualizarSimples();
-    if (!novo) campos.OFICINA_ID.value = v('OFICINA_ID');
+    refrescarServicos();
+    campos.OFICINA_ID.dataset.pref = v('OFICINA_ID');
+    refrescarOficinas();
     mostrarConta({ vazio: 'Escolha o fornecedor e informe o valor bruto para ver o cálculo dos impostos.' });
     (novo ? campos.PROCESSO_SEI : campos.VALOR_BRUTO).focus();
   }
@@ -3248,7 +3451,7 @@ function telaDiario() {
     const q = semAcento(filtro.texto).trim();
     if (!q) return true;
     const qd = soDigitos(q);
-    const alvo = [r.PROCESSO_SEI, nomeForn(r.FORNECEDOR_ID), nomeColab(r.COLABORADOR_ID), r.NOTAS.map(n => n.NUMERO_NF).join(' ')].join(' ');
+    const alvo = [r.PROCESSO_SEI, nomeForn(r.FORNECEDOR_ID), nomeColab(r.COLABORADOR_ID), r.REGISTRADO_POR || '', r.NOTAS.map(n => n.NUMERO_NF).join(' ')].join(' ');
     return semAcento(alvo).includes(q) || (qd.length >= 3 && soDigitos(r.PROCESSO_SEI).includes(qd));
   }
   function mudarSituacao(r) {
@@ -3299,6 +3502,7 @@ function telaDiario() {
       h('td', { 'data-rotulo': 'Nº do SEI', class: 'data sei', texto: r.PROCESSO_SEI }),
       h('td', { 'data-rotulo': 'Fornecedor', class: 'forn', title: nomeForn(r.FORNECEDOR_ID), texto: nomeForn(r.FORNECEDOR_ID) }),
       h('td', { 'data-rotulo': 'Colaborador', class: 'data', texto: nomeColab(r.COLABORADOR_ID) }),
+      h('td', { 'data-rotulo': 'Registrado por', class: 'data', title: r.REGISTRADO_POR || 'Ainda sem nota registrada', texto: r.REGISTRADO_POR || '—' }),
       h('td', { 'data-rotulo': 'Notas' }, r.NOTAS.length ? r.NOTAS.map((n, i) => [i ? ', ' : null, h('a', { class: 'ligacao', href: '#/notas/' + n.ID, title: 'Situação da nota: ' + (NOMES_SITUACAO[n.SITUACAO] || n.SITUACAO), 'aria-label': 'Ver a nota ' + n.NUMERO_NF, texto: n.NUMERO_NF })]) : h('span', { class: 'email', texto: 'sem nota' })),
       h('td', { 'data-rotulo': 'Situação' }, h('span', { class: 'selos' },
         h('span', { class: 'selo ' + (r.SITUACAO === 'LANCADA' ? 'ativo' : 'alerta'), texto: NOMES_SITUACAO[r.SITUACAO] || r.SITUACAO }),
@@ -3339,16 +3543,16 @@ function telaDiario() {
       const info = ['Filtros: ' + descricaoFiltros(), 'Por colaborador: ' + ([...porColab.entries()].sort((a, b) => nomeColab(a[0]).localeCompare(nomeColab(b[0]), 'pt-BR')).map(([id, n]) => nomeColab(id) + ' ' + n).join(' • ') || '—')];
       const nome = n => n === 1 ? '1 processo' : n + ' processos';
       toque(baixarTabela(formato, { arquivo: 'diario', aba: 'Diário', titulo: 'IGESDF — Diário de processos', info,
-        colunas: [{ t: 'Data' }, { t: 'Nº do SEI' }, { t: 'Fornecedor' }, { t: 'Colaborador' }, { t: 'Notas' }, { t: 'Situação' }],
-        linhas: ativos.map(r => [dataBr(r.DATA), r.PROCESSO_SEI, nomeForn(r.FORNECEDOR_ID), nomeColab(r.COLABORADOR_ID), r.NOTAS.map(n => n.NUMERO_NF).join(', '), NOMES_SITUACAO[r.SITUACAO] || r.SITUACAO]),
-        total: ['Total: ' + nome(ativos.length), null, null, null, null, null] }));
+        colunas: [{ t: 'Data' }, { t: 'Nº do SEI' }, { t: 'Fornecedor' }, { t: 'Colaborador' }, { t: 'Registrado por' }, { t: 'Notas' }, { t: 'Situação' }],
+        linhas: ativos.map(r => [dataBr(r.DATA), r.PROCESSO_SEI, nomeForn(r.FORNECEDOR_ID), nomeColab(r.COLABORADOR_ID), r.REGISTRADO_POR || '', r.NOTAS.map(n => n.NUMERO_NF).join(', '), NOMES_SITUACAO[r.SITUACAO] || r.SITUACAO]),
+        total: ['Total: ' + nome(ativos.length), null, null, null, null, null, null] }));
     } catch (e) { toque('Não foi possível gerar o arquivo. ' + e.message, 5000); }
   }
 
   const corpo = h('tbody'), vazio = h('div', { class: 'vazio', hidden: true }), contagem = h('span', { class: 'contagem', role: 'status' });
   const resumo = h('div', { class: 'totais', 'aria-live': 'polite' });
   const tabela = h('div', { class: 'tabela-caixa' }, h('table', { class: 'tabela-notas tabela-diario' },
-    h('thead', {}, h('tr', {}, ['Data', 'Nº do SEI', 'Fornecedor', 'Colaborador', 'Notas', 'Situação'].map(t => h('th', { scope: 'col', texto: t })), h('th', { scope: 'col' }, h('span', { class: 'so-leitor', texto: 'Ações' })))), corpo));
+    h('thead', {}, h('tr', {}, ['Data', 'Nº do SEI', 'Fornecedor', 'Colaborador', 'Registrado por', 'Notas', 'Situação'].map(t => h('th', { scope: 'col', texto: t })), h('th', { scope: 'col' }, h('span', { class: 'so-leitor', texto: 'Ações' })))), corpo));
 
   function montarFiltros() {
     const aoMudar = () => { pag.inicio(); desenharLinhas(); };
@@ -3361,7 +3565,7 @@ function telaDiario() {
       ...((dados.referencias || {}).COLABORADOR_ID || []).map(o => h('option', { value: o.id, selected: o.id === filtro.colaborador, texto: String(o.rotulo).split(' — ').slice(-1)[0] + (o.ativo ? '' : ' (inativo)') })));
     const sitSel = h('select', { id: 'df-sit', onchange: ev => { filtro.situacao = ev.target.value; aoMudar(); } },
       [['TODAS', 'Todas'], ['PENDENTE', 'Pendentes'], ['LANCADA', 'Lançados']].map(([v, t]) => h('option', { value: v, selected: v === filtro.situacao, texto: t })));
-    const busca = h('input', { type: 'search', id: 'df-busca', autocomplete: 'off', placeholder: 'SEI, fornecedor, colaborador ou nota…', value: filtro.texto });
+    const busca = h('input', { type: 'search', id: 'df-busca', autocomplete: 'off', placeholder: 'SEI, fornecedor, colaborador, quem registrou ou nota…', value: filtro.texto });
     busca.addEventListener('input', () => { filtro.texto = busca.value; aoMudar(); });
     const inativos = h('input', { type: 'checkbox', id: 'df-inativos', checked: filtro.inativos ? true : null });
     inativos.addEventListener('change', () => { filtro.inativos = inativos.checked; aoMudar(); });
@@ -3418,9 +3622,10 @@ function telaDiario() {
 const RELATORIOS = [
   { chave: 'mv', nome: 'Pendentes e lançadas no MV', texto: 'Cada nota com a situação no MV. Mostra o que ainda falta lançar.' },
   { chave: 'retencoes', nome: 'Retenções por imposto', texto: 'Total de INSS, IRRF, ISS e CSRF de cada competência.' },
-  { chave: 'fornecedor', nome: 'Notas por fornecedor', texto: 'Valor bruto, retenções e valor líquido de cada fornecedor.' }
+  { chave: 'fornecedor', nome: 'Notas por fornecedor', texto: 'Valor bruto, retenções e valor líquido de cada fornecedor.' },
+  { chave: 'detalhado', nome: 'Relatório detalhado', texto: 'Uma linha por nota: datas, valor da nota, valor de cada tributo, total retido e valor líquido.' }
 ];
-const PERIODOS_RELATORIO = [['COMPETENCIA', 'Competência', 'COMPETENCIA'], ['EMISSAO', 'Data de emissão', 'DATA_EMISSAO'], ['VENCIMENTO', 'Data de vencimento', 'VENCIMENTO']];
+const PERIODOS_RELATORIO = [['COMPETENCIA', 'Competência', 'COMPETENCIA'], ['EMISSAO', 'Data de emissão', 'DATA_EMISSAO'], ['ATESTO', 'Data do atesto', 'DATA_ATESTO'], ['VENCIMENTO', 'Data de vencimento', 'VENCIMENTO']];
 const centavosRel = n => Math.round(Number(n || 0) * 100);
 const somarRel = (lista, f) => lista.reduce((s, n) => s + centavosRel(f(n)), 0) / 100;
 
@@ -3435,12 +3640,16 @@ function filtrarNotasRelatorio(notas, f) {
       const v = String(n[campo] || '');
       if (!v || (f.de && v < f.de) || (f.ate && v > f.ate)) return false;
     }
+    if (f.compDe || f.compAte) {   // filtro de competência (aaaa-mm), à parte do período
+      const c = String(n.COMPETENCIA || '');
+      if (!c || (f.compDe && c < f.compDe) || (f.compAte && c > f.compAte)) return false;
+    }
     return true;
   });
 }
 
 // Devolve o relatório pronto: colunas, linhas, linha de total e um resumo. Valores em reais ficam como número.
-function montarRelatorio(chave, notas, ref) {
+function montarRelatorio(chave, notas, ref, opcoes) {
   const forn = n => rotuloDe(ref, 'FORNECEDOR_ID', n.FORNECEDOR_ID);
   const imposto = (n, sigla) => { const i = (n.impostos || []).find(x => x.SIGLA === sigla); return i ? Number(i.VALOR_IMPOSTO) : 0; };
   const nome = n => n === 1 ? '1 nota' : n + ' notas';
@@ -3455,6 +3664,21 @@ function montarRelatorio(chave, notas, ref) {
       linhas: l.map(n => [n.SITUACAO === 'LANCADA' ? 'Lançada' : 'Pendente', n.NUMERO_NF, n.PROCESSO_SEI || '', razaoDe(forn(n)), competenciaBr(n.COMPETENCIA), n.VENCIMENTO ? dataBr(n.VENCIMENTO) : '', Number(n.VALOR_BRUTO), Number(n.TOTAL_RETENCOES), Number(n.VALOR_LIQUIDO)]),
       total: ['Total: ' + nome(l.length), null, null, null, null, null, somarRel(l, bruto), somarRel(l, ret), somarRel(l, liq)],
       resumo: [['Pendentes', nome(pend.length) + ' • valor bruto ' + moedaBr(somarRel(pend, bruto))], ['Lançadas', nome(lanc.length) + ' • valor bruto ' + moedaBr(somarRel(lanc, bruto))]]
+    };
+  }
+  if (chave === 'detalhado') {
+    const siglas = ['INSS', 'IRRF', 'ISS', 'CSRF'];
+    const base = (n, sigla) => { const i = (n.impostos || []).find(x => x.SIGLA === sigla); return i && i.BASE_CALCULO !== '' && i.BASE_CALCULO !== null && i.BASE_CALCULO !== undefined ? Number(i.BASE_CALCULO) : 0; };
+    const comBases = !!(opcoes && opcoes.bases);
+    const l = [...notas].sort((a, b) => comparar(a.COMPETENCIA || '', b.COMPETENCIA || '') || comparar(razaoDe(forn(a)), razaoDe(forn(b))) || comparar(a.NUMERO_NF, b.NUMERO_NF));
+    const moeda = t => ({ t, tipo: 'moeda' });
+    return {
+      colunas: [{ t: 'Nº da NF', fixa: true }, { t: 'Processo SEI', fixa: true }, { t: 'Fornecedor', min: 80 }, { t: 'Competência', fixa: true }, { t: 'Emissão', fixa: true }, { t: 'Atesto', fixa: true }, { t: 'Vencimento', fixa: true }, { t: 'Situação no MV', fixa: true },
+        moeda('Valor da NF'), ...(comBases ? siglas.map(s => moeda('Base ' + s)) : []), ...siglas.map(s => moeda(s)), moeda('Total retido'), moeda('Valor líquido')],
+      linhas: l.map(n => [n.NUMERO_NF, n.PROCESSO_SEI || '', razaoDe(forn(n)), competenciaBr(n.COMPETENCIA), n.DATA_EMISSAO ? dataBr(n.DATA_EMISSAO) : '', n.DATA_ATESTO ? dataBr(n.DATA_ATESTO) : '', n.VENCIMENTO ? dataBr(n.VENCIMENTO) : '',
+        n.SITUACAO === 'LANCADA' ? 'Lançada' : 'Pendente', Number(n.VALOR_BRUTO), ...(comBases ? siglas.map(s => base(n, s)) : []), ...siglas.map(s => imposto(n, s)), Number(n.TOTAL_RETENCOES), Number(n.VALOR_LIQUIDO)]),
+      total: ['Total: ' + nome(l.length), null, null, null, null, null, null, null, somarRel(l, bruto), ...(comBases ? siglas.map(s => somarRel(l, x => base(x, s))) : []), ...siglas.map(s => somarRel(l, x => imposto(x, s))), somarRel(l, ret), somarRel(l, liq)],
+      resumo: [['Notas', String(l.length)], ['Valor das notas', moedaBr(somarRel(l, bruto))], ['Total retido', moedaBr(somarRel(l, ret))], ['Valor líquido', moedaBr(somarRel(l, liq))]]
     };
   }
   if (chave === 'retencoes') {
@@ -3654,20 +3878,26 @@ const corPdf = hex => [0, 2, 4].map(i => numeroPdf(parseInt(hex.substr(i, 2), 16
 // o = { titulo, info: [textos], colunas: [{ t, tipo }], linhas: [[...]], total: [...] | null, rodape }
 // Dinheiro (tipo 'moeda') e inteiros (tipo 'int') ficam à direita. Texto longo quebra em até 2 linhas.
 function gerarPdf(o) {
-  const PW = 841.89, PH = 595.28, MX = 36, MT = 36, MB = 40, TAM = 8, ENT = 10, PAD = 3.5;
+  const PW = 841.89, PH = 595.28, MX = 36, MT = 36, MB = 40, PAD = 3.5;
   const util = PW - 2 * MX, nCol = o.colunas.length;
   const dinheiro = v => (v === null || v === undefined || v === '') ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmt = (c, v) => c.tipo === 'moeda' ? dinheiro(v) : (v === null || v === undefined ? '' : String(v));
   const dir = c => c.tipo === 'moeda' || c.tipo === 'int';
   // largura de cada coluna: números ficam do tamanho certo; o texto divide o que sobra
-  const ideal = o.colunas.map((c, i) => {
-    let m = larguraPdf(c.t, true, TAM) * (dir(c) || c.t.length <= 12 ? 1 : 0.6);
-    c.t.split(' ').forEach(p => { m = Math.max(m, larguraPdf(p, true, TAM)); });
+  // Coluna "fixa" (número da nota, datas, SEI) nunca é espremida. Se não couber, a letra diminui (de 8 até 5,5).
+  const idealDe = tam => o.colunas.map((c, i) => {
+    let m = larguraPdf(c.t, true, tam) * (dir(c) || c.t.length <= 12 ? 1 : 0.6);
+    c.t.split(' ').forEach(p => { m = Math.max(m, larguraPdf(p, true, tam) * 1.08); });
     let cheio = 0;
-    o.linhas.concat(o.total ? [o.total] : []).forEach(l => { cheio = Math.max(cheio, larguraPdf(fmt(c, l[i]), false, TAM) * 1.04, 0); });
-    const nat = dir(c) ? Math.max(m, cheio) : Math.max(m, Math.min(cheio, 230));
-    return { minimo: Math.ceil(m + 2 * PAD), natural: Math.ceil(Math.max(nat, m) + 2 * PAD) };
+    o.linhas.concat(o.total ? [o.total] : []).forEach((l, k) => { if (o.total && l === o.total) return; cheio = Math.max(cheio, larguraPdf(fmt(c, l[i]), false, tam) * 1.04, 0); });
+    const nat = dir(c) || c.fixa ? Math.max(m, cheio) : Math.max(m, Math.min(cheio, 230));
+    const natural = Math.ceil(Math.max(nat, m) + 2 * PAD);
+    const minimo = c.fixa ? natural : Math.ceil(m + 2 * PAD);
+    return { minimo: c.min ? Math.min(natural, Math.max(minimo, Math.ceil(c.min * tam / 8))) : minimo, natural };
   });
+  let TAM = 8, ideal = idealDe(TAM);
+  while (ideal.reduce((a, x) => a + x.minimo, 0) > util && TAM > 5) { TAM -= 0.5; ideal = idealDe(TAM); }
+  const ENT = Math.max(8, Math.round(TAM * 1.25 * 10) / 10);
   let larg = ideal.map(x => x.natural);
   const soma = () => larg.reduce((a, b) => a + b, 0);
   if (soma() > util) {
@@ -3777,7 +4007,7 @@ function baixarTabela(formato, o) {
 
 function telaRelatorios() {
   let dados = null, atual = 'mv', rel = null;
-  const filtro = { periodoPor: 'COMPETENCIA', de: '', ate: '', fornecedor: '', situacao: 'TODAS' };
+  const filtro = { periodoPor: 'COMPETENCIA', de: '', ate: '', fornecedor: '', situacao: 'TODAS', compDe: '', compAte: '', bases: false };
   const pag = paginador(() => desenharResultado());
   const botaoExcel = h('button', { type: 'button', class: 'botao', texto: 'Baixar Excel', disabled: true, onclick: () => baixar('xlsx') });
   const botaoPdf = h('button', { type: 'button', class: 'botao claro', texto: 'Baixar PDF', disabled: true, onclick: () => baixar('pdf') });
@@ -3786,7 +4016,7 @@ function telaRelatorios() {
   const painelFiltros = h('div', { class: 'painel' }), painelResultado = h('div', { class: 'painel' }, h('div', { class: 'vazio', texto: 'Carregando…' }));
   const bloco = h('div', {}, cabecalho('Relatórios', 'Escolha o relatório, ajuste os filtros e baixe em Excel ou em PDF.', h('div', { class: 'acoes-cab' }, botaoPdf, botaoExcel)), abas, textoAba, painelFiltros, painelResultado);
 
-  const filtroEfetivo = () => Object.assign({}, filtro, { situacao: atual === 'mv' ? filtro.situacao : 'TODAS' });
+  const filtroEfetivo = () => Object.assign({}, filtro, { situacao: atual === 'mv' ? filtro.situacao : 'TODAS' }, atual === 'detalhado' ? {} : { compDe: '', compAte: '' });
   function descricaoFiltros() {
     const partes = [];
     const rotuloPeriodo = (PERIODOS_RELATORIO.find(p => p[0] === filtro.periodoPor) || PERIODOS_RELATORIO[0])[1];
@@ -3795,13 +4025,16 @@ function telaRelatorios() {
     else if (filtro.de) partes.push(rotuloPeriodo + ' a partir de ' + fmt(filtro.de));
     else if (filtro.ate) partes.push(rotuloPeriodo + ' até ' + fmt(filtro.ate));
     if (filtro.fornecedor) partes.push('Fornecedor: ' + razaoDe(rotuloDe(dados.referencias, 'FORNECEDOR_ID', filtro.fornecedor)));
+    if (atual === 'detalhado' && (filtro.compDe || filtro.compAte)) {
+      partes.push(filtro.compDe && filtro.compAte ? 'Competência de ' + competenciaBr(filtro.compDe) + ' até ' + competenciaBr(filtro.compAte) : (filtro.compDe ? 'Competência a partir de ' + competenciaBr(filtro.compDe) : 'Competência até ' + competenciaBr(filtro.compAte)));
+    }
     if (atual === 'mv' && filtro.situacao !== 'TODAS') partes.push('Situação: ' + (filtro.situacao === 'LANCADA' ? 'lançadas' : 'pendentes'));
     return partes.length ? partes.join(' • ') : 'Sem filtros: todas as notas ativas.';
   }
 
   function desenharAbas() {
     abas.replaceChildren(...RELATORIOS.map(r => h('button', { type: 'button', 'aria-pressed': r.chave === atual ? 'true' : 'false', texto: r.nome,
-      onclick: () => { atual = r.chave; pag.inicio(); desenharAbas(); desenharFiltros(); desenharResultado(); } })));
+      onclick: () => { atual = r.chave; if (atual === 'detalhado' && filtro.periodoPor === 'COMPETENCIA') { filtro.periodoPor = 'EMISSAO'; filtro.de = ''; filtro.ate = ''; } pag.inicio(); desenharAbas(); desenharFiltros(); desenharResultado(); } })));
     textoAba.textContent = RELATORIOS.find(r => r.chave === atual).texto;
   }
 
@@ -3809,8 +4042,11 @@ function telaRelatorios() {
     const mes = filtro.periodoPor === 'COMPETENCIA', tipo = mes ? 'month' : 'date';
     const aoMudar = () => { pag.inicio(); desenharResultado(); };
     const periodo = h('select', { id: 'rel-periodo', onchange: ev => { filtro.periodoPor = ev.target.value; filtro.de = ''; filtro.ate = ''; desenharFiltros(); aoMudar(); } },
-      PERIODOS_RELATORIO.map(p => h('option', { value: p[0], selected: p[0] === filtro.periodoPor, texto: p[1] })));
+      PERIODOS_RELATORIO.filter(p => atual !== 'detalhado' || p[0] !== 'COMPETENCIA').map(p => h('option', { value: p[0], selected: p[0] === filtro.periodoPor, texto: p[1] })));
     const entradaData = (id, chave) => { const e = h('input', { type: tipo, id, value: filtro[chave] }); ['input', 'change'].forEach(ev => e.addEventListener(ev, () => { filtro[chave] = e.value; aoMudar(); })); return e; };
+    const entradaComp = (id, chave) => { const e = h('input', { type: 'month', id, value: filtro[chave] }); ['input', 'change'].forEach(ev => e.addEventListener(ev, () => { filtro[chave] = e.value; aoMudar(); })); return e; };
+    const marcaBases = h('input', { type: 'checkbox', id: 'rel-bases', checked: filtro.bases ? true : null });
+    marcaBases.addEventListener('change', () => { filtro.bases = marcaBases.checked; aoMudar(); });
     const ids = [...new Set(dados.registros.filter(n => n.STATUS === 'ATIVO').map(n => n.FORNECEDOR_ID))];
     const opcoes = ids.map(id => { const r = rotuloDe(dados.referencias, 'FORNECEDOR_ID', id); return { id, ativo: true, rotulo: razaoDe(r) + ' — ' + String(r).split(' — ')[0] }; }).sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR'));
     const forn = comboBusca({ id: 'rel-fornecedor', opcoes, valor: filtro.fornecedor, placeholder: 'Todos. Digite para escolher um.', aoEscolher: id => { filtro.fornecedor = id; aoMudar(); } });
@@ -3821,13 +4057,16 @@ function telaRelatorios() {
       campoRel('Filtrar o período por', 'rel-periodo', periodo),
       campoRel(mes ? 'De (mês/ano)' : 'De', 'rel-de', entradaData('rel-de', 'de')),
       campoRel(mes ? 'Até (mês/ano)' : 'Até', 'rel-ate', entradaData('rel-ate', 'ate')),
+      atual === 'detalhado' ? campoRel('Competência de (mês/ano)', 'rel-comp-de', entradaComp('rel-comp-de', 'compDe')) : null,
+      atual === 'detalhado' ? campoRel('Competência até (mês/ano)', 'rel-comp-ate', entradaComp('rel-comp-ate', 'compAte')) : null,
       campoRel('Fornecedor', 'rel-fornecedor', forn, 'largo'), sit,
-      h('button', { type: 'button', class: 'botao claro', texto: 'Limpar filtros', onclick: () => { Object.assign(filtro, { periodoPor: 'COMPETENCIA', de: '', ate: '', fornecedor: '', situacao: 'TODAS' }); pag.inicio(); desenharFiltros(); desenharResultado(); } })));
+      atual === 'detalhado' ? h('label', { class: 'marcar', for: 'rel-bases', style: 'margin-bottom:16px' }, marcaBases, 'Mostrar a base de cálculo de cada tributo') : null,
+      h('button', { type: 'button', class: 'botao claro', texto: 'Limpar filtros', onclick: () => { Object.assign(filtro, { periodoPor: atual === 'detalhado' ? 'EMISSAO' : 'COMPETENCIA', de: '', ate: '', fornecedor: '', situacao: 'TODAS', compDe: '', compAte: '' }); pag.inicio(); desenharFiltros(); desenharResultado(); } })));
   }
 
   function desenharResultado() {
     const notas = filtrarNotasRelatorio(dados.registros, filtroEfetivo());
-    rel = montarRelatorio(atual, notas, dados.referencias);
+    rel = montarRelatorio(atual, notas, dados.referencias, { bases: filtro.bases });
     botaoExcel.disabled = botaoPdf.disabled = rel.linhas.length === 0;
     const nome = RELATORIOS.find(r => r.chave === atual).nome;
     const celula = (c, v, i) => {
