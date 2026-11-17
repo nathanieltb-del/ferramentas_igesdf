@@ -371,7 +371,11 @@ dialog .jan-pe { display: flex; justify-content: flex-end; gap: 10px; flex-wrap:
 .cartao-mapa:hover { border-color: var(--azul); background: #F4F9FC; }
 .cartao-mapa:focus-visible { outline: 3px solid rgba(68,145,193,.45); outline-offset: 2px; }
 .cartao-mapa .valor { display: block; font-size: 30px; font-weight: 700; line-height: 1.1; }
-.cartao-mapa .nome { display: block; color: var(--tinta-2); font-size: 14px; margin-top: 4px; }
+.cartao-mapa .nome { display: block; color: var(--tinta-2); font-size: 14px; margin-top: 4px; overflow-wrap: anywhere; }
+.cartao-mapa .grupo { display: block; color: var(--tinta-2); font-size: 12px; margin-top: 2px; opacity: .85; }
+.campo-com-novo { display: flex; gap: 8px; align-items: stretch; }
+.campo-com-novo select { flex: 1 1 auto; min-width: 0; }
+.campo .campo-com-novo .botao.pequeno { margin-top: 0; align-self: stretch; flex: 0 0 auto; }
 .cartao-mapa.vermelho { border-left: 6px solid #B3261E; }
 .cartao-mapa.vermelho .valor { color: #8C1D18; }
 .cartao-mapa.amarelo { border-left: 6px solid #D9A800; }
@@ -615,7 +619,7 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_NUMERO = '1.9';          // vem de fonte/versao.json (um lugar só)
+const VERSAO_NUMERO = '2.0';          // vem de fonte/versao.json (um lugar só)
 const VERSAO_DATA = '17/11/2026';
 const VERSAO_TELA = 'Versão ' + VERSAO_NUMERO;
 
@@ -1998,11 +2002,10 @@ const MENU = [
     { rota: 'manutencao/oficinas', nome: 'Oficinas', texto: 'Códigos e nomes das oficinas.', cadastro: 'oficinas' },
     { rota: 'manutencao/centros', nome: 'Centros de custo', texto: 'Unidades e a hierarquia entre elas.', cadastro: 'centros' },
     { rota: 'manutencao/colaboradores', nome: 'Colaboradores', texto: 'Quem recebe os processos do Diário.', cadastro: 'colaboradores' },
-    { rota: 'manutencao/etiquetas', nome: 'Etiquetas do SEI', texto: 'Classificações dos processos no SEI, usadas no Mapa de processos.', cadastro: 'etiquetas' },
-    { rota: 'manutencao/tipos_processo', nome: 'Tipos de processo', texto: 'Tipos usados no Mapa de processos. Exemplo: Gerencial, Comunicação.', cadastro: 'tipos_processo' },
-    { rota: 'manutencao/unidades_sei', nome: 'Unidades do SEI', texto: 'Unidades responsáveis pelos processos no SEI. Exemplo: NUCON.', cadastro: 'unidades_sei' },
-    { rota: 'manutencao/fases_processo', nome: 'Fases do Mapa', texto: 'Fases dos processos e o grupo de cada uma (em curso, suspenso ou encerrado).', cadastro: 'fases_processo' },
-    { rota: 'manutencao/docs_pendentes', nome: 'Documentos pendentes', texto: 'Tipos de documento que podem estar faltando em um processo.', cadastro: 'docs_pendentes' },
+    { rota: 'manutencao/etiquetas', nome: 'Etiquetas do SEI', texto: 'Classificações dos processos no SEI. Qualquer operador também cria etiquetas na hora, no formulário do processo.', cadastro: 'etiquetas' },
+    { rota: 'manutencao/tipos_processo', nome: 'Tipos de processo', texto: 'Tipos de processo do Mapa. Operadores criam tipos na hora, no formulário; aqui você renomeia ou inativa.', cadastro: 'tipos_processo' },
+    { rota: 'manutencao/unidades_sei', nome: 'Unidades do SEI', texto: 'Unidades responsáveis no SEI. Operadores criam na hora, no formulário; aqui você renomeia ou inativa.', cadastro: 'unidades_sei' },
+    { rota: 'manutencao/fases_processo', nome: 'Fases do Mapa', texto: 'Fases dos processos e o grupo de cada uma (em curso, suspenso ou encerrado). Operadores criam fases na hora, no formulário.', cadastro: 'fases_processo' },
   ] },
   { rota: 'admin', nome: MODO_LOCAL ? 'Administração' : 'Usuários', icone: 'admin', so: 'ADMIN' }
 ].concat(MODO_LOCAL ? [] : [{ rota: 'importar', nome: 'Importar planilha', icone: 'importar', so: 'ADMIN' }, { rota: 'backup', nome: 'Backup', icone: 'backup', so: 'ADMIN' }, { rota: 'uso', nome: 'Uso do sistema', icone: 'relatorios', so: 'ADMIN' }]);
@@ -3831,7 +3834,7 @@ function telaDiario() {
 }
 
 /* =====================================================================
-   MAPA DE PROCESSOS (versão 1.9)
+   MAPA DE PROCESSOS (versão 2.0)
    Controla os processos do setor: fase, prazo, responsável, alertas e indicadores.
    - Painel: o que está vencido, o que vence em breve, quadros por responsável, tipo e fase.
    - Processos: lista com filtros, semáforo de prazo, cadastro, edição e exclusão.
@@ -3879,8 +3882,6 @@ function mapaNomeFase(dados, id) {
   const o = (dados.fases || []).find(x => x.id === id);
   return o ? o.rotulo : '';
 }
-// Texto do documento pendente: "Contrato — falta a minuta".
-const mapaDocPendente = (dados, r) => [mapaNomeRef(dados, 'DOCS', r.DOC_PENDENTE_ID), r.DOC_PENDENTE_TEXTO].filter(Boolean).join(' — ');
 
 /* ---------- Meus alertas ---------- */
 async function janelaMeusAlertas(aoSalvar) {
@@ -3926,6 +3927,45 @@ async function janelaMeusAlertas(aoSalvar) {
   campo.focus();
 }
 
+/* ---------- Itens que o usuário cria na hora (tipo, unidade, fase, etiqueta) ---------- */
+const MAPA_ITENS = {
+  tipo: { chave: 'TIPOS', nome: 'tipo de processo', um: 'um', titulo: 'Novo tipo de processo', rotulo: 'Nome do tipo', exemplo: 'Ex.: Gerencial' },
+  unidade: { chave: 'UNIDADES', nome: 'unidade', um: 'uma', titulo: 'Nova unidade', rotulo: 'Sigla da unidade', exemplo: 'Ex.: NUCON' },
+  fase: { chave: null, nome: 'fase', um: 'uma', titulo: 'Nova fase', rotulo: 'Nome da fase', exemplo: 'Ex.: Aguardando assinatura' },
+  etiqueta: { chave: 'ETIQUETAS', nome: 'etiqueta', um: 'uma', titulo: 'Nova etiqueta do SEI', rotulo: 'Nome da etiqueta', exemplo: 'Escreva como aparece no SEI' }
+};
+// Lista atual de um tipo de item (as fases ficam em dados.fases; as outras listas, em dados.referencias).
+function mapaItensDe(dados, item) { return item === 'fase' ? (dados.fases || []) : ((dados.referencias || {})[MAPA_ITENS[item].chave] || []); }
+function mapaGuardarItens(dados, item, lista) {
+  if (item === 'fase') dados.fases = lista; else { dados.referencias = dados.referencias || {}; dados.referencias[MAPA_ITENS[item].chave] = lista; }
+}
+// Janela pequena: pede o nome (e, para fase, o grupo) e cria o item. Depois devolve o id para a lista já escolher o novo item.
+function mapaJanelaNovoItem(dados, item, aoCriar) {
+  const cfg = MAPA_ITENS[item], erro = h('div');
+  const nome = h('input', { type: 'text', id: 'ni-nome', maxlength: '120', autocomplete: 'off', placeholder: cfg.exemplo });
+  const grupo = item === 'fase' ? h('select', { id: 'ni-grupo' }, [['EM_CURSO', 'Em curso: o prazo gera alerta'], ['SUSPENSO', 'Suspenso: parado, sem alerta'], ['ENCERRADO', 'Encerrado: terminou (concluído, arquivado)']].map(([v, t]) => h('option', { value: v, texto: t }))) : null;
+  const salvar = h('button', { type: 'submit', class: 'botao', texto: 'Criar' });
+  let janela;
+  const form = h('form', { novalidate: true, onsubmit: ev => {
+    ev.preventDefault(); erro.replaceChildren();
+    if (!nome.value.trim()) { erro.append(caixaAviso('Escreva o nome.')); nome.focus(); return; }
+    enviar(salvar, erro, 'Criando…', async () => {
+      const r = await chamar('mapa.criar_item', { item, NOME: nome.value.trim(), GRUPO: grupo ? grupo.value : '' });
+      mapaGuardarItens(dados, item, r.lista);
+      janela.close();
+      toque(r.criado ? 'Criado: ' + r.item.rotulo + '.' : 'Já existia "' + r.item.rotulo + '". Ele foi escolhido para você.');
+      aoCriar(r.item.id);
+    });
+  } },
+    h('div', { class: 'jan-corpo' }, h('h2', { texto: cfg.titulo }), erro,
+      h('div', { class: 'campo' }, h('label', { for: 'ni-nome', texto: cfg.rotulo }), nome),
+      grupo ? h('div', { class: 'campo' }, h('label', { for: 'ni-grupo', texto: 'Grupo da fase' }), grupo,
+        h('p', { class: 'ajuda', texto: 'O grupo define se o prazo gera alerta. Dá para mudar depois em Manutenção > Fases do Mapa.' })) : null),
+    h('div', { class: 'jan-pe' }, h('button', { type: 'button', class: 'botao claro', texto: 'Cancelar', onclick: () => janela.close() }), salvar));
+  janela = abrirJanela(form);
+  nome.focus();
+}
+
 /* ---------- Formulário do processo (novo e editar) ---------- */
 function mapaFormulario(dados, r, depois) {
   const novo = !r;
@@ -3933,20 +3973,30 @@ function mapaFormulario(dados, r, depois) {
   const refs = dados.referencias || {};
   const campoDe = (id, rotulo, entrada, extra, ajuda) => h('div', { class: 'campo' + (extra ? ' ' + extra : '') },
     h('label', { for: id, texto: rotulo }), entrada, ajuda ? h('p', { class: 'ajuda', texto: ajuda }) : null);
-  // lista suspensa de um cadastro: mostra só os ativos (e o item já escolhido, mesmo inativo)
-  const seletor = (id, chave, atualId, vazio) => h('select', { id }, h('option', { value: '', texto: vazio }),
-    (refs[chave] || []).filter(x => x.ativo || x.id === atualId).map(x => h('option', { value: x.id, selected: x.id === atualId, texto: x.rotulo + (x.ativo ? '' : ' (inativo)') })));
+  // Lista suspensa de um cadastro com o botão "Novo": quem cadastra o processo cria o item na hora.
+  // Mostra só os ativos (e o item já escolhido, mesmo inativo).
+  const seletorNovo = (id, item, atualId, vazio) => {
+    const sel = h('select', { id });
+    const preencher = escolhido => {
+      const itens = mapaItensDe(dados, item).filter(x => x.ativo || x.id === atualId);
+      sel.replaceChildren(...(vazio ? [h('option', { value: '', texto: vazio })] : []),
+        ...itens.map(x => h('option', { value: x.id, selected: x.id === escolhido, texto: x.rotulo + (x.ativo ? '' : (item === 'fase' ? ' (inativa)' : ' (inativo)')) })));
+      if (escolhido) sel.value = escolhido;
+    };
+    preencher(atualId);
+    const botao = h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Novo', 'aria-label': 'Criar ' + MAPA_ITENS[item].um + ' ' + MAPA_ITENS[item].nome,
+      onclick: () => mapaJanelaNovoItem(dados, item, id => preencher(id)) });
+    return { sel, caixa: h('div', { class: 'campo-com-novo' }, sel, botao) };
+  };
   const sei = h('input', { type: 'text', id: 'mp-sei', inputmode: 'numeric', maxlength: '22', autocomplete: 'off', placeholder: '04016-00130700/2026-57', value: novo ? '' : r.NUMERO_SEI });
   sei.addEventListener('input', () => { const p = mascaraSei(sei.value); if (p !== sei.value) sei.value = p; });
   const assunto = h('input', { type: 'text', id: 'mp-assunto', maxlength: '300', autocomplete: 'off', value: novo ? '' : r.ASSUNTO });
-  const origem = h('input', { type: 'text', id: 'mp-origem', maxlength: '200', autocomplete: 'off', value: novo ? '' : r.ORIGEM });
-  const etiqueta = seletor('mp-etiqueta', 'ETIQUETAS', novo ? '' : r.ETIQUETA_ID, '— sem etiqueta —');
-  const tipo = seletor('mp-tipo', 'TIPOS', novo ? '' : r.TIPO_ID, '— sem tipo —');
-  const unidade = seletor('mp-unidade', 'UNIDADES', novo ? '' : r.UNIDADE_ID, '— sem unidade —');
+  const cEtiqueta = seletorNovo('mp-etiqueta', 'etiqueta', novo ? '' : r.ETIQUETA_ID, '— sem etiqueta —'), etiqueta = cEtiqueta.sel;
+  const cTipo = seletorNovo('mp-tipo', 'tipo', novo ? '' : r.TIPO_ID, '— sem tipo —'), tipo = cTipo.sel;
+  const cUnidade = seletorNovo('mp-unidade', 'unidade', novo ? '' : r.UNIDADE_ID, '— sem unidade —'), unidade = cUnidade.sel;
   const abertura = h('input', { type: 'date', id: 'mp-receb', value: novo ? '' : r.DATA_RECEBIMENTO });
-  const fases = (dados.fases || []).filter(f => f.ativo || (r && f.id === r.FASE_ID));
-  const faseInicial = novo ? ((fases.find(f => f.grupo === 'EM_CURSO') || fases[0] || {}).id || '') : r.FASE_ID;
-  const fase = h('select', { id: 'mp-fase' }, fases.map(f => h('option', { value: f.id, selected: f.id === faseInicial, texto: f.rotulo + (f.ativo ? '' : ' (inativa)') })));
+  const faseInicial = novo ? ((mapaItensDe(dados, 'fase').find(f => f.ativo && f.grupo === 'EM_CURSO') || mapaItensDe(dados, 'fase').find(f => f.ativo) || {}).id || '') : r.FASE_ID;
+  const cFase = seletorNovo('mp-fase', 'fase', faseInicial, ''), fase = cFase.sel;
   const prioridade = h('select', { id: 'mp-prior' }, h('option', { value: '', texto: '— sem prioridade —' }),
     MAPA_PRIORIDADES.map(([v, t]) => h('option', { value: v, selected: !novo && r.PRIORIDADE === v, texto: t })));
   const temPrazo = h('select', { id: 'mp-tem-prazo' },
@@ -3962,13 +4012,7 @@ function mapaFormulario(dados, r, depois) {
   const acompanhantes = campoVarios({ id: 'mp-acomp', placeholder: 'Digite o nome de quem acompanha…', nomeLista: 'Acompanhantes',
     opcoes: usuarios.filter(x => x.ativo || (r && (r.ACOMPANHANTES || []).includes(x.id))).map(x => ({ id: x.id, ativo: x.ativo, rotulo: nomeSemEmail(x.rotulo) })),
     valores: novo ? [] : (r.ACOMPANHANTES || []) });
-  const docTipo = seletor('mp-doc', 'DOCS', novo ? '' : r.DOC_PENDENTE_ID, '— nenhum —');
-  const docTexto = h('input', { type: 'text', id: 'mp-doc-texto', maxlength: '300', autocomplete: 'off', value: novo ? '' : r.DOC_PENDENTE_TEXTO });
-  const proxima = h('input', { type: 'text', id: 'mp-prox', maxlength: '300', autocomplete: 'off', value: novo ? '' : r.PROXIMA_ACAO });
-  const dataProxima = h('input', { type: 'date', id: 'mp-prox-data', value: novo ? '' : r.DATA_PROXIMA_ACAO });
   const palavra = h('input', { type: 'text', id: 'mp-palavra', maxlength: '200', autocomplete: 'off', value: novo ? '' : r.PALAVRA_CHAVE });
-  const valor = h('input', { type: 'text', id: 'mp-valor', inputmode: 'decimal', autocomplete: 'off', placeholder: '0,00',
-    value: novo || r.VALOR === '' || r.VALOR === null || r.VALOR === undefined ? '' : Number(r.VALOR).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) });
   const obs = h('textarea', { id: 'mp-obs', rows: '3', maxlength: '2000' }, novo ? '' : r.OBSERVACAO);
   const salvar = h('button', { type: 'submit', class: 'botao', texto: novo ? 'Incluir no Mapa' : 'Salvar alterações' });
   let janela;
@@ -3980,20 +4024,13 @@ function mapaFormulario(dados, r, depois) {
     if (!fase.value) faltam.push('Fase');
     if (faltam.length) { erro.append(caixaAviso('Preencha: ' + faltam.join(', ') + '.')); (!sei.value.trim() ? sei : (!assunto.value.trim() ? assunto : fase)).focus(); return; }
     if (soDigitos(sei.value).length !== 19) { erro.append(caixaAviso('O Nº do SEI está incompleto. Use o formato 00000-00000000/0000-00.')); sei.focus(); return; }
-    const emCurso = (dados.fases || []).find(x => x.id === fase.value).grupo === 'EM_CURSO';
+    const emCurso = (mapaItensDe(dados, 'fase').find(x => x.id === fase.value) || {}).grupo === 'EM_CURSO';
     if (temPrazo.value === 'SIM' && !prazo.value && emCurso) { erro.append(caixaAviso('Informe a data do prazo ou escolha "Sem prazo".')); prazo.focus(); return; }
-    let valorNumero = '';
-    if (valor.value.trim()) {
-      const t = valor.value.trim().replace(/[R$\s]/g, '');
-      valorNumero = /^\d{1,3}(\.\d{3})*(,\d+)?$|^\d+(,\d+)?$/.test(t) ? Number(t.replace(/\./g, '').replace(',', '.')) : NaN;
-      if (Number.isNaN(valorNumero)) { erro.append(caixaAviso('Valor: use só números, com vírgula nos centavos. Exemplo: 1.250,00.')); valor.focus(); return; }
-    }
     const envio = {
-      NUMERO_SEI: sei.value.trim(), ASSUNTO: assunto.value.trim(), ORIGEM: origem.value.trim(), ETIQUETA_ID: etiqueta.value,
+      NUMERO_SEI: sei.value.trim(), ASSUNTO: assunto.value.trim(), ETIQUETA_ID: etiqueta.value,
       TIPO_ID: tipo.value, UNIDADE_ID: unidade.value, FASE_ID: fase.value, PRIORIDADE: prioridade.value,
       DATA_RECEBIMENTO: abertura.value, SEM_PRAZO: temPrazo.value === 'SIM' ? 'NAO' : 'SIM', PRAZO: temPrazo.value === 'SIM' ? prazo.value : '',
-      RESPONSAVEL_ID: responsavel.value, DOC_PENDENTE_ID: docTipo.value, DOC_PENDENTE_TEXTO: docTexto.value.trim(),
-      PROXIMA_ACAO: proxima.value.trim(), DATA_PROXIMA_ACAO: dataProxima.value, PALAVRA_CHAVE: palavra.value.trim(), VALOR: valorNumero,
+      RESPONSAVEL_ID: responsavel.value, PALAVRA_CHAVE: palavra.value.trim(),
       OBSERVACAO: obs.value.trim(), ACOMPANHANTES: acompanhantes.valores()
     };
     enviar(salvar, erro, 'Salvando…', async () => {
@@ -4007,21 +4044,15 @@ function mapaFormulario(dados, r, depois) {
         campoDe('mp-sei', 'Nº do processo SEI (obrigatório)', sei),
         campoDe('mp-receb', 'Data de abertura', abertura),
         campoDe('mp-assunto', 'Assunto (obrigatório)', assunto, 'inteiro'),
-        campoDe('mp-tipo', 'Tipo de processo', tipo),
-        campoDe('mp-unidade', 'Unidade responsável (SEI)', unidade),
-        campoDe('mp-fase', 'Fase (obrigatório)', fase, '', 'Só as fases "em curso" geram alerta de prazo.'),
+        campoDe('mp-tipo', 'Tipo de processo', cTipo.caixa, '', 'Não achou o tipo? Clique em Novo e crie na hora.'),
+        campoDe('mp-unidade', 'Unidade responsável (SEI)', cUnidade.caixa, '', 'Não achou a unidade? Clique em Novo.'),
+        campoDe('mp-fase', 'Fase (obrigatório)', cFase.caixa, '', 'Só as fases "em curso" geram alerta de prazo. Clique em Novo para criar outra fase.'),
         campoDe('mp-prior', 'Prioridade', prioridade),
         campoDe('mp-tem-prazo', 'Prazo', caixaPrazo, '', 'O processo em curso precisa de uma data ou da marca "Sem prazo".'),
         campoDe('mp-resp', 'Responsável', responsavel, '', 'Recebe os alertas de prazo.'),
         campoDe('mp-acomp', 'Acompanhantes', acompanhantes, 'inteiro', 'Também recebem os alertas de prazo.'),
-        campoDe('mp-etiqueta', 'Etiqueta do SEI', etiqueta, '', 'Como o processo está classificado no SEI.'),
-        campoDe('mp-origem', 'Quem pediu', origem, '', 'Pessoa ou setor que enviou o processo.'),
-        campoDe('mp-doc', 'Documento pendente', docTipo),
-        campoDe('mp-doc-texto', 'Detalhe do documento pendente', docTexto),
-        campoDe('mp-prox', 'Próxima ação', proxima),
-        campoDe('mp-prox-data', 'Data da próxima ação', dataProxima),
+        campoDe('mp-etiqueta', 'Etiqueta do SEI', cEtiqueta.caixa, '', 'Como o processo está classificado no SEI. Clique em Novo para criar outra.'),
         campoDe('mp-palavra', 'Palavra-chave', palavra),
-        campoDe('mp-valor', 'Valor (R$)', valor, '', 'Opcional.'),
         campoDe('mp-obs', 'Observação', obs, 'inteiro'))),
     h('div', { class: 'jan-pe' }, h('button', { type: 'button', class: 'botao claro', texto: 'Cancelar', onclick: () => janela.close() }), salvar));
   janela = abrirJanela(form, 'larga');
@@ -4031,17 +4062,90 @@ function mapaFormulario(dados, r, depois) {
 // Carrega o Mapa uma vez para as duas telas.
 async function mapaCarregar() { return chamar('mapa.listar', {}, { semCache: true }); }
 
+/* ---------- Relatórios do Mapa (Excel e PDF, feitos na tela com os mesmos filtros) ---------- */
+// Texto da situação do prazo (o mesmo do selo colorido da tela).
+function mapaTextoSituacao(r) {
+  switch (r.SEMAFORO) {
+    case 'VERMELHO': case 'AMARELO': case 'VERDE': return mapaTextoPrazo(r);
+    case 'SEM_PRAZO': return 'Sem prazo';
+    case 'SUSPENSO': return 'Suspenso';
+    case 'FECHADO': return r.DATA_CONCLUSAO ? 'Encerrado em ' + dataBr(r.DATA_CONCLUSAO) : 'Encerrado';
+    default: return 'Inativo';
+  }
+}
+// Colunas do relatório de processos. "pdf: false" = só entra no Excel (o PDF é uma folha A4 deitada e não comporta tudo).
+function mapaColunasLista(dados) {
+  const nomes = ids => (ids || []).map(id => mapaNomeUsuario(dados, id)).join(', ');
+  return [
+    { t: 'Prazo', f: r => r.PRAZO && r.SEM_PRAZO !== 'SIM' ? dataBr(r.PRAZO) : '—' },
+    { t: 'Situação do prazo', f: r => mapaTextoSituacao(r) },
+    { t: 'Nº do SEI', f: r => r.NUMERO_SEI },
+    { t: 'Assunto', f: r => r.ASSUNTO },
+    { t: 'Tipo de processo', f: r => mapaNomeRef(dados, 'TIPOS', r.TIPO_ID) },
+    { t: 'Unidade', f: r => mapaNomeRef(dados, 'UNIDADES', r.UNIDADE_ID) },
+    { t: 'Fase', f: r => mapaNomeFase(dados, r.FASE_ID) },
+    { t: 'Prioridade', f: r => mapaNomePrioridade(r.PRIORIDADE) },
+    { t: 'Responsável', f: r => r.RESPONSAVEL_ID ? mapaNomeUsuario(dados, r.RESPONSAVEL_ID) : 'Sem responsável' },
+    { t: 'Etiqueta do SEI', f: r => mapaNomeEtiqueta(dados, r.ETIQUETA_ID) },
+    { t: 'Acompanhantes', f: r => nomes(r.ACOMPANHANTES), pdf: false },
+    { t: 'Data de abertura', f: r => r.DATA_RECEBIMENTO ? dataBr(r.DATA_RECEBIMENTO) : '', pdf: false },
+    { t: 'Data de conclusão', f: r => r.DATA_CONCLUSAO ? dataBr(r.DATA_CONCLUSAO) : '', pdf: false },
+    { t: 'Palavra-chave', f: r => r.PALAVRA_CHAVE || '', pdf: false },
+    { t: 'Observação', f: r => r.OBSERVACAO || '', pdf: false },
+    { t: 'Cadastro', f: r => r.STATUS === 'ATIVO' ? 'Ativo' : 'Inativo', pdf: false }
+  ];
+}
+// Texto dos filtros usados na tela, para o cabeçalho do relatório.
+function mapaDescricaoFiltros(dados, f) {
+  const partes = [];
+  const fasesTxt = { ABERTAS: 'Em curso', VIVOS: 'Em curso e suspensos', SUSPENSO: 'Suspensos', ENCERRADO: 'Encerrados', TODAS: 'Todas' };
+  partes.push('Fase: ' + (fasesTxt[f.fase] || mapaNomeFase(dados, f.fase) || f.fase));
+  const prazos = { CRITICOS: 'vencidos e a vencer', VENCIDOS: 'vencidos', BREVE: 'vencem em breve', NO_PRAZO: 'no prazo', SEM_PRAZO: 'sem prazo' };
+  if (f.prazo) partes.push('Prazo: ' + prazos[f.prazo]);
+  if (f.responsavel) partes.push('Responsável: ' + (f.responsavel === 'NENHUM' ? 'sem responsável' : f.responsavel === 'MEUS' ? 'os meus' : mapaNomeUsuario(dados, f.responsavel)));
+  if (f.tipo) partes.push('Tipo: ' + (f.tipo === 'NENHUM' ? 'sem tipo' : mapaNomeRef(dados, 'TIPOS', f.tipo)));
+  if (f.unidade) partes.push('Unidade: ' + (f.unidade === 'NENHUM' ? 'sem unidade' : mapaNomeRef(dados, 'UNIDADES', f.unidade)));
+  if (f.prioridade) partes.push('Prioridade: ' + mapaNomePrioridade(f.prioridade));
+  if (f.etiqueta) partes.push('Etiqueta: ' + (f.etiqueta === 'NENHUM' ? 'sem etiqueta' : mapaNomeEtiqueta(dados, f.etiqueta)));
+  if (String(f.texto || '').trim()) partes.push('Busca: ' + String(f.texto).trim());
+  if (f.inativos) partes.push('com inativos');
+  return partes.join(' • ');
+}
+// Gera o arquivo da lista que a tela mostra agora (mesmos filtros e mesma ordem).
+function mapaBaixarLista(formato, dados, lista, descricao, alertas) {
+  const colunas = mapaColunasLista(dados).filter(c => formato === 'xlsx' || c.pdf !== false);
+  const n = lista.length;
+  return baixarTabela(formato, {
+    arquivo: alertas ? 'mapa-alertas' : 'mapa-processos', aba: alertas ? 'Alertas de prazo' : 'Processos',
+    titulo: alertas ? 'IGESDF — Mapa de processos: alertas de prazo' : 'IGESDF — Mapa de processos',
+    info: ['Filtros: ' + descricao, 'Quantidade: ' + n + (n === 1 ? ' processo' : ' processos')],
+    colunas: colunas.map(c => ({ t: c.t })), linhas: lista.map(r => colunas.map(c => c.f(r))),
+    total: ['Total: ' + n + (n === 1 ? ' processo' : ' processos')].concat(colunas.slice(1).map(() => null))
+  });
+}
+// Os dois botões de relatório que ficam no alto das telas do Mapa.
+function mapaBotoesRelatorio(aoBaixar) {
+  const excel = h('button', { type: 'button', class: 'botao claro', texto: 'Baixar Excel', disabled: true, onclick: () => aoBaixar('xlsx') });
+  const pdf = h('button', { type: 'button', class: 'botao claro', texto: 'Baixar PDF', disabled: true, onclick: () => aoBaixar('pdf') });
+  return { excel, pdf, ligar: sim => { excel.disabled = !sim; pdf.disabled = !sim; } };
+}
+function mapaTentar(formato, trabalho) {
+  try { toque(trabalho(formato)); } catch (e) { toque('Não foi possível gerar o arquivo. ' + e.message, 5000); }
+}
+
 /* ---------- Painel ---------- */
 function telaMapaPainel() {
-  let dados = null;
+  let dados = null, resumo = null;
   const caixa = h('div', {}, h('div', { class: 'painel' }, h('div', { class: 'vazio', texto: 'Carregando…' })));
+  const rel = mapaBotoesRelatorio(formato => mapaTentar(formato, f => mapaBaixarResumo(f)));
   const botoes = h('div', { class: 'acoes-cab' },
     h('button', { type: 'button', class: 'botao claro', texto: 'Meus alertas', onclick: () => janelaMeusAlertas(recarregar) }),
     h('a', { class: 'botao claro', href: '#/mapa/alertas', texto: 'Ver alertas de prazo' }),
-    h('a', { class: 'botao claro', href: '#/mapa/processos', texto: 'Ver todos os processos' }));
+    h('a', { class: 'botao claro', href: '#/mapa/processos', texto: 'Ver todos os processos' }), rel.pdf, rel.excel);
   if (pode('OPERADOR')) botoes.append(h('button', { type: 'button', class: 'botao', texto: 'Novo processo', onclick: () => mapaFormulario(dados, null, recarregar) }));
-  const bloco = h('div', {}, cabecalho('Mapa de processos', 'Veja o que vence, o que já venceu e quem cuida de cada processo.', botoes), caixa);
+  const bloco = h('div', {}, cabecalho('Mapa de processos', 'Veja o que vence, o que já venceu, em que fase está cada processo e quem cuida dele.', botoes), caixa);
 
+  const COLUNAS_QUADRO = ['Total', 'Em curso', 'Suspensos', 'Encerrados', 'Vencidos'];
   function ir_(filtro) { mapaFiltroInicial = filtro; ir('mapa/processos'); }
   // Quadro com uma linha por item e um botão que abre a lista já filtrada.
   function quadro(titulo, colunas, linhas, rotuloCol) {
@@ -4057,7 +4161,6 @@ function telaMapaPainel() {
   function desenhar() {
     const noMapa = dados.registros.filter(r => r.STATUS === 'ATIVO');
     const emCurso = noMapa.filter(r => r.GRUPO === 'EM_CURSO');
-    const vivos = noMapa.filter(r => r.GRUPO !== 'ENCERRADO');
     const suspensos = noMapa.filter(r => r.GRUPO === 'SUSPENSO');
     const encerrados = noMapa.filter(r => r.GRUPO === 'ENCERRADO');
     const vencidos = emCurso.filter(r => r.SEMAFORO === 'VERMELHO');
@@ -4065,12 +4168,10 @@ function telaMapaPainel() {
     const semPrazo = emCurso.filter(r => r.SEMAFORO === 'SEM_PRAZO');
     const ativos = ((dados.referencias || {}).USUARIOS || []);
     const semResp = emCurso.filter(r => !r.RESPONSAVEL_ID || !ativos.some(u => u.id === r.RESPONSAVEL_ID && u.ativo));
-    const alta = vivos.filter(r => r.PRIORIDADE === 'ALTA');
-    const comDocs = vivos.filter(r => r.DOC_PENDENTE_ID || r.DOC_PENDENTE_TEXTO);
-    const valorTotal = noMapa.reduce((t, r) => t + (Number(r.VALOR) || 0), 0);
+    const alta = noMapa.filter(r => r.GRUPO !== 'ENCERRADO' && r.PRIORIDADE === 'ALTA');
     const plural = (n, um, varios) => n === 1 ? um : varios;
-    const cartao = (n, nome, classe, filtro) => h('button', { type: 'button', class: 'cartao-mapa ' + classe, onclick: () => ir_(filtro), 'aria-label': n + ' ' + nome + '. Abrir a lista.' },
-      h('span', { class: 'valor', texto: String(n) }), h('span', { class: 'nome', texto: nome }));
+    const cartao = (n, nome, classe, filtro, grupo) => h('button', { type: 'button', class: 'cartao-mapa ' + classe, onclick: () => ir_(filtro), 'aria-label': n + ' ' + nome + (grupo ? ' (' + grupo + ')' : '') + '. Abrir a lista.' },
+      h('span', { class: 'valor', texto: String(n) }), h('span', { class: 'nome', texto: nome }), grupo ? h('span', { class: 'grupo', texto: grupo }) : null);
     const efetivos = (dados.alertas && dados.alertas.efetivos) || [];
     const limite = efetivos.length ? efetivos[0] : 3;
     const cartoes = h('div', { class: 'cartoes-mapa' },
@@ -4078,35 +4179,46 @@ function telaMapaPainel() {
       cartao(breve.length, 'vencem em até ' + limite + (limite === 1 ? ' dia' : ' dias'), 'amarelo', { prazo: 'BREVE' }),
       cartao(semPrazo.length, 'em curso sem prazo', '', { prazo: 'SEM_PRAZO' }),
       cartao(semResp.length, 'sem responsável', '', { responsavel: 'NENHUM' }),
-      cartao(alta.length, plural(alta.length, 'de prioridade alta', 'de prioridade alta'), '', { fase: 'VIVOS', prioridade: 'ALTA' }),
-      cartao(comDocs.length, plural(comDocs.length, 'com documento pendente', 'com documentos pendentes'), '', { fase: 'VIVOS', doc: 'COM' }),
-      cartao(suspensos.length, plural(suspensos.length, 'suspenso', 'suspensos'), '', { fase: 'SUSPENSO' }),
-      cartao(emCurso.length, plural(emCurso.length, 'processo em curso', 'processos em curso'), 'azul', {}),
-      cartao(encerrados.length, plural(encerrados.length, 'encerrado (concluído ou arquivado)', 'encerrados (concluídos ou arquivados)'), '', { fase: 'ENCERRADO' }),
-      cartao(noMapa.length, 'no Mapa, ao todo', '', { fase: 'TODAS' }),
-      valorTotal > 0 ? h('div', { class: 'cartao-mapa' }, h('span', { class: 'valor moeda', texto: moedaBr(valorTotal) }), h('span', { class: 'nome', texto: 'valor total dos processos' })) : null);
+      cartao(alta.length, 'de prioridade alta', '', { fase: 'VIVOS', prioridade: 'ALTA' }));
 
-    // por responsável
+    // Os cartões de fase seguem o cadastro: fase nova criada por qualquer usuário aparece aqui sozinha.
+    const contagemFase = new Map();
+    noMapa.forEach(r => contagemFase.set(r.FASE_ID, (contagemFase.get(r.FASE_ID) || 0) + 1));
+    const fasesVisiveis = (dados.fases || []).filter(f => f.ativo || contagemFase.get(f.id));
+    const cartoesFase = h('div', { class: 'cartoes-mapa' }, fasesVisiveis.map(f =>
+      cartao(contagemFase.get(f.id) || 0, f.rotulo, f.grupo === 'EM_CURSO' ? 'azul' : '', { fase: f.id }, MAPA_GRUPOS[f.grupo])));
+    const totais = 'Em curso: ' + emCurso.length + ' • Suspensos: ' + suspensos.length + ' • Encerrados: ' + encerrados.length + ' • Total no Mapa: ' + noMapa.length;
+
+    // Quadros: uma linha para cada tipo, unidade, etiqueta e responsável que existir nos processos.
     const grupos = (lista, chaveDe) => {
       const m = new Map();
       lista.forEach(r => {
         const k = chaveDe(r) || '';
-        const x = m.get(k) || { total: 0, vivos: 0, enc: 0, venc: 0 };
-        x.total++; if (r.GRUPO === 'ENCERRADO') x.enc++; else x.vivos++; if (r.SEMAFORO === 'VERMELHO') x.venc++;
+        const x = m.get(k) || { total: 0, emCurso: 0, susp: 0, enc: 0, venc: 0 };
+        x.total++; if (r.GRUPO === 'ENCERRADO') x.enc++; else if (r.GRUPO === 'SUSPENSO') x.susp++; else x.emCurso++;
+        if (r.SEMAFORO === 'VERMELHO') x.venc++;
         m.set(k, x);
       });
       return m;
     };
-    const porResp = grupos(noMapa, r => r.RESPONSAVEL_ID);
-    const linhasResp = [...porResp.entries()].sort((a, b) => b[1].venc - a[1].venc || b[1].vivos - a[1].vivos)
-      .map(([id, x]) => ({ nome: id ? mapaNomeUsuario(dados, id) : 'Sem responsável', valores: [x.total, x.vivos, x.enc, x.venc], filtro: { responsavel: id || 'NENHUM', fase: 'TODAS' } }));
-    const porTipo = grupos(noMapa, r => r.TIPO_ID);
-    const linhasTipo = [...porTipo.entries()].sort((a, b) => b[1].total - a[1].total)
-      .map(([id, x]) => ({ nome: id ? mapaNomeRef(dados, 'TIPOS', id) : 'Sem tipo', valores: [x.total, x.vivos, x.enc, x.venc], filtro: { tipo: id || 'NENHUM', fase: 'TODAS' } }));
-    const contagemFase = new Map();
-    noMapa.forEach(r => contagemFase.set(r.FASE_ID, (contagemFase.get(r.FASE_ID) || 0) + 1));
-    const linhasFase = (dados.fases || []).filter(f => f.ativo || contagemFase.get(f.id))
-      .map(f => ({ nome: f.rotulo + ' (' + MAPA_GRUPOS[f.grupo].toLowerCase() + ')', valores: [contagemFase.get(f.id) || 0], filtro: { fase: f.id } }));
+    const linhasDe = (chaveDe, nomeDe, semNome, filtroChave) => [...grupos(noMapa, chaveDe).entries()]
+      .sort((a, b) => b[1].venc - a[1].venc || b[1].total - a[1].total || String(nomeDe(a[0])).localeCompare(String(nomeDe(b[0])), 'pt-BR'))
+      .map(([id, x]) => ({ nome: id ? nomeDe(id) : semNome, valores: [x.total, x.emCurso, x.susp, x.enc, x.venc], filtro: { [filtroChave]: id || 'NENHUM', fase: 'TODAS' } }));
+    const linhasResp = linhasDe(r => r.RESPONSAVEL_ID, id => mapaNomeUsuario(dados, id), 'Sem responsável', 'responsavel');
+    const linhasTipo = linhasDe(r => r.TIPO_ID, id => mapaNomeRef(dados, 'TIPOS', id), 'Sem tipo', 'tipo');
+    const linhasUnidade = linhasDe(r => r.UNIDADE_ID, id => mapaNomeRef(dados, 'UNIDADES', id), 'Sem unidade', 'unidade');
+    const linhasEtiqueta = linhasDe(r => r.ETIQUETA_ID, id => mapaNomeEtiqueta(dados, id), 'Sem etiqueta', 'etiqueta');
+
+    // Dados do relatório (Excel e PDF): o mesmo resumo que a tela mostra, em uma tabela só.
+    const porFase = grupos(noMapa, r => r.FASE_ID);
+    const linhasFaseRel = fasesVisiveis.map(f => { const x = porFase.get(f.id) || { total: 0, emCurso: 0, susp: 0, enc: 0, venc: 0 };
+      return { nome: f.rotulo + ' (' + MAPA_GRUPOS[f.grupo].toLowerCase() + ')', valores: [x.total, x.emCurso, x.susp, x.enc, x.venc] }; });
+    resumo = {
+      info: ['Em curso: ' + emCurso.length + ' • Suspensos: ' + suspensos.length + ' • Encerrados: ' + encerrados.length + ' • Total no Mapa: ' + noMapa.length,
+        'Vencidos: ' + vencidos.length + ' • Vencem em até ' + limite + (limite === 1 ? ' dia: ' : ' dias: ') + breve.length + ' • Em curso sem prazo: ' + semPrazo.length + ' • Sem responsável: ' + semResp.length + ' • Prioridade alta: ' + alta.length],
+      quadros: [['Por fase', linhasFaseRel], ['Por responsável', linhasResp], ['Por tipo de processo', linhasTipo], ['Por unidade', linhasUnidade], ['Por etiqueta do SEI', linhasEtiqueta]]
+    };
+    rel.ligar(dados.registros.length > 0);
 
     // próximos vencimentos
     const proximos = emCurso.filter(r => r.DIAS !== null).sort((a, b) => a.DIAS - b.DIAS).slice(0, 10);
@@ -4122,10 +4234,23 @@ function telaMapaPainel() {
       dados.registros.length === 0 ? h('div', { class: 'painel' }, h('div', { class: 'painel-corpo' }, h('h2', { texto: 'Nenhum processo no Mapa ainda' }),
         h('p', { texto: pode('OPERADOR') ? 'Use "Novo processo" para incluir o primeiro.' : 'Quando alguém incluir processos, eles aparecem aqui.' }))) : null,
       cartoes,
+      h('section', { class: 'painel', 'aria-label': 'Processos por fase' }, h('div', { class: 'painel-corpo' }, h('h2', { texto: 'Processos por fase' }),
+        h('p', { class: 'ajuda', style: 'margin:-4px 0 12px', role: 'status', texto: totais }), cartoesFase)),
       proximos.length ? h('section', { class: 'painel', 'aria-label': 'Próximos vencimentos' }, h('div', { class: 'painel-corpo' }, h('h2', { texto: 'Próximos vencimentos' }), tabProx)) : null,
-      quadro('Por responsável', ['Total', 'Ativos', 'Encerrados', 'Vencidos'], linhasResp, 'Responsável'),
-      quadro('Por tipo de processo', ['Total', 'Ativos', 'Encerrados', 'Vencidos'], linhasTipo, 'Tipo de processo'),
-      quadro('Por fase', ['Processos'], linhasFase, 'Fase')].filter(Boolean));
+      quadro('Por responsável', COLUNAS_QUADRO, linhasResp, 'Responsável'),
+      quadro('Por tipo de processo', COLUNAS_QUADRO, linhasTipo, 'Tipo de processo'),
+      quadro('Por unidade', COLUNAS_QUADRO, linhasUnidade, 'Unidade'),
+      quadro('Por etiqueta do SEI', COLUNAS_QUADRO, linhasEtiqueta, 'Etiqueta')].filter(Boolean));
+  }
+  // Relatório do Painel: uma tabela só, com os quadros um depois do outro.
+  function mapaBaixarResumo(formato) {
+    if (!resumo) throw new Error('O Painel ainda não carregou.');
+    const linhas = [];
+    resumo.quadros.forEach(([titulo, itens]) => itens.forEach(l => linhas.push([titulo, l.nome].concat(l.valores))));
+    return baixarTabela(formato, {
+      arquivo: 'mapa-resumo', aba: 'Resumo do Mapa', titulo: 'IGESDF — Mapa de processos: resumo', info: resumo.info,
+      colunas: [{ t: 'Quadro' }, { t: 'Item' }].concat(COLUNAS_QUADRO.map(t => ({ t, tipo: 'int' }))), linhas
+    });
   }
   async function recarregar() { dados = await mapaCarregar(); desenhar(); }
   (async () => {
@@ -4140,14 +4265,16 @@ function telaMapaProcessos(modo) {
   const alertas = modo === 'alertas';
   let dados = null;
   const padrao = alertas ? { prazo: 'CRITICOS' } : {};
-  const filtro = Object.assign({ texto: '', fase: 'ABERTAS', responsavel: '', etiqueta: '', tipo: '', unidade: '', prioridade: '', doc: '', prazo: '', inativos: false }, padrao, mapaFiltroInicial || {});
+  const filtro = Object.assign({ texto: '', fase: 'ABERTAS', responsavel: '', etiqueta: '', tipo: '', unidade: '', prioridade: '', prazo: '', inativos: false }, padrao, mapaFiltroInicial || {});
   mapaFiltroInicial = null;
   const pag = paginador(() => desenharLinhas(), 25);
   const caixaLista = h('div', { class: 'painel' }, h('div', { class: 'vazio', texto: 'Carregando…' }));
+  let visiveisAtuais = [];
+  const rel = mapaBotoesRelatorio(formato => mapaTentar(formato, f => mapaBaixarLista(f, dados, visiveisAtuais, mapaDescricaoFiltros(dados, filtro), alertas)));
   const botoes = h('div', { class: 'acoes-cab' },
     h('button', { type: 'button', class: 'botao claro', texto: 'Meus alertas', onclick: () => janelaMeusAlertas(recarregar) }),
     h('a', { class: 'botao claro', href: '#/mapa/painel', texto: 'Painel' }),
-    alertas ? h('a', { class: 'botao claro', href: '#/mapa/processos', texto: 'Todos os processos' }) : h('a', { class: 'botao claro', href: '#/mapa/alertas', texto: 'Alertas de prazo' }));
+    alertas ? h('a', { class: 'botao claro', href: '#/mapa/processos', texto: 'Todos os processos' }) : h('a', { class: 'botao claro', href: '#/mapa/alertas', texto: 'Alertas de prazo' }), rel.pdf, rel.excel);
   if (pode('OPERADOR')) botoes.append(h('button', { type: 'button', class: 'botao', texto: 'Novo processo', onclick: () => mapaFormulario(dados, null, recarregar) }));
   const bloco = h('div', {}, alertas
     ? cabecalho('Alertas de prazo', 'Processos vencidos ou que vencem em breve, do mais urgente ao menos urgente.', botoes)
@@ -4168,11 +4295,10 @@ function telaMapaProcessos(modo) {
     if (filtro.responsavel === 'NENHUM') { if (r.RESPONSAVEL_ID) return false; }
     else if (filtro.responsavel === 'MEUS') { if (r.RESPONSAVEL_ID !== estado.usuario.ID && !(r.ACOMPANHANTES || []).includes(estado.usuario.ID)) return false; }
     else if (filtro.responsavel && r.RESPONSAVEL_ID !== filtro.responsavel) return false;
-    if (filtro.etiqueta && r.ETIQUETA_ID !== filtro.etiqueta) return false;
+    if (filtro.etiqueta === 'NENHUM') { if (r.ETIQUETA_ID) return false; } else if (filtro.etiqueta && r.ETIQUETA_ID !== filtro.etiqueta) return false;
     if (filtro.tipo === 'NENHUM') { if (r.TIPO_ID) return false; } else if (filtro.tipo && r.TIPO_ID !== filtro.tipo) return false;
-    if (filtro.unidade && r.UNIDADE_ID !== filtro.unidade) return false;
+    if (filtro.unidade === 'NENHUM') { if (r.UNIDADE_ID) return false; } else if (filtro.unidade && r.UNIDADE_ID !== filtro.unidade) return false;
     if (filtro.prioridade && r.PRIORIDADE !== filtro.prioridade) return false;
-    if (filtro.doc === 'COM' && !(r.DOC_PENDENTE_ID || r.DOC_PENDENTE_TEXTO)) return false;
     if (filtro.prazo === 'VENCIDOS' && r.SEMAFORO !== 'VERMELHO') return false;
     if (filtro.prazo === 'BREVE' && r.SEMAFORO !== 'AMARELO') return false;
     if (filtro.prazo === 'CRITICOS' && r.SEMAFORO !== 'VERMELHO' && r.SEMAFORO !== 'AMARELO') return false;
@@ -4181,7 +4307,7 @@ function telaMapaProcessos(modo) {
     const q = semAcento(filtro.texto).trim();
     if (!q) return true;
     const qd = soDigitos(q);
-    const alvo = [r.NUMERO_SEI, r.ASSUNTO, r.ORIGEM, r.OBSERVACAO, r.PALAVRA_CHAVE, r.PROXIMA_ACAO, mapaDocPendente(dados, r), mapaNomeUsuario(dados, r.RESPONSAVEL_ID),
+    const alvo = [r.NUMERO_SEI, r.ASSUNTO, r.OBSERVACAO, r.PALAVRA_CHAVE, mapaNomeUsuario(dados, r.RESPONSAVEL_ID), mapaNomeFase(dados, r.FASE_ID),
       mapaNomeEtiqueta(dados, r.ETIQUETA_ID), mapaNomeRef(dados, 'TIPOS', r.TIPO_ID), mapaNomeRef(dados, 'UNIDADES', r.UNIDADE_ID)].join(' ');
     return semAcento(alvo).includes(q) || (qd.length >= 3 && soDigitos(r.NUMERO_SEI).includes(qd));
   }
@@ -4215,21 +4341,17 @@ function telaMapaProcessos(modo) {
   // Linhas de detalhe sob o assunto: só aparecem as que têm conteúdo.
   function detalhes(r) {
     const tipo = mapaNomeRef(dados, 'TIPOS', r.TIPO_ID), unidade = mapaNomeRef(dados, 'UNIDADES', r.UNIDADE_ID), etq = mapaNomeEtiqueta(dados, r.ETIQUETA_ID);
-    const doc = mapaDocPendente(dados, r);
     const linhas = [
       [tipo && 'Tipo: ' + tipo, unidade && 'Unidade: ' + unidade, etq && 'Etiqueta: ' + etq].filter(Boolean).join(' • '),
-      r.ORIGEM && 'Pedido por: ' + r.ORIGEM,
       r.PRIORIDADE && r.PRIORIDADE !== 'ALTA' && 'Prioridade: ' + mapaNomePrioridade(r.PRIORIDADE),
-      doc && 'Documento pendente: ' + doc,
-      (r.PROXIMA_ACAO || r.DATA_PROXIMA_ACAO) && 'Próxima ação: ' + [r.PROXIMA_ACAO, r.DATA_PROXIMA_ACAO && '(' + dataBr(r.DATA_PROXIMA_ACAO) + ')'].filter(Boolean).join(' '),
       r.PALAVRA_CHAVE && 'Palavra-chave: ' + r.PALAVRA_CHAVE,
-      r.VALOR !== '' && r.VALOR !== null && r.VALOR !== undefined && Number(r.VALOR) > 0 && 'Valor: ' + moedaBr(r.VALOR),
       r.OBSERVACAO
     ];
     return linhas.filter(Boolean).map(t => h('div', { class: 'ajuda', texto: t }));
   }
   function desenharLinhas() {
     const visiveis = dados.registros.filter(achar).sort(ordem);
+    visiveisAtuais = visiveis; rel.ligar(visiveis.length > 0);
     const pagina = pag.fatiar(visiveis);
     corpo.replaceChildren(...pagina.map(r => {
       const resp = r.RESPONSAVEL_ID ? mapaNomeUsuario(dados, r.RESPONSAVEL_ID) : '';
@@ -4278,9 +4400,9 @@ function telaMapaProcessos(modo) {
       campoDe('mf-prazo', 'Prazo', sel('mf-prazo', 'prazo', prazos)),
       campoDe('mf-resp', 'Responsável', sel('mf-resp', 'responsavel', responsaveis)),
       campoDe('mf-tipo', 'Tipo de processo', sel('mf-tipo', 'tipo', lista('TIPOS', [['NENHUM', 'Sem tipo']]))),
-      campoDe('mf-unidade', 'Unidade', sel('mf-unidade', 'unidade', lista('UNIDADES'))),
+      campoDe('mf-unidade', 'Unidade', sel('mf-unidade', 'unidade', lista('UNIDADES', [['NENHUM', 'Sem unidade']]))),
       campoDe('mf-prior', 'Prioridade', sel('mf-prior', 'prioridade', [['', 'Todas']].concat(MAPA_PRIORIDADES))),
-      campoDe('mf-etq', 'Etiqueta', sel('mf-etq', 'etiqueta', lista('ETIQUETAS'))),
+      campoDe('mf-etq', 'Etiqueta', sel('mf-etq', 'etiqueta', lista('ETIQUETAS', [['NENHUM', 'Sem etiqueta']]))),
       pode('GESTOR') ? h('label', { class: 'marcar', for: 'mf-inativos', style: 'margin-bottom:16px' }, inativos, 'Mostrar inativos') : null);
   }
   async function recarregar() { dados = await mapaCarregar(); desenharLinhas(); }
