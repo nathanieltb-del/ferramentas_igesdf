@@ -362,6 +362,36 @@ dialog .jan-pe { display: flex; justify-content: flex-end; gap: 10px; flex-wrap:
 #envios .envio strong { display: block; }
 #envios .envio .acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 #aviso-processos { position: fixed; top: 16px; right: 16px; z-index: 60; width: min(420px, calc(100vw - 24px)); max-height: calc(100vh - 32px); overflow: auto; padding: 16px; border-radius: var(--raio); background: var(--branco); border: 2px solid var(--azul-profundo); box-shadow: 0 12px 36px rgba(10,30,45,.35); }
+/* ---- Mapa de processos ---- */
+.selo.vermelho { background: #FBE4E1; border-color: #E0A39C; color: #7F1D14; }
+.selo.amarelo { background: #FFF3C4; border-color: #E4CB63; color: #5F4A00; }
+.selo.verde { background: var(--ok-fundo); border-color: #C9D46A; color: var(--ok-texto); }
+.cartoes-mapa { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.cartao-mapa { text-align: left; font: inherit; cursor: pointer; background: var(--branco); border: 1px solid var(--linha-forte); border-radius: 8px; padding: 14px 16px; color: inherit; }
+.cartao-mapa:hover { border-color: var(--azul); background: #F4F9FC; }
+.cartao-mapa:focus-visible { outline: 3px solid rgba(68,145,193,.45); outline-offset: 2px; }
+.cartao-mapa .valor { display: block; font-size: 30px; font-weight: 700; line-height: 1.1; }
+.cartao-mapa .nome { display: block; color: var(--tinta-2); font-size: 14px; margin-top: 4px; }
+.cartao-mapa.vermelho { border-left: 6px solid #B3261E; }
+.cartao-mapa.vermelho .valor { color: #8C1D18; }
+.cartao-mapa.amarelo { border-left: 6px solid #D9A800; }
+.cartao-mapa.amarelo .valor { color: #6B5300; }
+.cartao-mapa.azul { border-left: 6px solid var(--azul); }
+.linha-prazo { display: flex; gap: 8px; flex-wrap: wrap; }
+.linha-prazo select, .linha-prazo input { flex: 1 1 140px; min-width: 0; }
+.sit-rapida { max-width: 150px; font-size: 14px; }
+.tabela-mapa td.acoes .acoes-col { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+.tabela-mapa td .sei-linha { white-space: nowrap; }
+.tabela-mapa td.acoes .acoes-col .botao { margin: 0; text-align: center; }
+.tabela-mapa td .ajuda { margin: 2px 0 0; }
+#aviso-mapa { position: fixed; right: 16px; z-index: 61; width: min(440px, calc(100vw - 24px)); max-height: calc(100vh - 32px); overflow: auto; padding: 16px; border-radius: var(--raio); background: var(--branco); border: 2px solid var(--laranja); box-shadow: 0 12px 36px rgba(10,30,45,.35); }
+#aviso-mapa h2 { margin: 0 0 6px; font-size: 1.05rem; }
+#aviso-mapa p { margin: 0 0 10px; }
+#aviso-mapa ul { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 8px; }
+#aviso-mapa li { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--linha); border-radius: 6px; }
+#aviso-mapa li.vencido { border-left: 5px solid #B3261E; }
+#aviso-mapa li em { font-style: normal; font-weight: 600; color: var(--erro-texto); }
+#aviso-mapa .acoes { display: flex; gap: 8px; flex-wrap: wrap; }
 #aviso-processos h2 { margin: 0 0 6px; font-size: 1.05rem; }
 #aviso-processos p { margin: 0 0 10px; }
 #aviso-processos ul { list-style: none; margin: 0 0 12px; padding: 0; max-height: 220px; overflow: auto; border: 1px solid var(--linha); border-radius: var(--raio); }
@@ -550,6 +580,7 @@ const ICONES = {
   sair: '<path d="M10 4H5v16h5M15 8l4 4-4 4M19 12H9"/>',
   backup: '<path d="M12 4v12M7.5 11.5L12 16l4.5-4.5"/><path d="M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/>',
   importar: '<path d="M12 16V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/>',
+  mapa: '<path d="M9 4L4 6v14l5-2 6 2 5-2V4l-5 2z"/><path d="M9 4v14M15 6v14"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   copiar: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/>',
   certo: '<path d="M5 12.5l4.5 4.5L19 7.5"/>'
@@ -580,7 +611,7 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_NUMERO = '1.7';          // vem de fonte/versao.json (um lugar só)
+const VERSAO_NUMERO = '1.8';          // vem de fonte/versao.json (um lugar só)
 const VERSAO_DATA = '17/11/2026';
 const VERSAO_TELA = 'Versão ' + VERSAO_NUMERO;
 
@@ -1002,7 +1033,7 @@ function guardarSessao(token, expiraEm) {
   estado.temporizador = setTimeout(() => encerrar('Sua sessão terminou. Entre de novo.'), Math.min(ms, 2147000000));
 }
 function limparSessao() {
-  pararAvisos();
+  pararAvisos(); pararAlertasMapa();
   esquecerMemoria();
   estado.sessao = null; estado.usuario = null;
   clearTimeout(estado.temporizador);
@@ -1951,6 +1982,10 @@ const MENU = [
   { rota: 'dashboard', nome: 'Dashboard', icone: 'dashboard' },
   { rota: 'diario', nome: 'Diário', icone: 'diario' },
   { rota: 'notas', nome: 'Notas fiscais', icone: 'notas' },
+  { rota: 'mapa', nome: 'Mapa de processos', icone: 'mapa', filhos: [
+    { rota: 'mapa/painel', nome: 'Painel' },
+    { rota: 'mapa/processos', nome: 'Processos' },
+  ] },
   { rota: 'relatorios', nome: 'Relatórios', icone: 'relatorios' },
   { rota: 'manutencao', nome: 'Manutenção', icone: 'manutencao', filhos: [
     { rota: 'manutencao/fornecedores', nome: 'Fornecedores', texto: 'CNPJ, razão social, contatos, dados bancários, CPRB e tributação.', cadastro: 'fornecedores' },
@@ -1958,6 +1993,7 @@ const MENU = [
     { rota: 'manutencao/oficinas', nome: 'Oficinas', texto: 'Códigos e nomes das oficinas.', cadastro: 'oficinas' },
     { rota: 'manutencao/centros', nome: 'Centros de custo', texto: 'Unidades e a hierarquia entre elas.', cadastro: 'centros' },
     { rota: 'manutencao/colaboradores', nome: 'Colaboradores', texto: 'Quem recebe os processos do Diário.', cadastro: 'colaboradores' },
+    { rota: 'manutencao/etiquetas', nome: 'Etiquetas do SEI', texto: 'Classificações dos processos no SEI, usadas no Mapa de processos.', cadastro: 'etiquetas' },
   ] },
   { rota: 'admin', nome: MODO_LOCAL ? 'Administração' : 'Usuários', icone: 'admin', so: 'ADMIN' }
 ].concat(MODO_LOCAL ? [] : [{ rota: 'importar', nome: 'Importar planilha', icone: 'importar', so: 'ADMIN' }, { rota: 'backup', nome: 'Backup', icone: 'backup', so: 'ADMIN' }, { rota: 'uso', nome: 'Uso do sistema', icone: 'relatorios', so: 'ADMIN' }]);
@@ -1993,7 +2029,7 @@ function pararAvisos() {
   AVISOS.vistos.clear(); AVISOS.lista = []; AVISOS.primeira = true;
   document.removeEventListener('visibilitychange', aoVoltarParaAba);
   fecharAvisoProcessos();
-  AVISOS.colaborador = ''; PUSH.ativo = false; atualizarBotaoPush();
+  AVISOS.colaborador = ''; if (!MAPAAL.ativo) PUSH.ativo = false; atualizarBotaoPush();
 }
 function aoVoltarParaAba() { if (!document.hidden) consultarAvisos(); }
 function fecharAvisoProcessos() { const a = document.getElementById('aviso-processos'); if (a) a.remove(); }
@@ -2080,7 +2116,7 @@ async function pushDesligar() {
   } catch (e) { return false; }
 }
 const MENSAGEM_PUSH = {
-  ligado: 'Pronto. Este computador vai avisar quando chegar processo, mesmo com o sistema fechado.',
+  ligado: 'Pronto. Este computador vai mostrar um aviso quando chegar processo no Diário ou quando um prazo do Mapa estiver perto, mesmo com o sistema fechado.',
   negado: 'O navegador bloqueou os avisos. Libere no cadeado ao lado do endereço e tente de novo.',
   pendente: 'Os avisos continuam desligados. Clique em "Permitir" quando o navegador perguntar.',
   'sem-suporte': 'Este navegador não permite aviso com o sistema fechado. Você ainda vê o aviso aqui na tela.',
@@ -2088,7 +2124,7 @@ const MENSAGEM_PUSH = {
 };
 function atualizarBotaoPush() {
   const b = document.getElementById('botao-push'); if (!b) return;
-  document.getElementById('area-push').hidden = !(AVISOS.ativo && AVISOS.colaborador && pushSuportado());
+  document.getElementById('area-push').hidden = !(((AVISOS.ativo && AVISOS.colaborador) || MAPAAL.ativo) && pushSuportado());
   b.textContent = PUSH.ativo ? 'Avisos neste computador: ligados' : 'Ligar avisos neste computador';
   b.setAttribute('aria-pressed', String(PUSH.ativo));
   document.getElementById('botao-push-teste').hidden = !PUSH.ativo;
@@ -2118,7 +2154,7 @@ async function aoClicarTestarPush() {
   } finally { b.disabled = false; }
 }
 // Depois do teste, confere dentro do navegador onde o aviso pode ter parado.
-const VERSAO_SW_ESPERADA = '3';
+const VERSAO_SW_ESPERADA = '4';
 async function diagnosticoDoAviso() {
   try {
     const reg = await navigator.serviceWorker.getRegistration();
@@ -2130,7 +2166,7 @@ async function diagnosticoDoAviso() {
     });
     if (versao !== VERSAO_SW_ESPERADA) return 'O navegador ainda usa uma versão antiga do arquivo do aviso (sw.js). Feche TODAS as abas do sistema, abra de novo (Ctrl+F5) e teste outra vez.';
     await new Promise(r => setTimeout(r, 3500));
-    const abertos = await reg.getNotifications({ tag: 'diario-igesdf' });
+    const abertos = await reg.getNotifications({ tag: 'aviso-igesdf' });
     if (abertos.length) return 'O navegador criou o aviso. Se ele não apareceu na tela, abra Configurações do Windows > Sistema > Notificações e ligue o seu navegador. Veja também o modo "Foco" ou "Não incomodar".';
     return 'O navegador não tem nenhum aviso aberto. Se você já viu e fechou, está tudo certo. Se não viu, me envie esta mensagem e o nome do navegador.';
   } catch (e) { return 'Não consegui conferir o aviso agora.'; }
@@ -2146,6 +2182,8 @@ function pushOuvirRecados() {
     navigator.serviceWorker.onmessage = ev => {
       const t = ev && ev.data && ev.data.tipo;
       if (t === 'push-diario') consultarAvisos();
+      else if (t === 'push-aviso') { consultarAvisos(); consultarAlertasMapa(false); }
+      else if (t === 'abrir-aviso') { consultarAvisos(); consultarAlertasMapa(false); }
       else if (t === 'abrir-diario') { consultarAvisos(); abrirDiarioDoAviso(); }
     };
   } catch (e) { /* segue */ }
@@ -2186,7 +2224,7 @@ function convidarParaAvisoDoNavegador() {
   if (document.getElementById('convite-aviso')) return;
   const fechar = lembrar => { try { if (lembrar) localStorage.setItem(CHAVE_CONVITE_AVISO, 'nao'); } catch (e) { /* segue */ } const c = document.getElementById('convite-aviso'); if (c) c.remove(); };
   const convite = h('div', { id: 'convite-aviso', class: 'aviso-toque', role: 'status', style: 'font-weight:500' },
-    h('p', { style: 'margin:0 0 8px', texto: 'Quer receber um aviso neste computador quando chegar processo para você, mesmo com o sistema fechado?' }),
+    h('p', { style: 'margin:0 0 8px', texto: 'Quer receber um aviso neste computador quando chegar processo para você ou quando um prazo estiver perto, mesmo com o sistema fechado?' }),
     h('div', { class: 'acoes', style: 'display:flex;gap:8px;flex-wrap:wrap' },
       h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Ativar o aviso', onclick: async () => {
         fechar(false);
@@ -2212,7 +2250,7 @@ function telaSistema() {
   if (!estado.usuario) { carregarUsuario(); return; }
   const u = estado.usuario;
   aquecerMemoria();
-  if (!MODO_LOCAL) iniciarAvisos();
+  if (!MODO_LOCAL) { iniciarAvisos(); iniciarAlertasMapa(); }
   const lista = h('ul');
   MENU.filter(m => !m.so || pode(m.so)).forEach(m => {
     const filhos = m.filhos ? h('ul', { class: 'sub', 'data-grupo': m.rota }, m.filhos.map(f =>
@@ -2307,6 +2345,10 @@ function desenharRota() {
     conteudo = telaDashboard();
   } else if (rota === 'diario') {
     conteudo = telaDiario();
+  } else if (rota === 'mapa' || rota === 'mapa/painel') {
+    conteudo = telaMapaPainel();
+  } else if (rota === 'mapa/processos') {
+    conteudo = telaMapaProcessos();
   } else if (rota === 'notas') {
     conteudo = telaNotas();
   } else if (rota === 'notas/nova') {
@@ -2468,7 +2510,7 @@ function campoVarios(o) {
 }
 
 // "Novo fornecedor", mas "Nova oficina".
-const novoDe = def => (def.singular === 'oficina' ? 'Nova ' : 'Novo ') + def.singular;
+const novoDe = def => (['oficina', 'etiqueta'].includes(def.singular) ? 'Nova ' : 'Novo ') + def.singular;
 
 /* =====================================================================
    FORMULÁRIO EM JANELA (serve para qualquer cadastro, a partir da "definição")
@@ -3776,6 +3818,442 @@ function telaDiario() {
   })();
   return bloco;
 }
+
+/* =====================================================================
+   MAPA DE PROCESSOS (versão 1.8)
+   Controla os processos do setor: prazo, responsável, situação e alertas.
+   - Painel: o que está vencido, o que vence em breve, o que está sem prazo ou sem responsável.
+   - Processos: lista com filtros, semáforo de prazo e cadastro.
+   - Alertas: popup ao entrar no sistema (uma vez por faixa de dias) e aviso no computador (push).
+   Os dados vêm de mapa.listar. Cada pessoa escolhe os próprios dias de alerta em "Meus alertas".
+   ===================================================================== */
+const MAPA_SITUACOES_PADRAO = [
+  { valor: 'ABERTO', rotulo: 'Aberto', aberta: true }, { valor: 'EM_ANDAMENTO', rotulo: 'Em andamento', aberta: true },
+  { valor: 'AGUARDANDO', rotulo: 'Aguardando outro setor', aberta: true }, { valor: 'CONCLUIDO', rotulo: 'Concluído', aberta: false },
+  { valor: 'ARQUIVADO', rotulo: 'Arquivado', aberta: false }
+];
+// Filtro que o Painel passa para a lista de Processos (some depois de usado).
+let mapaFiltroInicial = null;
+
+const nomeSemEmail = rotulo => String(rotulo || '').replace(/ \([^()]*\)$/, '');
+const mapaAberto = r => r.STATUS === 'ATIVO' && ['ABERTO', 'EM_ANDAMENTO', 'AGUARDANDO'].includes(r.SITUACAO);
+
+// "Venceu há 2 dias", "Vence hoje", "Vence em 3 dias". Sem prazo: "Sem prazo".
+function mapaTextoPrazo(r) {
+  if (r.DIAS === null || r.DIAS === undefined) return 'Sem prazo';
+  const n = Math.abs(r.DIAS);
+  if (r.DIAS < 0) return 'Venceu há ' + n + (n === 1 ? ' dia' : ' dias');
+  if (r.DIAS === 0) return 'Vence hoje';
+  if (r.DIAS === 1) return 'Vence amanhã';
+  return 'Vence em ' + r.DIAS + ' dias';
+}
+// Selo do semáforo. A cor ajuda, mas o texto sempre diz a mesma coisa.
+function mapaSelo(r) {
+  switch (r.SEMAFORO) {
+    case 'VERMELHO': return h('span', { class: 'selo vermelho', texto: mapaTextoPrazo(r) });
+    case 'AMARELO': return h('span', { class: 'selo amarelo', texto: mapaTextoPrazo(r) });
+    case 'VERDE': return h('span', { class: 'selo verde', texto: mapaTextoPrazo(r) });
+    case 'SEM_PRAZO': return h('span', { class: 'selo', texto: 'Sem prazo' });
+    case 'FECHADO': return h('span', { class: 'selo inativo', texto: r.DATA_CONCLUSAO ? 'Encerrado em ' + dataBr(r.DATA_CONCLUSAO) : 'Encerrado' });
+    default: return h('span', { class: 'selo inativo', texto: 'Inativo' });
+  }
+}
+function mapaNomeUsuario(dados, id) {
+  const o = ((dados.referencias || {}).USUARIOS || []).find(x => x.id === id);
+  return o ? nomeSemEmail(o.rotulo) : (id || '');
+}
+function mapaNomeEtiqueta(dados, id) {
+  const o = ((dados.referencias || {}).ETIQUETAS || []).find(x => x.id === id);
+  return o ? o.rotulo : '';
+}
+function mapaNomeSituacao(dados, v) {
+  const o = (dados.situacoes || MAPA_SITUACOES_PADRAO).find(x => x.valor === v);
+  return o ? o.rotulo : v;
+}
+
+/* ---------- Meus alertas ---------- */
+async function janelaMeusAlertas(aoSalvar) {
+  let r;
+  try { r = await chamar('alertas.obter', {}, { semCache: true }); } catch (e) { toque(e.message, 5000); return; }
+  const erro = h('div');
+  const campo = h('input', { type: 'text', id: 'al-dias', autocomplete: 'off', inputmode: 'numeric', placeholder: 'Ex.: 7, 3, 1', value: r.meus === '0' ? '0' : r.meus });
+  const texto = lista => lista.length ? lista.join(', ') + ' dias antes' : 'só no dia do prazo e quando vencer';
+  const padraoTxt = h('p', { class: 'ajuda', texto: 'Padrão do sistema: ' + texto(r.padrao) + '.' });
+  const salvar = h('button', { type: 'submit', class: 'botao', texto: 'Salvar' });
+  let janela;
+  const guardar = valor => enviar(salvar, erro, 'Salvando…', async () => {
+    await chamar('alertas.salvar', { dias: valor });
+    janela.close();
+    toque(valor === '' ? 'Voltou ao padrão do sistema.' : 'Dias de alerta salvos.');
+    if (aoSalvar) await aoSalvar();
+  });
+  let administrador = null;
+  if (pode('ADMIN')) {
+    const padrao = h('input', { type: 'text', id: 'al-padrao', autocomplete: 'off', inputmode: 'numeric', value: r.padrao.length ? r.padrao.join(', ') : '0' });
+    const erroPadrao = h('div');
+    const botaoPadrao = h('button', { type: 'button', class: 'botao claro', texto: 'Salvar o padrão do sistema' });
+    botaoPadrao.addEventListener('click', () => enviar(botaoPadrao, erroPadrao, 'Salvando…', async () => {
+      await chamar('alertas.padrao', { dias: padrao.value });
+      janela.close(); toque('Padrão do sistema salvo.'); if (aoSalvar) await aoSalvar();
+    }));
+    administrador = h('div', { class: 'campo', style: 'margin-top:18px;padding-top:14px;border-top:1px solid var(--linha)' },
+      h('label', { for: 'al-padrao', texto: 'Padrão do sistema (só o administrador muda)' }), erroPadrao, padrao,
+      h('p', { class: 'ajuda', texto: 'Vale para quem não escolheu os próprios dias. Deixe vazio para voltar a 7, 3 e 1.' }), botaoPadrao);
+  }
+  const form = h('form', { novalidate: true, onsubmit: ev => { ev.preventDefault(); guardar(campo.value.trim()); } },
+    h('div', { class: 'jan-corpo' }, h('h2', { texto: 'Meus alertas de prazo' }),
+      h('p', { class: 'ajuda-janela', texto: 'Você é avisado dos processos em que é responsável ou acompanhante. Escolha quantos dias antes do prazo quer o aviso. O sistema também avisa no dia do prazo e, depois dele, todo dia enquanto o processo estiver vencido.' }),
+      erro,
+      h('div', { class: 'campo' }, h('label', { for: 'al-dias', texto: 'Dias antes do prazo' }), campo,
+        h('p', { class: 'ajuda', texto: 'Separe por vírgula. Exemplo: 10, 5, 2. Digite 0 para ser avisado só no dia do prazo e quando vencer. Use até 8 datas, de 1 a 365 dias.' }),
+        h('p', { class: 'ajuda', role: 'status', texto: 'Hoje você recebe: ' + texto(r.efetivos) + '.' }), padraoTxt),
+      administrador),
+    h('div', { class: 'jan-pe' },
+      h('button', { type: 'button', class: 'botao claro', texto: 'Voltar ao padrão', onclick: () => guardar('') }),
+      h('button', { type: 'button', class: 'botao claro', texto: 'Cancelar', onclick: () => janela.close() }), salvar));
+  janela = abrirJanela(form);
+  campo.focus();
+}
+
+/* ---------- Formulário do processo (novo e editar) ---------- */
+function mapaFormulario(dados, r, depois) {
+  const novo = !r;
+  const erro = h('div');
+  const refs = dados.referencias || {};
+  const campoDe = (id, rotulo, entrada, extra, ajuda) => h('div', { class: 'campo' + (extra ? ' ' + extra : '') },
+    h('label', { for: id, texto: rotulo }), entrada, ajuda ? h('p', { class: 'ajuda', texto: ajuda }) : null);
+  const sei = h('input', { type: 'text', id: 'mp-sei', inputmode: 'numeric', maxlength: '22', autocomplete: 'off', placeholder: '04016-00130700/2026-57', value: novo ? '' : r.NUMERO_SEI });
+  sei.addEventListener('input', () => { const p = mascaraSei(sei.value); if (p !== sei.value) sei.value = p; });
+  const assunto = h('input', { type: 'text', id: 'mp-assunto', maxlength: '300', autocomplete: 'off', value: novo ? '' : r.ASSUNTO });
+  const origem = h('input', { type: 'text', id: 'mp-origem', maxlength: '200', autocomplete: 'off', value: novo ? '' : r.ORIGEM });
+  const etiqueta = h('select', { id: 'mp-etiqueta' }, h('option', { value: '', texto: '— sem etiqueta —' }),
+    (refs.ETIQUETAS || []).filter(x => x.ativo || (r && x.id === r.ETIQUETA_ID)).map(x => h('option', { value: x.id, selected: !novo && x.id === r.ETIQUETA_ID, texto: x.rotulo + (x.ativo ? '' : ' (inativa)') })));
+  const recebimento = h('input', { type: 'date', id: 'mp-receb', value: novo ? '' : r.DATA_RECEBIMENTO });
+  const temPrazo = h('select', { id: 'mp-tem-prazo' },
+    [['SIM', 'Tem prazo'], ['NAO', 'Sem prazo']].map(([v, t]) => h('option', { value: v, selected: v === (!novo && r.SEM_PRAZO === 'SIM' ? 'NAO' : 'SIM'), texto: t })));
+  const prazo = h('input', { type: 'date', id: 'mp-prazo', value: novo ? '' : r.PRAZO, 'aria-label': 'Data do prazo' });
+  const caixaPrazo = h('div', { class: 'linha-prazo' }, temPrazo, prazo);
+  const ajustarPrazo = () => { prazo.hidden = temPrazo.value !== 'SIM'; };
+  temPrazo.addEventListener('change', () => { ajustarPrazo(); if (!prazo.hidden) prazo.focus(); });
+  ajustarPrazo();
+  const usuarios = (refs.USUARIOS || []);
+  const responsavel = h('select', { id: 'mp-resp' }, h('option', { value: '', texto: '— sem responsável —' }),
+    usuarios.filter(x => x.ativo || (r && x.id === r.RESPONSAVEL_ID)).map(x => h('option', { value: x.id, selected: !novo && x.id === r.RESPONSAVEL_ID, texto: nomeSemEmail(x.rotulo) + (x.ativo ? '' : ' (inativo)') })));
+  const acompanhantes = campoVarios({ id: 'mp-acomp', placeholder: 'Digite o nome de quem acompanha…', nomeLista: 'Acompanhantes',
+    opcoes: usuarios.filter(x => x.ativo || (r && (r.ACOMPANHANTES || []).includes(x.id))).map(x => ({ id: x.id, ativo: x.ativo, rotulo: nomeSemEmail(x.rotulo) })),
+    valores: novo ? [] : (r.ACOMPANHANTES || []) });
+  const situacao = h('select', { id: 'mp-sit' }, (dados.situacoes || MAPA_SITUACOES_PADRAO).map(x => h('option', { value: x.valor, selected: x.valor === (novo ? 'ABERTO' : r.SITUACAO), texto: x.rotulo })));
+  const obs = h('textarea', { id: 'mp-obs', rows: '3', maxlength: '2000' }, novo ? '' : r.OBSERVACAO);
+  const salvar = h('button', { type: 'submit', class: 'botao', texto: novo ? 'Incluir no Mapa' : 'Salvar alterações' });
+  let janela;
+  const form = h('form', { novalidate: true, onsubmit: ev => {
+    ev.preventDefault(); erro.replaceChildren();
+    const faltam = [];
+    if (!sei.value.trim()) faltam.push('Nº do processo SEI');
+    if (!assunto.value.trim()) faltam.push('Assunto');
+    if (faltam.length) { erro.append(caixaAviso('Preencha: ' + faltam.join(', ') + '.')); (sei.value.trim() ? assunto : sei).focus(); return; }
+    if (soDigitos(sei.value).length !== 19) { erro.append(caixaAviso('O Nº do SEI está incompleto. Use o formato 00000-00000000/0000-00.')); sei.focus(); return; }
+    const aberta = (dados.situacoes || MAPA_SITUACOES_PADRAO).find(x => x.valor === situacao.value).aberta;
+    if (temPrazo.value === 'SIM' && !prazo.value && aberta) { erro.append(caixaAviso('Informe a data do prazo ou escolha "Sem prazo".')); prazo.focus(); return; }
+    const envio = {
+      NUMERO_SEI: sei.value.trim(), ASSUNTO: assunto.value.trim(), ORIGEM: origem.value.trim(), ETIQUETA_ID: etiqueta.value,
+      DATA_RECEBIMENTO: recebimento.value, SEM_PRAZO: temPrazo.value === 'SIM' ? 'NAO' : 'SIM', PRAZO: temPrazo.value === 'SIM' ? prazo.value : '',
+      RESPONSAVEL_ID: responsavel.value, SITUACAO: situacao.value, OBSERVACAO: obs.value.trim(), ACOMPANHANTES: acompanhantes.valores()
+    };
+    enviar(salvar, erro, 'Salvando…', async () => {
+      if (novo) await chamar('mapa.criar', { dados: envio }); else await chamar('mapa.atualizar', { ID: r.ID, dados: envio });
+      janela.close(); toque(novo ? 'Processo incluído no Mapa.' : 'Alterações salvas.');
+      if (depois) await depois();
+    });
+  } },
+    h('div', { class: 'jan-corpo' }, h('h2', { texto: novo ? 'Novo processo no Mapa' : 'Editar processo' }), erro,
+      h('div', { class: 'grade-campos' },
+        campoDe('mp-sei', 'Nº do processo SEI (obrigatório)', sei),
+        campoDe('mp-receb', 'Data de recebimento', recebimento),
+        campoDe('mp-assunto', 'Assunto (obrigatório)', assunto, 'inteiro'),
+        campoDe('mp-origem', 'Quem pediu', origem, '', 'Pessoa ou setor que enviou o processo.'),
+        campoDe('mp-etiqueta', 'Etiqueta do SEI', etiqueta, '', 'Como o processo está classificado no SEI.'),
+        campoDe('mp-tem-prazo', 'Prazo', caixaPrazo, '', 'O processo aberto precisa de uma data ou da marca "Sem prazo".'),
+        campoDe('mp-sit', 'Situação', situacao),
+        campoDe('mp-resp', 'Responsável', responsavel, '', 'Recebe os alertas de prazo.'),
+        campoDe('mp-acomp', 'Acompanhantes', acompanhantes, 'inteiro', 'Também recebem os alertas de prazo.'),
+        campoDe('mp-obs', 'Observação', obs, 'inteiro'))),
+    h('div', { class: 'jan-pe' }, h('button', { type: 'button', class: 'botao claro', texto: 'Cancelar', onclick: () => janela.close() }), salvar));
+  janela = abrirJanela(form, 'larga');
+  sei.focus();
+}
+
+// Carrega o Mapa uma vez para as duas telas.
+async function mapaCarregar() { return chamar('mapa.listar', {}, { semCache: true }); }
+
+/* ---------- Painel ---------- */
+function telaMapaPainel() {
+  let dados = null;
+  const caixa = h('div', {}, h('div', { class: 'painel' }, h('div', { class: 'vazio', texto: 'Carregando…' })));
+  const botoes = h('div', { class: 'acoes-cab' },
+    h('button', { type: 'button', class: 'botao claro', texto: 'Meus alertas', onclick: () => janelaMeusAlertas(recarregar) }),
+    h('a', { class: 'botao claro', href: '#/mapa/processos', texto: 'Ver todos os processos' }));
+  if (pode('OPERADOR')) botoes.append(h('button', { type: 'button', class: 'botao', texto: 'Novo processo', onclick: () => mapaFormulario(dados, null, recarregar) }));
+  const bloco = h('div', {}, cabecalho('Mapa de processos', 'Veja o que vence, o que já venceu e quem cuida de cada processo.', botoes), caixa);
+
+  function ir_(filtro) { mapaFiltroInicial = filtro; ir('mapa/processos'); }
+  function desenhar() {
+    const abertos = dados.registros.filter(mapaAberto);
+    const vencidos = abertos.filter(r => r.SEMAFORO === 'VERMELHO');
+    const breve = abertos.filter(r => r.SEMAFORO === 'AMARELO');
+    const semPrazo = abertos.filter(r => r.SEMAFORO === 'SEM_PRAZO');
+    const semResp = abertos.filter(r => !r.RESPONSAVEL_ID || !((dados.referencias || {}).USUARIOS || []).some(u => u.id === r.RESPONSAVEL_ID && u.ativo));
+    const cartao = (n, nome, classe, filtro) => h('button', { type: 'button', class: 'cartao-mapa ' + classe, onclick: () => ir_(filtro), 'aria-label': n + ' ' + nome + '. Abrir a lista.' },
+      h('span', { class: 'valor', texto: String(n) }), h('span', { class: 'nome', texto: nome }));
+    const efetivos = (dados.alertas && dados.alertas.efetivos) || [];
+    const limite = efetivos.length ? efetivos[0] : 3;
+    const cartoes = h('div', { class: 'cartoes-mapa' },
+      cartao(vencidos.length, vencidos.length === 1 ? 'processo vencido' : 'processos vencidos', 'vermelho', { prazo: 'VENCIDOS' }),
+      cartao(breve.length, 'vencem em até ' + limite + (limite === 1 ? ' dia' : ' dias'), 'amarelo', { prazo: 'BREVE' }),
+      cartao(semPrazo.length, 'abertos sem prazo', '', { prazo: 'SEM_PRAZO' }),
+      cartao(semResp.length, 'sem responsável', '', { responsavel: 'NENHUM' }),
+      cartao(abertos.length, abertos.length === 1 ? 'processo aberto' : 'processos abertos', 'azul', {}));
+
+    // por responsável
+    const porResp = new Map();
+    abertos.forEach(r => {
+      const k = r.RESPONSAVEL_ID || '';
+      const x = porResp.get(k) || { abertos: 0, vencidos: 0, breve: 0, semPrazo: 0 };
+      x.abertos++; if (r.SEMAFORO === 'VERMELHO') x.vencidos++; if (r.SEMAFORO === 'AMARELO') x.breve++; if (r.SEMAFORO === 'SEM_PRAZO') x.semPrazo++;
+      porResp.set(k, x);
+    });
+    const linhasResp = [...porResp.entries()].sort((a, b) => b[1].vencidos - a[1].vencidos || b[1].abertos - a[1].abertos)
+      .map(([id, x]) => h('tr', {},
+        h('td', { class: 'principal', texto: id ? mapaNomeUsuario(dados, id) : 'Sem responsável' }),
+        h('td', { 'data-rotulo': 'Abertos', texto: String(x.abertos) }), h('td', { 'data-rotulo': 'Vencidos', texto: String(x.vencidos) }),
+        h('td', { 'data-rotulo': 'Vencem em breve', texto: String(x.breve) }), h('td', { 'data-rotulo': 'Sem prazo', texto: String(x.semPrazo) }),
+        h('td', { class: 'acoes' }, h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Ver processos', 'aria-label': 'Ver os processos de ' + (id ? mapaNomeUsuario(dados, id) : 'sem responsável'), onclick: () => ir_({ responsavel: id || 'NENHUM' }) }))));
+    const tabResp = h('div', { class: 'tabela-caixa' }, h('table', { class: 'tabela-notas' },
+      h('thead', {}, h('tr', {}, ['Responsável', 'Abertos', 'Vencidos', 'Vencem em breve', 'Sem prazo'].map(t => h('th', { scope: 'col', texto: t })), h('th', { scope: 'col' }, h('span', { class: 'so-leitor', texto: 'Ações' })))),
+      h('tbody', {}, linhasResp)));
+
+    // próximos vencimentos
+    const proximos = abertos.filter(r => r.DIAS !== null).sort((a, b) => a.DIAS - b.DIAS).slice(0, 10);
+    const tabProx = h('div', { class: 'tabela-caixa' }, h('table', { class: 'tabela-notas' },
+      h('thead', {}, h('tr', {}, ['Prazo', 'Nº do SEI', 'Assunto', 'Responsável'].map(t => h('th', { scope: 'col', texto: t })))),
+      h('tbody', {}, proximos.map(r => h('tr', {},
+        h('td', { class: 'principal' }, h('div', { texto: dataBr(r.PRAZO) }), mapaSelo(r)),
+        h('td', { 'data-rotulo': 'Nº do SEI', class: 'data sei' }, h('span', { class: 'sei-linha' }, h('span', { texto: r.NUMERO_SEI }), botaoCopiarSei(r.NUMERO_SEI))),
+        h('td', { 'data-rotulo': 'Assunto', texto: r.ASSUNTO }),
+        h('td', { 'data-rotulo': 'Responsável', texto: r.RESPONSAVEL_ID ? mapaNomeUsuario(dados, r.RESPONSAVEL_ID) : 'Sem responsável' }))))));
+
+    caixa.replaceChildren(...[
+      dados.registros.length === 0 ? h('div', { class: 'painel' }, h('div', { class: 'painel-corpo' }, h('h2', { texto: 'Nenhum processo no Mapa ainda' }),
+        h('p', { texto: pode('OPERADOR') ? 'Use "Novo processo" para incluir o primeiro.' : 'Quando alguém incluir processos, eles aparecem aqui.' }))) : null,
+      cartoes,
+      proximos.length ? h('section', { class: 'painel', 'aria-label': 'Próximos vencimentos' }, h('div', { class: 'painel-corpo' }, h('h2', { texto: 'Próximos vencimentos' }), tabProx)) : null,
+      linhasResp.length ? h('section', { class: 'painel', 'aria-label': 'Processos por responsável' }, h('div', { class: 'painel-corpo' }, h('h2', { texto: 'Por responsável' }), tabResp)) : null].filter(Boolean));
+  }
+  async function recarregar() { dados = await mapaCarregar(); desenhar(); }
+  (async () => {
+    try { dados = await mapaCarregar(); desenhar(); }
+    catch (e) { caixa.replaceChildren(h('div', { class: 'painel' }, h('div', { class: 'painel-corpo' }, caixaAviso(e.message), h('button', { type: 'button', class: 'botao claro', texto: 'Tentar de novo', onclick: () => ir('mapa/painel') })))); }
+  })();
+  return bloco;
+}
+
+/* ---------- Processos ---------- */
+function telaMapaProcessos() {
+  let dados = null;
+  const filtro = Object.assign({ texto: '', situacao: 'ABERTAS', responsavel: '', etiqueta: '', prazo: '', inativos: false }, mapaFiltroInicial || {});
+  mapaFiltroInicial = null;
+  const pag = paginador(() => desenharLinhas(), 25);
+  const caixaLista = h('div', { class: 'painel' }, h('div', { class: 'vazio', texto: 'Carregando…' }));
+  const botoes = h('div', { class: 'acoes-cab' },
+    h('button', { type: 'button', class: 'botao claro', texto: 'Meus alertas', onclick: () => janelaMeusAlertas(recarregar) }),
+    h('a', { class: 'botao claro', href: '#/mapa/painel', texto: 'Painel' }));
+  if (pode('OPERADOR')) botoes.append(h('button', { type: 'button', class: 'botao', texto: 'Novo processo', onclick: () => mapaFormulario(dados, null, recarregar) }));
+  const bloco = h('div', {}, cabecalho('Processos do Mapa', 'Todos os processos sob a gestão do setor, com prazo e responsável.', botoes), caixaLista);
+  const corpo = h('tbody'), vazio = h('div', { class: 'vazio', hidden: true }), contagem = h('span', { class: 'contagem', role: 'status' });
+  const tabela = h('div', { class: 'tabela-caixa' }, h('table', { class: 'tabela-notas tabela-mapa' },
+    h('thead', {}, h('tr', {}, ['Prazo', 'Nº do SEI', 'Assunto', 'Responsável', 'Situação'].map(t => h('th', { scope: 'col', texto: t })), h('th', { scope: 'col' }, h('span', { class: 'so-leitor', texto: 'Ações' })))), corpo));
+
+  function achar(r) {
+    if (!filtro.inativos && r.STATUS !== 'ATIVO') return false;
+    if (filtro.situacao === 'ABERTAS') { if (!['ABERTO', 'EM_ANDAMENTO', 'AGUARDANDO'].includes(r.SITUACAO)) return false; }
+    else if (filtro.situacao !== 'TODAS' && r.SITUACAO !== filtro.situacao) return false;
+    if (filtro.responsavel === 'NENHUM') { if (r.RESPONSAVEL_ID) return false; }
+    else if (filtro.responsavel === 'MEUS') { if (r.RESPONSAVEL_ID !== estado.usuario.ID && !(r.ACOMPANHANTES || []).includes(estado.usuario.ID)) return false; }
+    else if (filtro.responsavel && r.RESPONSAVEL_ID !== filtro.responsavel) return false;
+    if (filtro.etiqueta && r.ETIQUETA_ID !== filtro.etiqueta) return false;
+    if (filtro.prazo === 'VENCIDOS' && r.SEMAFORO !== 'VERMELHO') return false;
+    if (filtro.prazo === 'BREVE' && r.SEMAFORO !== 'AMARELO') return false;
+    if (filtro.prazo === 'NO_PRAZO' && r.SEMAFORO !== 'VERDE') return false;
+    if (filtro.prazo === 'SEM_PRAZO' && r.SEMAFORO !== 'SEM_PRAZO') return false;
+    const q = semAcento(filtro.texto).trim();
+    if (!q) return true;
+    const qd = soDigitos(q);
+    const alvo = [r.NUMERO_SEI, r.ASSUNTO, r.ORIGEM, r.OBSERVACAO, mapaNomeUsuario(dados, r.RESPONSAVEL_ID), mapaNomeEtiqueta(dados, r.ETIQUETA_ID)].join(' ');
+    return semAcento(alvo).includes(q) || (qd.length >= 3 && soDigitos(r.NUMERO_SEI).includes(qd));
+  }
+  // Abertos com prazo (o mais urgente primeiro), abertos sem prazo, encerrados (mais recentes primeiro), inativos.
+  function ordem(a, b) {
+    const grupo = r => r.STATUS !== 'ATIVO' ? 3 : !mapaAberto(r) ? 2 : r.DIAS === null ? 1 : 0;
+    const ga = grupo(a), gb = grupo(b);
+    if (ga !== gb) return ga - gb;
+    if (ga === 0) return a.DIAS - b.DIAS || a.NUMERO_SEI.localeCompare(b.NUMERO_SEI);
+    if (ga === 2) return String(b.DATA_CONCLUSAO).localeCompare(String(a.DATA_CONCLUSAO));
+    return a.NUMERO_SEI.localeCompare(b.NUMERO_SEI);
+  }
+  function mudarSituacao(r, nova, seletor) {
+    if (nova === r.SITUACAO) return;
+    seletor.disabled = true;
+    chamar('mapa.situacao', { ID: r.ID, SITUACAO: nova })
+      .then(() => { toque('Situação alterada.'); return recarregar(); })
+      .catch(e => { toque(e.message, 6000); seletor.value = r.SITUACAO; seletor.disabled = false; });
+  }
+  function inativar(r) {
+    janelaConfirmar('Inativar o processo ' + r.NUMERO_SEI + '?', 'O processo sai da lista e deixa de gerar alertas, mas continua guardado. Para vê-lo ou reativá-lo, marque "Mostrar inativos".', 'Inativar', true,
+      async () => { await chamar('mapa.inativar', { ID: r.ID }); toque('Processo inativado.'); await recarregar(); });
+  }
+  function reativar(r) {
+    chamar('mapa.reativar', { ID: r.ID }).then(() => { toque('Processo reativado.'); return recarregar(); }).catch(e => toque(e.message, 6000));
+  }
+  function desenharLinhas() {
+    const visiveis = dados.registros.filter(achar).sort(ordem);
+    const pagina = pag.fatiar(visiveis);
+    corpo.replaceChildren(...pagina.map(r => {
+      const resp = r.RESPONSAVEL_ID ? mapaNomeUsuario(dados, r.RESPONSAVEL_ID) : '';
+      const acomp = (r.ACOMPANHANTES || []).map(id => mapaNomeUsuario(dados, id));
+      const seletor = pode('OPERADOR') && r.STATUS === 'ATIVO'
+        ? h('select', { class: 'sit-rapida', 'aria-label': 'Situação do processo ' + r.NUMERO_SEI, onchange: ev => mudarSituacao(r, ev.target.value, ev.target) },
+          (dados.situacoes || MAPA_SITUACOES_PADRAO).map(x => h('option', { value: x.valor, selected: x.valor === r.SITUACAO, texto: x.rotulo })))
+        : h('span', { texto: mapaNomeSituacao(dados, r.SITUACAO) });
+      return h('tr', { class: r.STATUS === 'ATIVO' ? '' : 'linha-inativa' },
+        h('td', { class: 'principal data' }, h('div', { texto: r.PRAZO && r.SEM_PRAZO !== 'SIM' ? dataBr(r.PRAZO) : '—' }), mapaSelo(r)),
+        h('td', { 'data-rotulo': 'Nº do SEI', class: 'data sei' }, h('span', { class: 'sei-linha' }, h('span', { texto: r.NUMERO_SEI }), botaoCopiarSei(r.NUMERO_SEI))),
+        h('td', { 'data-rotulo': 'Assunto' }, h('div', { texto: r.ASSUNTO }), mapaNomeEtiqueta(dados, r.ETIQUETA_ID) ? h('div', { class: 'ajuda', texto: 'Etiqueta: ' + mapaNomeEtiqueta(dados, r.ETIQUETA_ID) }) : null, r.ORIGEM ? h('div', { class: 'ajuda', texto: 'Pedido por: ' + r.ORIGEM }) : null, r.OBSERVACAO ? h('div', { class: 'ajuda', texto: r.OBSERVACAO }) : null),
+        h('td', { 'data-rotulo': 'Responsável' }, h('div', { texto: resp || 'Sem responsável' }), acomp.length ? h('div', { class: 'ajuda', texto: 'Acompanham: ' + acomp.join(', ') }) : null),
+        h('td', { 'data-rotulo': 'Situação' }, seletor),
+        h('td', { class: 'acoes' }, h('div', { class: 'acoes-col' },
+          pode('OPERADOR') && r.STATUS === 'ATIVO' ? h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Editar', 'aria-label': 'Editar o processo ' + r.NUMERO_SEI, onclick: () => mapaFormulario(dados, r, recarregar) }) : null,
+          pode('GESTOR') && r.STATUS === 'ATIVO' ? h('button', { type: 'button', class: 'botao perigo pequeno', texto: 'Inativar', 'aria-label': 'Inativar o processo ' + r.NUMERO_SEI, onclick: () => inativar(r) }) : null,
+          pode('GESTOR') && r.STATUS !== 'ATIVO' ? h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Reativar', 'aria-label': 'Reativar o processo ' + r.NUMERO_SEI, onclick: () => reativar(r) }) : null)));
+    }));
+    tabela.hidden = visiveis.length === 0; vazio.hidden = visiveis.length !== 0;
+    vazio.textContent = dados.registros.length === 0 ? 'Nenhum processo no Mapa ainda.' + (pode('OPERADOR') ? ' Use "Novo processo".' : '') : 'Nenhum processo com este filtro.';
+    contagem.textContent = visiveis.length + (visiveis.length === 1 ? ' processo' : ' processos');
+  }
+  function montarFiltros() {
+    const aoMudar = () => { pag.inicio(); desenharLinhas(); };
+    const campoDe = (id, rotulo, entrada, classe) => h('div', { class: 'campo ' + (classe || '') }, h('label', { for: id, texto: rotulo }), entrada);
+    const sel = (id, chave, opcoes) => h('select', { id, onchange: ev => { filtro[chave] = ev.target.value; aoMudar(); } }, opcoes.map(([v, t]) => h('option', { value: v, selected: v === filtro[chave], texto: t })));
+    const usuarios = ((dados.referencias || {}).USUARIOS || []);
+    const situacoes = [['ABERTAS', 'Em aberto'], ['TODAS', 'Todas']].concat((dados.situacoes || MAPA_SITUACOES_PADRAO).map(x => [x.valor, x.rotulo]));
+    const responsaveis = [['', 'Todos'], ['MEUS', 'Os meus (responsável ou acompanhante)'], ['NENHUM', 'Sem responsável']].concat(usuarios.map(u => [u.id, nomeSemEmail(u.rotulo) + (u.ativo ? '' : ' (inativo)')]));
+    const etiquetas = [['', 'Todas']].concat(((dados.referencias || {}).ETIQUETAS || []).map(e => [e.id, e.rotulo]));
+    const prazos = [['', 'Todos'], ['VENCIDOS', 'Vencidos'], ['BREVE', 'Vencem em breve'], ['NO_PRAZO', 'No prazo'], ['SEM_PRAZO', 'Sem prazo']];
+    const busca = h('input', { type: 'search', id: 'mf-busca', autocomplete: 'off', placeholder: 'SEI, assunto, quem pediu, responsável ou etiqueta…', value: filtro.texto });
+    busca.addEventListener('input', () => { filtro.texto = busca.value; aoMudar(); });
+    const inativos = h('input', { type: 'checkbox', id: 'mf-inativos', checked: filtro.inativos ? true : null });
+    inativos.addEventListener('change', () => { filtro.inativos = inativos.checked; aoMudar(); });
+    return h('div', { class: 'filtros-rel' },
+      campoDe('mf-busca', 'Pesquisar', busca, 'largo'),
+      campoDe('mf-sit', 'Situação', sel('mf-sit', 'situacao', situacoes)),
+      campoDe('mf-prazo', 'Prazo', sel('mf-prazo', 'prazo', prazos)),
+      campoDe('mf-resp', 'Responsável', sel('mf-resp', 'responsavel', responsaveis)),
+      campoDe('mf-etq', 'Etiqueta', sel('mf-etq', 'etiqueta', etiquetas)),
+      pode('GESTOR') ? h('label', { class: 'marcar', for: 'mf-inativos', style: 'margin-bottom:16px' }, inativos, 'Mostrar inativos') : null);
+  }
+  async function recarregar() { dados = await mapaCarregar(); desenharLinhas(); }
+  (async () => {
+    try {
+      dados = await mapaCarregar();
+      caixaLista.replaceChildren(montarFiltros(), h('div', { class: 'filtros', style: 'border-top:1px solid var(--linha)' }, contagem), tabela, vazio, pag.el);
+      desenharLinhas();
+    } catch (e) {
+      caixaLista.replaceChildren(h('div', { class: 'painel-corpo' }, caixaAviso(e.message), h('button', { type: 'button', class: 'botao claro', texto: 'Tentar de novo', onclick: () => ir('mapa/processos') })));
+    }
+  })();
+  return bloco;
+}
+
+/* ---------- Alertas: popup ao entrar, ao voltar para a aba e quando chega o aviso do computador ---------- */
+const MAPAAL = { ativo: false, relogio: null, consultando: false, ultima: 0, atraso: null };
+const INTERVALO_MAPA_MS = 30 * 60 * 1000;     // confere de 30 em 30 minutos com o sistema aberto
+const MINIMO_VOLTA_MAPA_MS = 10 * 60 * 1000;  // ao voltar para a aba, só confere se faz mais de 10 minutos
+const chaveSemResp = () => 'igesdf.mapa-sem-resp.' + ((estado.usuario && estado.usuario.ID) || '');
+
+function iniciarAlertasMapa() {
+  if (MAPAAL.ativo) return;
+  MAPAAL.ativo = true; MAPAAL.ultima = 0;
+  pushOuvirRecados();
+  atualizarBotaoPush(); pushSincronizarEmSilencio();
+  MAPAAL.atraso = setTimeout(() => consultarAlertasMapa(true).then(convidarParaAvisoDoNavegador), 1500);
+  MAPAAL.relogio = setInterval(() => consultarAlertasMapa(false), INTERVALO_MAPA_MS);
+  document.addEventListener('visibilitychange', aoVoltarMapa);
+}
+function pararAlertasMapa() {
+  MAPAAL.ativo = false; clearInterval(MAPAAL.relogio); clearTimeout(MAPAAL.atraso); MAPAAL.relogio = null;
+  document.removeEventListener('visibilitychange', aoVoltarMapa);
+  fecharAvisoMapa();
+}
+function aoVoltarMapa() { if (!document.hidden && Date.now() - MAPAAL.ultima > MINIMO_VOLTA_MAPA_MS) consultarAlertasMapa(false); }
+function fecharAvisoMapa() { const a = document.getElementById('aviso-mapa'); if (a) a.remove(); }
+
+async function consultarAlertasMapa(naEntrada) {
+  if (!MAPAAL.ativo || !estado.sessao || MAPAAL.consultando) return;
+  MAPAAL.consultando = true;
+  try {
+    const r = await chamarDireto('mapa.meus', {}, { discreto: true });
+    if (!MAPAAL.ativo) return;
+    MAPAAL.ultima = Date.now();
+    let semResp = 0;
+    try {
+      if (r.semResponsavel > 0 && localStorage.getItem(chaveSemResp()) !== r.hoje) semResp = r.semResponsavel;
+    } catch (e) { semResp = r.semResponsavel > 0 && naEntrada ? r.semResponsavel : 0; }
+    if (!r.itens.length && !semResp) return;
+    mostrarAvisoMapa(r, semResp);
+    avisoDoNavegadorMapa(r);
+    if (semResp) { try { localStorage.setItem(chaveSemResp(), r.hoje); } catch (e) { /* segue */ } }
+    if (r.itens.length) { try { await chamarDireto('mapa.visto', { ids: r.itens.map(x => x.ID) }, { discreto: true }); } catch (e) { /* já foi mostrado; na próxima volta o sistema tenta de novo */ } }
+  } catch (e) {
+    /* sem internet ou servidor ocupado: fica quieto e tenta na próxima vez */
+  } finally { MAPAAL.consultando = false; }
+}
+
+function mapaTextoItem(x) {
+  if (x.NOVO && x.DIAS === null) return 'Novo para você' + (x.PAPEL === 'RESPONSAVEL' ? ' (você é o responsável).' : ' (você acompanha).');
+  const base = mapaTextoPrazo({ DIAS: x.DIAS });
+  return (x.NOVO ? 'Novo para você • ' : '') + base + (x.PRAZO ? ' (' + dataBr(x.PRAZO) + ')' : '');
+}
+
+function mostrarAvisoMapa(r, semResp) {
+  fecharAvisoMapa();
+  const n = r.total;
+  const titulo = n ? (n === 1 ? '1 processo pede a sua atenção' : n + ' processos pedem a sua atenção') : 'Processos sem responsável';
+  const outro = document.getElementById('aviso-processos');
+  const fechar = () => fecharAvisoMapa();
+  const caixa = h('section', { id: 'aviso-mapa', role: 'alert', 'aria-live': 'assertive', 'aria-labelledby': 'aviso-mapa-titulo', style: 'top:' + (outro ? outro.offsetHeight + 32 : 16) + 'px' },
+    h('h2', { id: 'aviso-mapa-titulo', texto: titulo }),
+    n ? h('p', { class: 'ajuda', texto: 'Mapa de processos. Prazos dos processos em que você é responsável ou acompanhante.' }) : null,
+    n ? h('ul', { 'aria-label': 'Processos com prazo' }, r.itens.map(x => h('li', { class: x.DIAS !== null && x.DIAS < 0 ? 'vencido' : '' },
+      h('strong', { texto: x.NUMERO_SEI }), h('span', { texto: x.ASSUNTO }), h('em', { texto: mapaTextoItem(x) })))) : null,
+    r.total > r.itens.length ? h('p', { class: 'ajuda', texto: 'Mostrando os ' + r.itens.length + ' mais urgentes. Veja todos no Mapa.' }) : null,
+    semResp ? h('p', { texto: (semResp === 1 ? '1 processo aberto está sem responsável.' : semResp + ' processos abertos estão sem responsável.') }) : null,
+    h('div', { class: 'acoes' },
+      h('button', { type: 'button', class: 'botao', texto: semResp && !n ? 'Ver processos sem responsável' : 'Abrir o Mapa', onclick: () => {
+        fechar(); mapaFiltroInicial = semResp && !n ? { responsavel: 'NENHUM' } : { responsavel: 'MEUS' };
+        if (rotaAtual() === 'mapa/processos') desenharRota(); else ir('mapa/processos');
+      } }),
+      h('button', { type: 'button', class: 'botao claro', texto: 'Fechar', onclick: fechar })));
+  document.body.append(caixa);
+}
+
+// Aviso do sistema (fora da página): só aparece se a pessoa permitiu e a aba não está à vista.
+function avisoDoNavegadorMapa(r) {
+  try {
+    if (!r.itens.length || !('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
+    const aviso = new Notification('IGESDF • Mapa de processos', { body: r.total === 1 ? '1 processo pede a sua atenção.' : r.total + ' processos pedem a sua atenção.', tag: 'aviso-igesdf' });
+    aviso.onclick = () => { window.focus(); ir('mapa/processos'); aviso.close(); };
+  } catch (e) { /* o navegador não deixou: a tela já avisou */ }
+}
+
 
 /* =====================================================================
    RELATÓRIOS
