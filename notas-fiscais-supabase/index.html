@@ -580,8 +580,8 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_NUMERO = '1.6';          // vem de fonte/versao.json (um lugar só)
-const VERSAO_DATA = '16/11/2026';
+const VERSAO_NUMERO = '1.7';          // vem de fonte/versao.json (um lugar só)
+const VERSAO_DATA = '17/11/2026';
 const VERSAO_TELA = 'Versão ' + VERSAO_NUMERO;
 
 class ErroApi extends Error {
@@ -2514,14 +2514,17 @@ function abrirFormulario(o) {
     return caixa;
   });
 
-  // Fornecedor: um ou mais serviços, obrigatório.
+  // Fornecedor e oficina: um ou mais serviços, obrigatório.
   let servicosCampo = null;
-  if (def.chave === 'fornecedores') {
+  const deQuem = def.chave === 'oficinas' ? 'da oficina' : 'do fornecedor';
+  if (def.chave === 'fornecedores' || def.chave === 'oficinas') {
     servicosCampo = campoVarios({ id: 'c-SERVICOS', opcoes: (o.referencias || {}).SERVICOS || [], valores: novo ? [] : (r.SERVICOS || []),
-      placeholder: 'Digite o código ou a descrição do serviço…', nomeLista: 'Serviços do fornecedor' });
+      placeholder: 'Digite o código ou a descrição do serviço…', nomeLista: 'Serviços ' + deQuem });
     grupos.push(h('div', { class: 'campo inteiro' },
-      h('label', { for: 'c-SERVICOS' }, 'Serviços do fornecedor', h('span', { class: 'obrig', texto: ' (obrigatório)' })),
-      servicosCampo, h('p', { class: 'ajuda', texto: 'Escolha um ou mais. Ao registrar a nota, só dá para usar estes serviços.' })));
+      h('label', { for: 'c-SERVICOS' }, 'Serviços ' + deQuem, h('span', { class: 'obrig', texto: ' (obrigatório)' })),
+      servicosCampo, h('p', { class: 'ajuda', texto: def.chave === 'oficinas'
+        ? 'Escolha um ou mais. Ao registrar a nota, a oficina só aparece para estes serviços.'
+        : 'Escolha um ou mais. Ao registrar a nota, só dá para usar estes serviços.' })));
   }
 
   // Mostra ou esconde os campos que dependem de outro.
@@ -2554,7 +2557,7 @@ function abrirFormulario(o) {
     }
     if (servicosCampo) {
       envio.SERVICOS = servicosCampo.valores();
-      if (!envio.SERVICOS.length) { erro.append(caixaAviso('Escolha pelo menos um serviço para o fornecedor.')); servicosCampo.entrada.focus(); return; }
+      if (!envio.SERVICOS.length) { erro.append(caixaAviso('Escolha pelo menos um serviço ' + deQuem + '.')); servicosCampo.entrada.focus(); return; }
     }
     enviar(salvar, erro, 'Salvando…', async () => {
       await o.salvar(envio);
@@ -2609,7 +2612,7 @@ function telaCadastro(chave) {
       const v = r[a.campo];
       if ((a.igual !== undefined && v === a.igual) || (a.naoVazio && v) || (a.vazio && !v)) lista.push(h('span', { class: 'selo alerta', texto: a.texto, title: a.naoVazio ? String(v) : '' }));
     });
-    if (chave === 'fornecedores' && !(r.SERVICOS || []).length) lista.push(h('span', { class: 'selo alerta', texto: 'Falta o serviço', title: 'Edite o fornecedor e escolha pelo menos um serviço.' }));
+    if ((chave === 'fornecedores' || chave === 'oficinas') && !(r.SERVICOS || []).length) lista.push(h('span', { class: 'selo alerta', texto: 'Falta o serviço', title: 'Edite o cadastro e escolha pelo menos um serviço.' }));
     return h('span', { class: 'selos' }, lista);
   }
 
@@ -2629,7 +2632,7 @@ function telaCadastro(chave) {
     const corpoTabela = h('tbody');
     const vazio = h('div', { class: 'vazio', hidden: true });
     const tabela = h('div', { class: 'tabela-caixa' }, h('table', {},
-      h('thead', {}, h('tr', {}, colunas.map(c => h('th', { scope: 'col', texto: c.rotulo })), chave === 'fornecedores' ? h('th', { scope: 'col', texto: 'Serviços' }) : null, h('th', { scope: 'col', texto: 'Situação' }), h('th', { scope: 'col' }, h('span', { class: 'so-leitor', texto: 'Ações' })))),
+      h('thead', {}, h('tr', {}, colunas.map(c => h('th', { scope: 'col', texto: c.rotulo })), (chave === 'fornecedores' || chave === 'oficinas') ? h('th', { scope: 'col', texto: 'Serviços' }) : null, h('th', { scope: 'col', texto: 'Situação' }), h('th', { scope: 'col' }, h('span', { class: 'so-leitor', texto: 'Ações' })))),
       corpoTabela));
 
     atualizarLinhas = function () {
@@ -2639,7 +2642,7 @@ function telaCadastro(chave) {
         const nome = mostrarValor(colunas[0], r[colunas[0].n], dados.referencias);
         return h('tr', {},
           colunas.map((c, i) => h('td', { class: i === 0 ? 'principal' : '', 'data-rotulo': i === 0 ? null : c.rotulo, texto: mostrarValor(c, r[c.n], dados.referencias) })),
-          chave === 'fornecedores' ? h('td', { 'data-rotulo': 'Serviços', texto: (r.SERVICOS || []).map(id => { const x = (dados.referencias.SERVICOS || []).find(y => y.id === id); return x ? String(x.rotulo).split(' — ')[0] : id; }).join(', ') || '—' }) : null,
+          (chave === 'fornecedores' || chave === 'oficinas') ? h('td', { 'data-rotulo': 'Serviços', texto: (r.SERVICOS || []).map(id => { const x = (dados.referencias.SERVICOS || []).find(y => y.id === id); return x ? String(x.rotulo).split(' — ')[0] : id; }).join(', ') || '—' }) : null,
           h('td', { 'data-rotulo': 'Situação' }, selosDe(r)),
           h('td', { class: 'acoes' },
             chave === 'fornecedores' ? h('button', { type: 'button', class: 'botao claro pequeno', texto: 'Tributação', 'aria-label': 'Tributação de ' + nome, onclick: () => ir('manutencao/fornecedores/' + r.ID) }) : null,
@@ -3279,7 +3282,7 @@ function telaNotaForm(id) {
     const sel = campos.OFICINA_ID; if (!sel) return;
     const sid = campos.SERVICO_ID.value, atual = sel.value || sel.dataset.pref || '';
     sel.dataset.pref = '';
-    const lista = (ref.OFICINA_ID || []).filter(o => sid && o.servico === sid && (o.ativo || o.id === atual));
+    const lista = (ref.OFICINA_ID || []).filter(o => sid && (o.servicos || [o.servico]).includes(sid) && (o.ativo || o.id === atual));
     sel.replaceChildren(...[h('option', { value: '', texto: !sid ? '— escolha primeiro o serviço —' : (lista.length ? '— escolha —' : '— este serviço não tem oficina —') })]
       .concat(lista.map(o => h('option', { value: o.id, texto: o.rotulo + (o.ativo ? '' : ' (inativo)') }))));
     sel.disabled = !sid;
