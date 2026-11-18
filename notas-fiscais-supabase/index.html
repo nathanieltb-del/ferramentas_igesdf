@@ -376,6 +376,9 @@ dialog .jan-pe { display: flex; justify-content: flex-end; gap: 10px; flex-wrap:
 .campo-com-novo { display: flex; gap: 8px; align-items: stretch; }
 .campo-com-novo select { flex: 1 1 auto; min-width: 0; }
 .campo .campo-com-novo .botao.pequeno { margin-top: 0; align-self: stretch; flex: 0 0 auto; }
+.faixa-online { display: flex; align-items: baseline; gap: 8px; padding: 6px clamp(16px, 2.4vw, 40px); background: #EEF4F8; border-bottom: 1px solid var(--linha); color: var(--tinta-2); font-size: .88rem; overflow-wrap: anywhere; }
+.faixa-online[hidden] { display: none; }
+.faixa-online-ponto { flex: none; width: 9px; height: 9px; border-radius: 50%; background: #2E7D32; transform: translateY(-1px); }
 .cartao-mapa.fixo { cursor: default; }
 .cartao-mapa.fixo:hover { border-color: var(--linha-forte); background: var(--branco); }
 .painel-selo { display: block; margin-top: 8px; }
@@ -636,7 +639,7 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_NUMERO = '2.1';          // vem de fonte/versao.json (um lugar só)
+const VERSAO_NUMERO = '2.2';          // vem de fonte/versao.json (um lugar só)
 const VERSAO_DATA = '18/11/2026';
 const VERSAO_TELA = 'Versão ' + VERSAO_NUMERO;
 
@@ -1058,7 +1061,7 @@ function guardarSessao(token, expiraEm) {
   estado.temporizador = setTimeout(() => encerrar('Sua sessão terminou. Entre de novo.'), Math.min(ms, 2147000000));
 }
 function limparSessao() {
-  pararAvisos(); pararAlertasMapa();
+  pararAvisos(); pararAlertasMapa(); pararPresenca();
   esquecerMemoria();
   estado.sessao = null; estado.usuario = null;
   clearTimeout(estado.temporizador);
@@ -2287,11 +2290,14 @@ function telaSistema() {
     h('button', { type: 'button', class: 'botao claro pequeno', 'aria-controls': 'menu', 'aria-expanded': 'false', id: 'abrir-menu', onclick: alternarMenu }, icone('menu'), 'Menu'));
 
   raiz.replaceChildren(h('div', { class: 'sistema' }, menu,
-    h('div', { class: 'principal' }, celular, h('main', { class: 'conteudo', id: 'conteudo' }))));
+    h('div', { class: 'principal' }, celular,
+      h('div', { class: 'faixa-online', id: 'faixa-online', role: 'status', 'aria-live': 'polite', hidden: true }, h('span', { class: 'faixa-online-ponto', 'aria-hidden': 'true' }), h('span', { class: 'faixa-online-texto' })),
+      h('main', { class: 'conteudo', id: 'conteudo' }))));
   const antiga = document.getElementById('cobertura'); if (antiga) antiga.remove();
   document.body.append(h('div', { class: 'cobertura', id: 'cobertura', hidden: true, onclick: fecharMenu }));
   desenharRota();
   atualizarEstadoDados();
+  iniciarPresenca();
 }
 
 function alternarMenu() {
@@ -4694,6 +4700,46 @@ function telaPainelAdmin() {
   carregar();
   return tela;
 }
+
+
+/* =====================================================================
+   QUEM ESTÁ ONLINE (faixa no alto de todas as telas, para todos os perfis)
+   Mostra só a quantidade e os nomes. Atualiza ao abrir e a cada 2 minutos,
+   e só quando a aba está visível. Cada chamada também avisa o servidor de que a pessoa está ativa.
+   ===================================================================== */
+const PRESENCA_INTERVALO_MS = 120000;
+let presencaTemporizador = null;
+
+function textoOnline(r) {
+  if (!r || !r.total) return '';
+  if (r.total === 1) return 'Só você está online agora.';
+  return r.total + ' pessoas online agora: ' + r.nomes.join(', ') + '.';
+}
+
+async function atualizarPresenca() {
+  const faixa = document.getElementById('faixa-online');
+  if (!faixa || !estado.usuario || document.visibilityState !== 'visible') return;
+  try {
+    const r = await chamar('online.listar', {});
+    const texto = textoOnline(r);
+    const alvo = faixa.querySelector('.faixa-online-texto');
+    if (texto && alvo.textContent !== texto) alvo.textContent = texto;
+    faixa.hidden = !texto;
+  } catch (e) { /* a lista de online nunca atrapalha o trabalho: se falhar, tenta de novo no próximo ciclo */ }
+}
+
+function pararPresenca() {
+  if (presencaTemporizador) { clearInterval(presencaTemporizador); presencaTemporizador = null; }
+}
+
+function iniciarPresenca() {
+  pararPresenca();
+  if (MODO_LOCAL) return;
+  atualizarPresenca();
+  presencaTemporizador = setInterval(atualizarPresenca, PRESENCA_INTERVALO_MS);
+}
+
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') atualizarPresenca(); });
 
 
 /* =====================================================================
