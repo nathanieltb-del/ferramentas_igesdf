@@ -376,6 +376,23 @@ dialog .jan-pe { display: flex; justify-content: flex-end; gap: 10px; flex-wrap:
 .campo-com-novo { display: flex; gap: 8px; align-items: stretch; }
 .campo-com-novo select { flex: 1 1 auto; min-width: 0; }
 .campo .campo-com-novo .botao.pequeno { margin-top: 0; align-self: stretch; flex: 0 0 auto; }
+.cartao-mapa.fixo { cursor: default; }
+.cartao-mapa.fixo:hover { border-color: var(--linha-forte); background: var(--branco); }
+.painel-selo { display: block; margin-top: 8px; }
+.painel-linhas { margin-top: 8px; }
+.painel-linha { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 8px 0; border-top: 1px solid var(--linha); }
+.painel-linha:first-child { border-top: 0; }
+.painel-rotulo { flex: 1 1 260px; color: var(--tinta-2); }
+.painel-valor { flex: 1 1 200px; font-weight: 600; overflow-wrap: anywhere; }
+.painel-barra { height: 14px; background: #E8EEF2; border-radius: 7px; overflow: hidden; margin: 6px 0 4px; }
+.painel-barra-cheia { display: block; height: 100%; background: #1F5A7F; border-radius: 7px; min-width: 6px; }
+.painel-barra-cheia.atencao { background: #D9A800; }
+.painel-barra-cheia.erro { background: #B3261E; }
+.painel-grafico-caixa { margin: 8px 0; max-width: 720px; }
+.painel-grafico { width: 100%; height: auto; display: block; }
+.painel-detalhes { margin-top: 10px; }
+.painel-detalhes summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.painel-detalhes summary:focus-visible { outline: 3px solid rgba(68,145,193,.45); outline-offset: 2px; }
 .cartao-mapa.vermelho { border-left: 6px solid #B3261E; }
 .cartao-mapa.vermelho .valor { color: #8C1D18; }
 .cartao-mapa.amarelo { border-left: 6px solid #D9A800; }
@@ -619,8 +636,8 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_NUMERO = '2.0';          // vem de fonte/versao.json (um lugar só)
-const VERSAO_DATA = '17/11/2026';
+const VERSAO_NUMERO = '2.1';          // vem de fonte/versao.json (um lugar só)
+const VERSAO_DATA = '18/11/2026';
 const VERSAO_TELA = 'Versão ' + VERSAO_NUMERO;
 
 class ErroApi extends Error {
@@ -1216,36 +1233,6 @@ function janelaVelocidade() {
     h('div', { class: 'jan-corpo' }, h('h2', { texto: 'Velocidade do sistema' }),
       h('p', { texto: 'Aperte "Medir agora" e me conte os tempos que aparecerem.' }), h('div', { style: 'margin:12px 0' }, medir), resultado, historico),
     h('div', { class: 'jan-pe' }, h('button', { type: 'button', class: 'botao', texto: 'Fechar', onclick: () => janela.close() }))));
-}
-
-/* =====================================================================
-   USO DO SISTEMA (só o administrador): quanto tempo o servidor trabalhou por dia
-   ===================================================================== */
-function telaUso() {
-  const area = h('div', { class: 'painel' }, h('div', { class: 'vazio', texto: 'Carregando…' }));
-  const min = seg => (seg / 60).toFixed(1).replace('.', ',') + ' min';
-  const seg1 = seg => seg.toFixed(1).replace('.', ',') + ' s';
-  (async () => {
-    try {
-      const r = await chamar('uso.resumo', {}, { semCache: true });
-      if (!r.dias.length) { area.replaceChildren(h('div', { class: 'vazio', texto: 'Ainda não há uso registrado. Os números aparecem depois dos primeiros pedidos.' })); return; }
-      const ref = r.referenciaMin * 60;
-      area.replaceChildren(
-        h('div', { class: 'painel-corpo' },
-          h('p', { texto: 'Tempo que o servidor gastou trabalhando para o sistema em cada dia. Não inclui a viagem pela internet.' }),
-          h('p', { class: 'ajuda', style: 'margin-top:6px', texto: 'Use esta tabela para ver se algum tipo de pedido está lento: compare a coluna "Mais lento" com os demais dias.' })),
-        h('div', { class: 'tabela-caixa' }, h('table', {},
-          h('thead', {}, h('tr', {}, ['Dia', 'Pedidos', 'Tempo de trabalho', 'Mais lento', 'Erros', 'O que mais gasta'].map(t => h('th', { scope: 'col', texto: t })))),
-          h('tbody', {}, r.dias.map(d => h('tr', {},
-            h('td', { class: 'principal', style: 'white-space:nowrap', texto: d.data.split('-').reverse().join('/') }),
-            h('td', { texto: String(d.pedidos) }),
-            h('td', { texto: min(d.segundos) }),
-            h('td', { texto: seg1(d.maiorSegundos) }),
-            h('td', { texto: String(d.erros) }),
-            h('td', { texto: d.acoes.slice(0, 3).map(a => a.acao + ' (' + a.pedidos + ' x, ' + seg1(a.segundos) + ')').join('; ') })))))));
-    } catch (e) { area.replaceChildren(h('div', { class: 'painel-corpo' }, caixaAviso(e.message))); }
-  })();
-  return h('div', {}, cabecalho('Uso do sistema', 'Acompanhe quanto tempo o sistema trabalha por dia.'), area);
 }
 
 /* =====================================================================
@@ -2006,9 +1993,9 @@ const MENU = [
     { rota: 'manutencao/tipos_processo', nome: 'Tipos de processo', texto: 'Tipos de processo do Mapa. Operadores criam tipos na hora, no formulário; aqui você renomeia ou inativa.', cadastro: 'tipos_processo' },
     { rota: 'manutencao/unidades_sei', nome: 'Unidades do SEI', texto: 'Unidades responsáveis no SEI. Operadores criam na hora, no formulário; aqui você renomeia ou inativa.', cadastro: 'unidades_sei' },
     { rota: 'manutencao/fases_processo', nome: 'Fases do Mapa', texto: 'Fases dos processos e o grupo de cada uma (em curso, suspenso ou encerrado). Operadores criam fases na hora, no formulário.', cadastro: 'fases_processo' },
-  ] },
+  ].concat(MODO_LOCAL ? [] : [{ rota: 'manutencao/painel', nome: 'Painel do administrador', texto: 'Espaço do banco, backup, avisos do Mapa e uso do sistema. Só o administrador vê.', so: 'ADMIN' }]) },
   { rota: 'admin', nome: MODO_LOCAL ? 'Administração' : 'Usuários', icone: 'admin', so: 'ADMIN' }
-].concat(MODO_LOCAL ? [] : [{ rota: 'importar', nome: 'Importar planilha', icone: 'importar', so: 'ADMIN' }, { rota: 'backup', nome: 'Backup', icone: 'backup', so: 'ADMIN' }, { rota: 'uso', nome: 'Uso do sistema', icone: 'relatorios', so: 'ADMIN' }]);
+].concat(MODO_LOCAL ? [] : [{ rota: 'importar', nome: 'Importar planilha', icone: 'importar', so: 'ADMIN' }, { rota: 'backup', nome: 'Backup', icone: 'backup', so: 'ADMIN' }]);
 
 function rotaAtual() {
   return location.hash.replace(/^#\/?/, '') || 'dashboard';
@@ -2265,7 +2252,7 @@ function telaSistema() {
   if (!MODO_LOCAL) { iniciarAvisos(); iniciarAlertasMapa(); }
   const lista = h('ul');
   MENU.filter(m => !m.so || pode(m.so)).forEach(m => {
-    const filhos = m.filhos ? h('ul', { class: 'sub', 'data-grupo': m.rota }, m.filhos.map(f =>
+    const filhos = m.filhos ? h('ul', { class: 'sub', 'data-grupo': m.rota }, m.filhos.filter(f => !f.so || pode(f.so)).map(f =>
       h('li', {}, h('a', { class: 'item', href: '#/' + f.rota, 'data-rota': f.rota, texto: f.nome, onclick: fecharMenu })))) : null;
     lista.append(h('li', {},
       h('a', { class: 'item', href: '#/' + (m.filhos ? m.filhos[0].rota.split('/')[0] : m.rota), 'data-rota': m.rota, onclick: fecharMenu }, icone(m.icone), m.nome),
@@ -2341,6 +2328,8 @@ function desenharRota() {
     conteudo = telaTributacaoGeral();
   } else if (rota === 'manutencao/fornecedores/regras' || rota === 'manutencao/regras') {
     ir('manutencao/fornecedores/tributacao'); return;
+  } else if (rota === 'manutencao/painel') {
+    conteudo = MODO_LOCAL ? semPermissao() : (pode('ADMIN') ? telaPainelAdmin() : semPermissao());
   } else if (itemMenu && itemMenu.cadastro) {
     conteudo = telaCadastro(itemMenu.cadastro);
   } else if (rota === 'admin') {
@@ -2350,7 +2339,7 @@ function desenharRota() {
   } else if (rota === 'backup') {
     conteudo = MODO_LOCAL ? semPermissao() : (pode('ADMIN') ? telaBackup() : semPermissao());
   } else if (rota === 'uso') {
-    conteudo = MODO_LOCAL ? semPermissao() : (pode('ADMIN') ? telaUso() : semPermissao());
+    ir('manutencao/painel'); return;
   } else if (rota === 'relatorios') {
     conteudo = telaRelatorios();
   } else if (rota === 'dashboard') {
@@ -2388,7 +2377,7 @@ function cabecalho(titulo, texto, acao) {
 function telaManutencao() {
   const grupo = MENU.find(m => m.rota === 'manutencao');
   return h('div', {}, cabecalho('Manutenção', 'Cadastros que o sistema usa nas notas fiscais.'),
-    h('div', { class: 'atalhos' }, grupo.filhos.map(f =>
+    h('div', { class: 'atalhos' }, grupo.filhos.filter(f => !f.so || pode(f.so)).map(f =>
       h('a', { class: 'atalho', href: '#/' + f.rota }, h('strong', { texto: f.nome }), h('span', { texto: f.etapa ? 'Chega na Etapa ' + f.etapa : f.texto })))));
 }
 
@@ -4497,6 +4486,213 @@ function avisoDoNavegadorMapa(r) {
     const aviso = new Notification('IGESDF • Mapa de processos', { body: r.total === 1 ? '1 processo pede a sua atenção.' : r.total + ' processos pedem a sua atenção.', tag: 'aviso-igesdf' });
     aviso.onclick = () => { window.focus(); ir('mapa/processos'); aviso.close(); };
   } catch (e) { /* o navegador não deixou: a tela já avisou */ }
+}
+
+
+/* =====================================================================
+   PAINEL DO ADMINISTRADOR (só o administrador, dentro de Manutenção)
+   Espaço do banco, registros, backup, rotina de avisos do Mapa e uso por dia.
+   Os dados vêm de uma só ação: painel.resumo.
+   ===================================================================== */
+const PAINEL_ROTULOS = {
+  IMPOSTOS: 'Impostos', FORNECEDORES: 'Fornecedores', SERVICOS: 'Serviços', OFICINAS: 'Oficinas', OFICINA_SERVICOS: 'Serviços por oficina',
+  CENTROS_CUSTO: 'Centros de custo', COLABORADORES: 'Colaboradores', USUARIOS: 'Usuários', CONTRATOS: 'Contratos',
+  FORNECEDOR_SERVICOS: 'Serviços por fornecedor', FORNECEDOR_IMPOSTOS: 'Impostos por fornecedor', DIARIO: 'Diário',
+  NOTAS_FISCAIS: 'Notas fiscais', NOTA_IMPOSTOS: 'Impostos das notas', ETIQUETAS_SEI: 'Etiquetas do SEI', TIPOS_PROCESSO: 'Tipos de processo',
+  UNIDADES_SEI: 'Unidades do SEI', FASES_PROCESSO: 'Fases do Mapa', MAPA_PROCESSOS: 'Processos do Mapa', MAPA_ACOMPANHANTES: 'Acompanhantes do Mapa',
+  MAPA_AVISOS: 'Avisos do Mapa', HISTORICO: 'Histórico de alterações', LOGS: 'Registro de eventos', USO: 'Uso por dia', USO_ACAO: 'Uso por tipo de pedido',
+  CONFIG: 'Configurações do sistema', VERSOES: 'Controle de versões', SESSOES_REVOGADAS: 'Sessões encerradas', TENTATIVAS: 'Tentativas de entrada'
+};
+
+function painelRotulo(nome) {
+  const n = String(nome || '').toUpperCase();
+  if (PAINEL_ROTULOS[n]) return PAINEL_ROTULOS[n];
+  const t = n.toLowerCase().replace(/_/g, ' ');
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+// 13 MB, 488 kB: número com vírgula e a unidade certa.
+function painelTamanho(bytes) {
+  const b = Number(bytes) || 0;
+  if (b >= 1048576) return (b / 1048576).toFixed(1).replace('.', ',') + ' MB';
+  return Math.max(0, Math.round(b / 1024)) + ' kB';
+}
+
+function painelNumero(n) { return Number(n || 0).toLocaleString('pt-BR'); }
+
+// 'AAAA-MM-DD HH:MM:SS' -> '18/11/2026 às 08:00'
+function painelDataHora(t) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(t || ''));
+  return m ? m[3] + '/' + m[2] + '/' + m[1] + ' às ' + m[4] + ':' + m[5] : '';
+}
+
+function painelHa(dias) {
+  if (dias === null || dias === undefined) return '';
+  if (dias <= 0) return 'hoje';
+  if (dias === 1) return 'ontem';
+  return 'há ' + dias + ' dias';
+}
+
+// '0 11 * * 1-5' (hora do servidor, UTC) -> 'segunda a sexta, às 08:00 (Brasília)'
+function painelAgendaTexto(cron) {
+  const m = /^(\d{1,2}) (\d{1,2}) \* \* 1-5$/.exec(String(cron || '').trim());
+  if (!m) return 'agenda: ' + cron;
+  const hora = (Number(m[2]) + 21) % 24;
+  return 'segunda a sexta, às ' + String(hora).padStart(2, '0') + ':' + m[1].padStart(2, '0') + ' (Brasília)';
+}
+
+function painelSelo(situacao, texto) {
+  const cor = situacao === 'ok' ? 'verde' : situacao === 'atencao' ? 'amarelo' : 'vermelho';
+  const marca = situacao === 'ok' ? '✓ ' : situacao === 'atencao' ? '! ' : '✕ ';
+  return h('span', { class: 'selo ' + cor, texto: marca + texto });
+}
+
+// Gráfico de barras dos pedidos por dia (SVG). A tabela logo abaixo traz os mesmos números em texto.
+function painelGraficoUso(dias) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const estreito = window.innerWidth < 600;   // no celular: menos dias e desenho menor, para o texto continuar legível
+  const lista = dias.slice(0, estreito ? 7 : 14).reverse();
+  const maior = Math.max(1, ...lista.map(d => d.pedidos));
+  const L = estreito ? 340 : 640, A = estreito ? 200 : 190, esq = 34, topo = 22, base = A - 30, util = L - esq - 8;
+  const passo = util / lista.length, larg = Math.min(34, passo * 0.62);
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + L + ' ' + A);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('class', 'painel-grafico');
+  svg.setAttribute('aria-label', 'Pedidos por dia, dos ' + lista.length + ' últimos dias com uso. Os mesmos números estão na tabela abaixo.');
+  const no = (tag, atrib, texto) => {
+    const e = document.createElementNS(NS, tag);
+    Object.entries(atrib).forEach(([k, v]) => e.setAttribute(k, v));
+    if (texto !== undefined) e.textContent = texto;
+    svg.append(e);
+    return e;
+  };
+  // linhas de apoio (0, metade e máximo)
+  [0, 0.5, 1].forEach(f => {
+    const y = base - (base - topo) * f;
+    no('line', { x1: esq, x2: L - 8, y1: y, y2: y, stroke: f === 0 ? '#9AAAB5' : '#E3E9ED', 'stroke-width': 1 });
+    no('text', { x: esq - 6, y: y + 4, 'text-anchor': 'end', 'font-size': 11, fill: '#4A5A66' }, String(Math.round(maior * f)));
+  });
+  lista.forEach((d, i) => {
+    const x = esq + passo * i + (passo - larg) / 2;
+    const alt = (base - topo) * d.pedidos / maior;
+    no('rect', { x, y: base - alt, width: larg, height: Math.max(alt, d.pedidos ? 2 : 0), rx: 2, fill: d.erros ? '#B3261E' : '#1F5A7F' });
+    no('text', { x: x + larg / 2, y: base - alt - 5, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 600, fill: '#1B2A33' }, String(d.pedidos));
+    if (lista.length <= 8 || i % 2 === lista.length % 2) {
+      no('text', { x: x + larg / 2, y: base + 16, 'text-anchor': 'middle', 'font-size': 11, fill: '#4A5A66' }, d.data.substring(8, 10) + '/' + d.data.substring(5, 7));
+    }
+  });
+  return svg;
+}
+
+function telaPainelAdmin() {
+  const area = h('div', {}, h('div', { class: 'painel' }, h('div', { class: 'vazio', texto: 'Carregando…' })));
+  const atualizar = h('button', { type: 'button', class: 'botao claro', texto: 'Atualizar' });
+  const tela = h('div', {}, cabecalho('Painel do administrador', 'Veja o espaço do banco, o backup, os avisos do Mapa e o uso do sistema. Só o administrador abre esta tela.', h('div', { class: 'acoes-cab' }, atualizar)), area);
+
+  function cartao(valor, nome, detalhe, selo) {
+    return h('div', { class: 'cartao-mapa fixo' },
+      h('span', { class: 'valor', texto: valor }), h('span', { class: 'nome', texto: nome }),
+      detalhe ? h('span', { class: 'grupo', texto: detalhe }) : null,
+      selo ? h('span', { class: 'painel-selo' }, selo) : null);
+  }
+  function linha(rotulo, valor) {
+    return h('div', { class: 'painel-linha' }, h('span', { class: 'painel-rotulo', texto: rotulo }), h('span', { class: 'painel-valor', texto: valor }));
+  }
+  function secao(titulo, ...corpo) {
+    return h('section', { class: 'painel', 'aria-label': titulo }, h('div', { class: 'painel-corpo' }, h('h2', { texto: titulo }), ...corpo));
+  }
+
+  function desenhar(r) {
+    const b = r.banco, bk = r.backup, ro = r.rotina;
+    const pct = b.percentual;
+    const situEspaco = pct >= 85 ? 'erro' : pct >= 60 ? 'atencao' : 'ok';
+    const textoEspaco = pct >= 85 ? 'Quase cheio' : pct >= 60 ? 'Passando de 60%' : 'Com folga';
+    const ultimoBackup = [bk.ultimoManual, bk.ultimoAutomatico].sort().pop();
+    const situBackup = bk.atrasado ? 'erro' : 'ok';
+    const situRotina = ro.atrasada ? (ro.ultima ? 'atencao' : 'erro') : 'ok';
+
+    const cartoes = h('div', { class: 'cartoes-mapa' },
+      cartao(painelTamanho(b.bytes), 'Espaço usado no banco', 'de ' + painelNumero(b.limiteMb) + ' MB (' + String(pct).replace('.', ',') + '%)', painelSelo(situEspaco, textoEspaco)),
+      cartao(painelNumero(r.totalRegistros), 'Registros no sistema', 'Soma de todas as tabelas de dados'),
+      cartao(ultimoBackup ? painelHa(bk.dias) : 'Nunca', 'Último backup', ultimoBackup ? painelDataHora(ultimoBackup) : 'Nenhum backup registrado', painelSelo(situBackup, bk.atrasado ? 'Atrasado' : 'Em dia')),
+      cartao(ro.ultima ? painelHa(ro.dias) : 'Ainda não', 'Aviso diário do Mapa rodou', ro.ultima ? painelDataHora(ro.ultima) : 'Nenhuma execução registrada', painelSelo(situRotina, ro.atrasada ? (ro.ultima ? 'Atrasado' : 'Sem execução') : 'Em dia')));
+
+    // 1) espaço
+    const barra = h('div', { class: 'painel-barra', role: 'img', 'aria-label': 'Espaço usado: ' + String(pct).replace('.', ',') + ' por cento do limite' },
+      h('span', { class: 'painel-barra-cheia ' + situEspaco, style: 'width:' + Math.max(1, Math.min(100, pct)) + '%' }));
+    const maiores = b.tabelas.slice(0, 8);
+    const tabelaEspaco = h('div', { class: 'tabela-caixa' }, h('table', { class: 'tabela-notas' },
+      h('thead', {}, h('tr', {}, ['Assunto', 'Registros', 'Espaço'].map(t => h('th', { scope: 'col', texto: t })))),
+      h('tbody', {}, maiores.map(t => h('tr', {},
+        h('td', { class: 'principal', texto: painelRotulo(t.nome) }),
+        h('td', { 'data-rotulo': 'Registros', texto: t.linhas === null ? '-' : painelNumero(t.linhas) }),
+        h('td', { 'data-rotulo': 'Espaço', texto: painelTamanho(t.bytes) }))))));
+    const espaco = secao('Espaço do banco', barra,
+      h('div', { class: 'painel-linhas' },
+        linha('Usado agora', painelTamanho(b.bytes) + ' de ' + painelNumero(b.limiteMb) + ' MB'),
+        linha('Dados do sistema (notas, processos, histórico)', painelTamanho(b.bytesDados)),
+        linha('Parte interna do Supabase (não cresce com os registros)', painelTamanho(b.bytesSistema))),
+      pct >= 60 ? caixaAviso(pct >= 85 ? 'O banco está quase cheio. Peça ajuda para limpar o histórico antigo ou trocar de plano.' : 'O banco passou de 60% do limite. Fique de olho e planeje a limpeza do histórico ou a troca de plano.', pct >= 85 ? '' : 'info') : null,
+      h('p', { class: 'ajuda', style: 'margin:12px 0 8px', texto: 'As 8 tabelas que mais ocupam espaço:' }), tabelaEspaco,
+      h('p', { class: 'ajuda', style: 'margin-top:8px', texto: 'O limite de ' + painelNumero(b.limiteMb) + ' MB é o do plano gratuito do Supabase. Ao trocar de plano, peça para ajustar o limite aqui.' }));
+
+    // 2) backup
+    const backup = secao('Backup',
+      bk.atrasado ? caixaAviso(ultimoBackup ? 'O último backup tem mais de ' + bk.limiteDias + ' dias. Baixe um agora na tela Backup e confira a rotina automática.' : 'Ainda não há backup registrado. Baixe um agora na tela Backup.') : caixaAviso('O backup está em dia (último há ' + (bk.dias === 0 ? 'menos de 1 dia' : bk.dias + ' dia(s)') + ').', 'ok'),
+      h('div', { class: 'painel-linhas' },
+        linha('Último backup baixado à mão', bk.ultimoManual ? painelDataHora(bk.ultimoManual) : 'Nenhum'),
+        linha('Último backup automático (Google Drive)', bk.ultimoAutomatico ? painelDataHora(bk.ultimoAutomatico) : 'Nenhum'),
+        linha('Chave da rotina automática', bk.temChave ? 'Criada' : 'Ainda não criada')),
+      h('p', { style: 'margin-top:12px' }, h('a', { class: 'botao claro', href: '#/backup', texto: 'Abrir a tela Backup' })));
+
+    // 3) rotina de avisos
+    const agenda = ro.agendamento
+      ? (ro.agendamento.ativa ? 'Ativa: ' + painelAgendaTexto(ro.agendamento.cron) : 'Desligada (a tarefa existe, mas está inativa)')
+      : 'Não consegui ler o agendamento do banco. A última execução acima mostra se a rotina roda.';
+    const rotina = secao('Aviso diário de prazos do Mapa',
+      ro.atrasada ? caixaAviso(ro.ultima ? 'A rotina não roda há mais de ' + ro.limiteDias + ' dias. Os avisos no computador podem ter parado.' : 'A rotina ainda não rodou. Ela deve rodar de segunda a sexta, às 8h.') : null,
+      h('div', { class: 'painel-linhas' },
+        linha('Última execução registrada', ro.ultima ? painelDataHora(ro.ultima) + ' (' + painelHa(ro.dias) + ')' : 'Nenhuma'),
+        linha('Resultado', ro.resumo || '-'),
+        linha('Agendamento', agenda),
+        ro.execucao ? linha('Última chamada do agendador', painelDataHora(ro.execucao.quando) + ' - ' + (ro.execucao.situacao === 'succeeded' ? 'concluída' : ro.execucao.situacao)) : null,
+        linha('Chave da rotina', ro.temChave ? 'Criada' : 'Ainda não criada')));
+
+    // 4) uso por dia
+    let uso;
+    if (!r.uso.length) uso = secao('Uso por dia', h('div', { class: 'vazio', texto: 'Ainda não há uso registrado. Os números aparecem depois dos primeiros pedidos.' }));
+    else {
+      const comErro = r.uso.slice(0, window.innerWidth < 600 ? 7 : 14).filter(d => d.erros > 0);
+      const min = seg => (seg / 60).toFixed(1).replace('.', ',') + ' min';
+      const seg1 = seg => seg.toFixed(1).replace('.', ',') + ' s';
+      uso = secao('Uso por dia',
+        h('p', { texto: 'Quantos pedidos o sistema atendeu em cada dia. Barra vermelha: o dia teve erros.' }),
+        h('div', { class: 'painel-grafico-caixa' }, painelGraficoUso(r.uso)),
+        h('p', { class: 'ajuda', texto: comErro.length ? 'Dias com erro: ' + comErro.map(d => d.data.split('-').reverse().slice(0, 2).join('/') + ' (' + d.erros + ')').join(', ') + '.' : 'Nenhum erro nos últimos dias.' }),
+        h('details', { class: 'painel-detalhes' }, h('summary', { texto: 'Ver a tabela de cada dia' }),
+          h('p', { class: 'ajuda', style: 'margin:6px 0', texto: 'O tempo de trabalho é quanto o servidor gastou atendendo os pedidos. Não inclui a viagem pela internet.' }),
+          h('div', { class: 'tabela-caixa' }, h('table', {},
+            h('thead', {}, h('tr', {}, ['Dia', 'Pedidos', 'Tempo de trabalho', 'Mais lento', 'Erros', 'O que mais gasta'].map(t => h('th', { scope: 'col', texto: t })))),
+            h('tbody', {}, r.uso.map(d => h('tr', {},
+              h('td', { class: 'principal', style: 'white-space:nowrap', texto: d.data.split('-').reverse().join('/') }),
+              h('td', { texto: String(d.pedidos) }), h('td', { texto: min(d.segundos) }), h('td', { texto: seg1(d.maiorSegundos) }), h('td', { texto: String(d.erros) }),
+              h('td', { texto: d.acoes.slice(0, 3).map(a => a.acao + ' (' + a.pedidos + ' x, ' + seg1(a.segundos) + ')').join('; ') }))))))));
+    }
+    area.replaceChildren(cartoes, espaco, backup, rotina, uso, h('p', { class: 'ajuda', style: 'margin-top:12px', texto: 'Atualizado em ' + painelDataHora(r.agora) + '.' }));
+  }
+
+  async function carregar() {
+    atualizar.disabled = true;
+    try {
+      const r = await chamar('painel.resumo', {}, { semCache: true });
+      desenhar(r);
+    } catch (e) { area.replaceChildren(h('div', { class: 'painel-corpo' }, caixaAviso(e.message))); }
+    atualizar.disabled = false;
+  }
+  atualizar.addEventListener('click', carregar);
+  carregar();
+  return tela;
 }
 
 
