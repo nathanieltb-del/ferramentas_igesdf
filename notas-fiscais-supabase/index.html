@@ -217,6 +217,8 @@ th.num { text-align: right; }
 .filtros-notas .busca { flex: 1 1 280px; }
 .marcar { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--tinta-2); }
 .filtros .marcar input { width: 18px; min-height: 18px; height: 18px; padding: 0; }
+.campo .marcar { font-size: 15px; font-weight: 600; color: var(--tinta); }
+.campo .marcar input { width: 18px; min-height: 18px; height: 18px; padding: 0; flex: none; }
 .totais { display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 10px 16px; background: #F8FAFB; border-bottom: 1px solid var(--linha); font-size: 15px; }
 .nota-totais { color: var(--tinta-2); font-size: 14px; }
 .selos-topo { margin: -10px 0 16px; }
@@ -639,8 +641,8 @@ function toque(mensagem, ms) {
    para frases que qualquer pessoa entende.
    --------------------------------------------------------------------- */
 const MODO_LOCAL = false;
-const VERSAO_NUMERO = '2.2';          // vem de fonte/versao.json (um lugar só)
-const VERSAO_DATA = '18/11/2026';
+const VERSAO_NUMERO = '2.3';          // vem de fonte/versao.json (um lugar só)
+const VERSAO_DATA = '19/11/2026';
 const VERSAO_TELA = 'Versão ' + VERSAO_NUMERO;
 
 class ErroApi extends Error {
@@ -3563,7 +3565,7 @@ function telaDiario() {
 
   /* ----- registrar ----- */
   const erroRegistro = h('div'), dicaFila = h('p', { class: 'ajuda', role: 'status', 'aria-live': 'polite' }), painelQuem = h('div', { class: 'painel-corpo' });
-  let campoSei, campoData, campoForn, campoColab;
+  let campoSei, campoData, campoForn, campoColab, campoRateio, campoRepet, blocoRepet;
 
   function opcoesFornecedor() {
     return ((dados.referencias || {}).FORNECEDOR_ID || []).map(o => ({ id: o.id, ativo: o.ativo, rotulo: razaoDe(o.rotulo) + ' — ' + String(o.rotulo).split(' — ')[0] }));
@@ -3605,7 +3607,14 @@ function telaDiario() {
     if (!rascunhoDiario || !campoSei) return;
     const r = rascunhoDiario; rascunhoDiario = null;
     campoSei.value = r.sei; campoData.value = r.data; campoForn.value = r.fornecedor; campoColab.value = r.colaborador || '';
+    campoRateio.checked = !!r.rateio; campoRepet.value = r.repeticoes || ''; ajustarRateio();
     erroRegistro.replaceChildren(caixaAviso((r.erro || 'Este registro não foi salvo.') + ' Corrija e tente de novo.')); campoSei.focus();
+  }
+  function ajustarRateio() {
+    const lig = campoRateio.checked;
+    blocoRepet.hidden = !lig;
+    campoColab.disabled = lig;
+    if (lig) campoColab.value = '';
   }
   function montarRegistro() {
     campoSei = h('input', { type: 'text', id: 'd-PROCESSO_SEI', inputmode: 'numeric', maxlength: '22', autocomplete: 'off', placeholder: '04016-00130700/2026-57' });
@@ -3615,6 +3624,11 @@ function telaDiario() {
     campoForn = comboBusca({ id: 'd-FORNECEDOR_ID', opcoes: opcoesFornecedor(), valor: '', placeholder: 'Digite o nome ou o CNPJ do fornecedor…' });
     campoColab = h('select', { id: 'd-COLABORADOR_ID' }, h('option', { value: '', texto: 'Automático (distribuição justa)' }),
       ...colabAtivos().map(o => h('option', { value: o.id, texto: String(o.rotulo).split(' — ').slice(-1)[0] })));
+    campoRateio = h('input', { type: 'checkbox', id: 'd-RATEIO' });
+    campoRepet = h('input', { type: 'number', id: 'd-REPETICOES', min: '2', max: '50', step: '1', inputmode: 'numeric', placeholder: 'Ex.: 10' });
+    campoRateio.addEventListener('change', () => { ajustarRateio(); if (campoRateio.checked) campoRepet.focus(); });
+    blocoRepet = h('div', { class: 'campo', hidden: true }, h('label', { for: 'd-REPETICOES', texto: 'Número de repetições (de 2 a 50)' }), campoRepet,
+      h('p', { class: 'ajuda', texto: 'O processo vira uma linha para cada repetição. Cada linha vai para quem tem menos processos no mês, entre os marcados em "Quem recebe hoje".' }));
     const salvar = h('button', { type: 'submit', class: 'botao', texto: 'Registrar e distribuir' });
     const campoDe = (id, rotulo, entrada, extra) => h('div', { class: 'campo' + (extra ? ' ' + extra : '') }, h('label', { for: id, texto: rotulo }), entrada);
     const form = h('form', { novalidate: true, onsubmit: ev => {
@@ -3627,15 +3641,19 @@ function telaDiario() {
       if (!fornecedor) faltam.push('Fornecedor');
       if (faltam.length) { erroRegistro.replaceChildren(caixaAviso('Preencha: ' + faltam.join(', ') + '.')); return; }
       if (soDigitos(campoSei.value).length !== 19) { erroRegistro.replaceChildren(caixaAviso('O Nº do SEI está incompleto. Use o formato 00000-00000000/0000-00.')); campoSei.focus(); return; }
+      const rateio = campoRateio.checked, repeticoes = Number(campoRepet.value);
+      if (rateio && (!Number.isInteger(repeticoes) || repeticoes < 2 || repeticoes > 50)) { erroRegistro.replaceChildren(caixaAviso('Rateio: informe o número de repetições, de 2 a 50.')); campoRepet.focus(); return; }
       erroRegistro.replaceChildren();
-      const valores = { sei: campoSei.value.trim(), data: campoData.value, fornecedor, colaborador: campoColab.value };
+      const valores = { sei: campoSei.value.trim(), data: campoData.value, fornecedor, colaborador: campoColab.value, rateio, repeticoes: rateio ? repeticoes : '' };
       const quemRecebe = [...presentes];
-      campoSei.value = ''; campoForn.value = ''; campoColab.value = ''; campoSei.focus();   // a tela já fica livre para o próximo
+      campoSei.value = ''; campoForn.value = ''; campoColab.value = ''; campoRateio.checked = false; campoRepet.value = ''; ajustarRateio(); campoSei.focus();   // a tela já fica livre para o próximo
       const envio = {
         titulo: 'Diário, SEI ' + valores.sei,
-        executar: () => chamar('diario.criar', { dados: { PROCESSO_SEI: valores.sei, DATA: valores.data, FORNECEDOR_ID: valores.fornecedor, COLABORADOR_ID: valores.colaborador }, presentes: quemRecebe }),
+        executar: () => chamar('diario.criar', { dados: { PROCESSO_SEI: valores.sei, DATA: valores.data, FORNECEDOR_ID: valores.fornecedor, COLABORADOR_ID: valores.colaborador }, presentes: quemRecebe, rateio: valores.rateio, repeticoes: valores.repeticoes }),
         confirmar: r => {
-          toque('Processo enviado para ' + r.colaborador + (r.automatico ? ' (distribuição automática).' : '.') + (r.registro.NOTAS.length ? ' Já há nota registrada com este SEI.' : ''), 5000);
+          const jaTemNota = r.registro.NOTAS.length ? ' Já há nota registrada com este SEI.' : '';
+          if (r.rateio) toque('Processo dividido em ' + r.repeticoes + ' linhas: ' + r.divisao.map(x => x.colaborador + ' ' + x.quantidade).join(', ') + '.' + jaTemNota, 8000);
+          else toque('Processo enviado para ' + r.colaborador + (r.automatico ? ' (distribuição automática).' : '.') + jaTemNota, 5000);
           if (!campoSei.isConnected) return;   // a pessoa saiu da tela: a próxima abertura já lê os dados novos
           const data = r.registro.DATA;
           if ((filtro.de && data < filtro.de) || (filtro.ate && data > filtro.ate)) { filtro.de = data; filtro.ate = data; }
@@ -3649,7 +3667,9 @@ function telaDiario() {
         campoDe('d-PROCESSO_SEI', 'Nº do SEI (obrigatório)', campoSei),
         campoDe('d-DATA', 'Data do processo (obrigatório)', campoData),
         campoDe('d-FORNECEDOR_ID', 'Fornecedor (obrigatório)', campoForn, 'inteiro'),
-        campoDe('d-COLABORADOR_ID', 'Colaborador', campoColab, 'inteiro')),
+        campoDe('d-COLABORADOR_ID', 'Colaborador', campoColab, 'inteiro'),
+        h('div', { class: 'campo inteiro' }, h('label', { class: 'marcar', for: 'd-RATEIO' }, campoRateio, 'Processo com rateio (mais de um responsável)')),
+        blocoRepet),
       dicaFila,
       h('div', { class: 'barra-salvar', style: 'margin-top:8px' }, salvar));
     return h('section', { class: 'painel', 'aria-label': 'Registrar processo' }, h('div', { class: 'painel-corpo' }, h('h2', { texto: 'Registrar processo' }), erroRegistro, form));
@@ -3720,6 +3740,7 @@ function telaDiario() {
       h('td', { 'data-rotulo': 'Notas' }, r.NOTAS.length ? r.NOTAS.map((n, i) => [i ? ', ' : null, h('a', { class: 'ligacao', href: '#/notas/' + n.ID, title: 'Situação da nota: ' + (NOMES_SITUACAO[n.SITUACAO] || n.SITUACAO), 'aria-label': 'Ver a nota ' + n.NUMERO_NF, texto: n.NUMERO_NF })]) : h('span', { class: 'email', texto: 'sem nota' })),
       h('td', { 'data-rotulo': 'Situação' }, h('span', { class: 'selos' },
         h('span', { class: 'selo ' + (r.SITUACAO === 'LANCADA' ? 'ativo' : 'alerta'), texto: NOMES_SITUACAO[r.SITUACAO] || r.SITUACAO }),
+        r.RATEIO_TOTAL ? h('span', { class: 'selo', title: 'Este processo foi dividido entre colaboradores (rateio)', texto: 'Rateio ' + r.RATEIO_PARTE + ' de ' + r.RATEIO_TOTAL }) : null,
         r.STATUS === 'INATIVO' ? h('span', { class: 'selo inativo', texto: 'Excluído' }) : null)),
       h('td', { class: 'acoes' },
         !pode('OPERADOR') ? null : [r.STATUS === 'ATIVO' ? h('button', { type: 'button', class: 'botao claro pequeno', texto: r.SITUACAO === 'LANCADA' ? 'Marcar pendente' : 'Marcar lançada', 'aria-label': (r.SITUACAO === 'LANCADA' ? 'Marcar como pendente o processo ' : 'Marcar como lançado o processo ') + r.PROCESSO_SEI, onclick: () => mudarSituacao(r) }) : null,
@@ -3757,9 +3778,9 @@ function telaDiario() {
       const info = ['Filtros: ' + descricaoFiltros(), 'Por colaborador: ' + ([...porColab.entries()].sort((a, b) => nomeColab(a[0]).localeCompare(nomeColab(b[0]), 'pt-BR')).map(([id, n]) => nomeColab(id) + ' ' + n).join(' • ') || '—')];
       const nome = n => n === 1 ? '1 processo' : n + ' processos';
       toque(baixarTabela(formato, { arquivo: 'diario', aba: 'Diário', titulo: 'IGESDF — Diário de processos', info,
-        colunas: [{ t: 'Data' }, { t: 'Nº do SEI' }, { t: 'Fornecedor' }, { t: 'Colaborador' }, { t: 'Registrado por' }, { t: 'Notas' }, { t: 'Situação' }],
-        linhas: ativos.map(r => [dataBr(r.DATA), r.PROCESSO_SEI, nomeForn(r.FORNECEDOR_ID), nomeColab(r.COLABORADOR_ID), r.REGISTRADO_POR || '', r.NOTAS.map(n => n.NUMERO_NF).join(', '), NOMES_SITUACAO[r.SITUACAO] || r.SITUACAO]),
-        total: ['Total: ' + nome(ativos.length), null, null, null, null, null, null] }));
+        colunas: [{ t: 'Data' }, { t: 'Nº do SEI' }, { t: 'Fornecedor' }, { t: 'Colaborador' }, { t: 'Registrado por' }, { t: 'Notas' }, { t: 'Situação' }, { t: 'Rateio' }],
+        linhas: ativos.map(r => [dataBr(r.DATA), r.PROCESSO_SEI, nomeForn(r.FORNECEDOR_ID), nomeColab(r.COLABORADOR_ID), r.REGISTRADO_POR || '', r.NOTAS.map(n => n.NUMERO_NF).join(', '), NOMES_SITUACAO[r.SITUACAO] || r.SITUACAO, r.RATEIO_TOTAL ? r.RATEIO_PARTE + ' de ' + r.RATEIO_TOTAL : '']),
+        total: ['Total: ' + nome(ativos.length), null, null, null, null, null, null, null] }));
     } catch (e) { toque('Não foi possível gerar o arquivo. ' + e.message, 5000); }
   }
 
